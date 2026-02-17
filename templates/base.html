@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    
+    <!-- SEO Meta Tags -->
+    <title>{% block title %}{{ meta_title|default:site_settings.default_meta_title }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ meta_description|default:site_settings.default_meta_description }}{% endblock %}">
+    <meta name="keywords" content="{% block meta_keywords %}{{ meta_keywords|default:site_settings.default_meta_keywords }}{% endblock %}">
+    <meta name="author" content="{{ site_author|default:'Snipher Marube' }}">
+    <meta name="robots" content="{% block robots %}index, follow{% endblock %}">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="{% block canonical_url %}{{ request.build_absolute_uri }}{% endblock %}">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:url" content="{{ request.build_absolute_uri }}">
+    <meta property="og:title" content="{% block og_title %}{{ og_title|default:meta_title|default:site_settings.default_meta_title }}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{{ og_description|default:meta_description|default:site_settings.default_meta_description }}{% endblock %}">
+    <meta property="og:image" content="{% block og_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/og-default.jpg' %}{% endif %}{% endblock %}">
+    <meta property="og:site_name" content="{{ site_name }}">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="{% block twitter_card %}summary_large_image{% endblock %}">
+    <meta name="twitter:title" content="{% block twitter_title %}{{ og_title|default:meta_title|default:site_settings.default_meta_title }}{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_description %}{{ og_description|default:meta_description|default:site_settings.default_meta_description }}{% endblock %}">
+    <meta name="twitter:image" content="{% block twitter_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/twitter-default.jpg' %}{% endif %}{% endblock %}">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/apple-touch-icon.png' %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicon-32x32.png' %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'images/favicon-16x16.png' %}">
+    <link rel="manifest" href="{% static 'images/site.webmanifest' %}">
+    
+    <!-- Preconnect to external domains -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- CSS -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'css/output.css' %}">
+    <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+    
+    <!-- Schema.org markup for Google+ -->
+    <meta itemprop="name" content="{% block schema_name %}{{ meta_title|default:site_settings.default_meta_title }}{% endblock %}">
+    <meta itemprop="description" content="{% block schema_description %}{{ meta_description|default:site_settings.default_meta_description }}{% endblock %}">
+    <meta itemprop="image" content="{% block schema_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/schema-default.jpg' %}{% endif %}{% endblock %}">
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="font-sans antialiased text-gray-800 bg-white" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <!-- Google Tag Manager (if configured) -->
+    {% if site_settings.google_tag_manager_id %}
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','{{ site_settings.google_tag_manager_id }}');</script>
+    {% endif %}
+    
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-blue-600 text-white px-4 py-2 rounded-lg z-50">
+        Skip to main content
+    </a>
+    
+    <!-- Header/Navbar -->
+    {% include 'includes/header.html' %}
+    
+    <!-- Main Content -->
+    <main id="main-content" class="min-h-screen">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    {% include 'includes/footer.html' %}
+    
+    <!-- Mobile Menu (hidden by default) -->
+    {% include 'includes/mobile-menu.html' %}
+    
+    <!-- Cookie Consent -->
+    {% include 'includes/cookie-consent.html' %}
+    
+    <!-- JavaScript -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    
+    {% block extra_scripts %}{% endblock %}
+    
+    <!-- Google Analytics (if configured) -->
+    {% if site_settings.google_analytics_id %}
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id }}"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', '{{ site_settings.google_analytics_id }}');
+    </script>
+    {% endif %}
+    
+    <!-- Facebook Pixel (if configured) -->
+    {% if site_settings.facebook_pixel_id %}
+    <script>
+        !function(f,b,e,v,n,t,s)
+        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+        n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t,s)}(window, document,'script',
+        'https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', '{{ site_settings.facebook_pixel_id }}');
+        fbq('track', 'PageView');
+    </script>
+    {% endif %}
+</body>
+</html>

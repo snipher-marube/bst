@@ -1,0 +1,97 @@
+<!-- Mobile menu, show/hide based on menu state -->
+ {% load static %}
+<div class="mobile-menu hidden md:hidden fixed inset-0 z-40 transform transition-transform duration-300 ease-in-out">
+    <!-- Overlay -->
+    <div class="fixed inset-0 bg-gray-600 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    
+    <!-- Menu panel -->
+    <div class="fixed inset-y-0 right-0 max-w-xs w-full bg-white shadow-xl flex flex-col">
+        <div class="flex items-center justify-between px-4 py-5 border-b border-gray-200">
+            <img src="{% static 'images/logo.png' %}" alt="MetaAnalytics" class="h-8 w-auto">
+            <button type="button" class="mobile-menu-close rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <span class="sr-only">Close menu</span>
+                <i class="fas fa-times text-2xl"></i>
+            </button>
+        </div>
+        
+        <!-- Mobile navigation links -->
+        <div class="flex-1 overflow-y-auto py-4 px-4">
+            <nav class="grid gap-y-3">
+                {% for item in main_nav %}
+                <a href="{{ item.url }}" 
+                   class="text-base font-medium {% if item.active %}text-blue-600 bg-blue-50{% else %}text-gray-900{% endif %} px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                    {{ item.title }}
+                </a>
+                {% endfor %}
+                
+                <div class="border-t border-gray-200 my-4"></div>
+                
+                {% if user.is_authenticated %}
+                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                        Dashboard
+                    </a>
+                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                        Profile
+                    </a>
+                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                        Settings
+                    </a>
+                    <a href="{% url 'account_logout' %}" class="text-base font-medium text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors duration-200">
+                        Sign out
+                    </a>
+                {% else %}
+                    <a href="{% url 'account_login' %}" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                        Sign in
+                    </a>
+                    <a href="{% url 'account_signup' %}" class="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200">
+                        Start Free Trial
+                    </a>
+                {% endif %}
+            </nav>
+        </div>
+        
+        <!-- Mobile footer -->
+        <div class="border-t border-gray-200 px-4 py-4">
+            <p class="text-xs text-gray-500 text-center">
+                &copy; {% now "Y" %} MetaAnalytics. All rights reserved.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const menuButton = document.querySelector('.mobile-menu-button');
+    const closeButton = document.querySelector('.mobile-menu-close');
+    const mobileMenu = document.querySelector('.mobile-menu');
+    
+    function openMenu() {
+        mobileMenu.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        menuButton.setAttribute('aria-expanded', 'true');
+    }
+    
+    function closeMenu() {
+        mobileMenu.classList.add('hidden');
+        document.body.style.overflow = '';
+        menuButton.setAttribute('aria-expanded', 'false');
+    }
+    
+    menuButton?.addEventListener('click', openMenu);
+    closeButton?.addEventListener('click', closeMenu);
+    
+    // Close menu when clicking overlay
+    mobileMenu?.addEventListener('click', function(e) {
+        if (e.target === mobileMenu) {
+            closeMenu();
+        }
+    });
+    
+    // Close menu on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && !mobileMenu.classList.contains('hidden')) {
+            closeMenu();
+        }
+    });
+});
+</script>

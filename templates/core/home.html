@@ -1,0 +1,386 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="relative bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-hidden">
+    <!-- Background Pattern -->
+    <div class="absolute inset-0 bg-grid-gray-200/50 bg-grid-8 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]"></div>
+    
+    <div class="relative container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <div class="text-center lg:text-left">
+                <div class="inline-flex items-center bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium mb-6">
+                    <span class="relative flex h-2 w-2 mr-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    Introducing MetaAnalytics 2.0
+                </div>
+                
+                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
+                    Build Your Own
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+                        Analytics Platform
+                    </span>
+                </h1>
+                
+                <p class="text-xl text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0">
+                    Create custom tracking systems without code. Define your categories, set up formulas, and get automatic visualizations. Perfect for SMEs, agriculture, and personal use.
+                </p>
+                
+                <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                    <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                        Start Free Trial
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </a>
+                    <a href="{% url 'core:features' %}" class="inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-all duration-200">
+                        See Features
+                        <i class="fas fa-play ml-2"></i>
+                    </a>
+                </div>
+                
+                <div class="mt-8 flex items-center justify-center lg:justify-start space-x-6">
+                    <div class="flex -space-x-2">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/women/44.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/men/46.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/women/68.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/men/75.jpg" alt="Customer avatar">
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <span class="font-bold text-gray-900">10,000+</span> businesses trust us
+                    </div>
+                </div>
+            </div>
+            
+            <div class="relative">
+                <div class="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 rounded-3xl blur-3xl opacity-20"></div>
+                <img src="{% static 'images/hero-dashboard.png' %}" alt="MetaAnalytics Dashboard" class="relative rounded-2xl shadow-2xl border border-gray-200">
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Stats Section -->
+{% if stats %}
+<section class="bg-white py-12 border-y border-gray-200">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+            {% for stat in stats %}
+            <div class="text-center">
+                <div class="text-3xl md:text-4xl font-bold text-blue-600 mb-2">
+                    {{ stat.prefix }}{{ stat.value }}{{ stat.suffix }}
+                </div>
+                <div class="text-sm text-gray-600">{{ stat.label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Features Section -->
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Everything You Need to Track Your Data
+            </h2>
+            <p class="text-xl text-gray-600">
+                No coding required. Just define your data structure and we handle the rest.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for feature in features %}
+            <div class="bg-white rounded-xl p-8 shadow-sm hover:shadow-lg transition-shadow duration-300 border border-gray-100">
+                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-6">
+                    <i class="{{ feature.icon }} text-2xl text-blue-600"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-gray-900 mb-3">{{ feature.title }}</h3>
+                <p class="text-gray-600 mb-4">{{ feature.short_description }}</p>
+                <a href="{{ feature.get_absolute_url }}" class="text-blue-600 font-medium hover:text-blue-700 inline-flex items-center">
+                    Learn more
+                    <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="text-center mt-12">
+            <a href="{% url 'core:features' %}" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-700">
+                View all features
+                <i class="fas fa-arrow-right ml-2"></i>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Get Started in Minutes
+            </h2>
+            <p class="text-xl text-gray-600">
+                Three simple steps to your custom analytics dashboard.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                    1
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Create Your Categories</h3>
+                <p class="text-gray-600">Define what you want to track - expenses, sales, crops, or anything else.</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-16 h-16 bg-purple-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                    2
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Set Up Your Fields</h3>
+                <p class="text-gray-600">Add the fields you need, create formulas, and define relationships.</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-16 h-16 bg-green-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                    3
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Start Tracking Daily</h3>
+                <p class="text-gray-600">Enter data daily and watch your dashboard come to life automatically.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Testimonials -->
+{% if testimonials %}
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Loved by Businesses Everywhere
+            </h2>
+            <p class="text-xl text-gray-600">
+                See what our customers have to say about MetaAnalytics.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for testimonial in testimonials %}
+            <div class="bg-white rounded-xl p-8 shadow-sm border border-gray-100">
+                <div class="flex items-center mb-4">
+                    {% if testimonial.avatar %}
+                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-12 h-12 rounded-full mr-4">
+                    {% else %}
+                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mr-4">
+                        <span class="text-blue-600 font-semibold">{{ testimonial.name|first }}</span>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <h4 class="font-semibold text-gray-900">{{ testimonial.name }}</h4>
+                        <p class="text-sm text-gray-600">{{ testimonial.title }}, {{ testimonial.company }}</p>
+                    </div>
+                </div>
+                <div class="flex mb-4">
+                    {% for i in "12345"|make_list %}
+                        {% if forloop.counter <= testimonial.rating %}
+                        <i class="fas fa-star text-yellow-400"></i>
+                        {% else %}
+                        <i class="far fa-star text-yellow-400"></i>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                <p class="text-gray-700 italic">"{{ testimonial.content }}"</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Partners -->
+{% if partners %}
+<section class="py-12 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <p class="text-center text-sm font-semibold text-gray-500 uppercase tracking-wide mb-8">
+            Trusted by innovative companies
+        </p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 items-center">
+            {% for partner in partners %}
+            <div class="flex justify-center">
+                {% if partner.website %}
+                <a href="{{ partner.website }}" target="_blank" rel="noopener noreferrer">
+                    <img src="{{ partner.logo.url }}" alt="{{ partner.name }}" class="max-h-12 grayscale hover:grayscale-0 transition-all duration-200">
+                </a>
+                {% else %}
+                <img src="{{ partner.logo.url }}" alt="{{ partner.name }}" class="max-h-12 grayscale">
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Pricing Teaser -->
+<section class="py-20 bg-gradient-to-br from-blue-600 to-purple-600 text-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl md:text-4xl font-bold mb-4">
+            Start Your Free Trial Today
+        </h2>
+        <p class="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+            No credit card required. Get started with our free plan and upgrade as you grow.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-blue-600 bg-white hover:bg-blue-50 transition-all duration-200">
+                Get Started Free
+            </a>
+            <a href="{% url 'core:pricing' %}" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200">
+                View Pricing
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Blog Posts -->
+{% if blog_posts %}
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Latest from Our Blog
+            </h2>
+            <p class="text-xl text-gray-600">
+                Insights, tips, and updates from the MetaAnalytics team.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-8">
+            {% for post in blog_posts %}
+            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-300 border border-gray-100">
+                <a href="{{ post.get_absolute_url }}" class="block">
+                    <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
+                    <div class="p-6">
+                        <div class="flex items-center text-sm text-gray-500 mb-3">
+                            <span>{{ post.published_at|date:"M d, Y" }}</span>
+                            <span class="mx-2">•</span>
+                            <span>{{ post.read_time }} min read</span>
+                        </div>
+                        <h3 class="text-xl font-semibold text-gray-900 mb-3 hover:text-blue-600 transition-colors duration-200">
+                            {{ post.title }}
+                        </h3>
+                        <p class="text-gray-600 mb-4">{{ post.excerpt|truncatewords:20 }}</p>
+                        <span class="text-blue-600 font-medium inline-flex items-center">
+                            Read more
+                            <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                        </span>
+                    </div>
+                </a>
+            </article>
+            {% endfor %}
+        </div>
+        
+        <div class="text-center mt-12">
+            <a href="{% url 'core:blog_list' %}" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-700">
+                View all posts
+                <i class="fas fa-arrow-right ml-2"></i>
+            </a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- FAQ Section -->
+{% if faqs %}
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Frequently Asked Questions
+            </h2>
+            <p class="text-xl text-gray-600">
+                Got questions? We've got answers.
+            </p>
+        </div>
+        
+        <div class="max-w-3xl mx-auto divide-y divide-gray-200">
+            {% for faq in faqs %}
+            <div class="py-6" x-data="{ open: false }">
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left">
+                    <span class="text-lg font-medium text-gray-900">{{ faq.question }}</span>
+                    <i class="fas fa-chevron-down text-gray-500 transition-transform duration-300" :class="{ 'rotate-180': open }"></i>
+                </button>
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600">
+                    {{ faq.answer|linebreaks }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="text-center mt-12">
+            <p class="text-gray-600 mb-4">Still have questions?</p>
+            <a href="{% url 'core:contact' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200">
+                Contact Support
+                <i class="fas fa-headset ml-2"></i>
+            </a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- CTA Section -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto text-center">
+            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Ready to Transform Your Data?
+            </h2>
+            <p class="text-xl text-gray-600 mb-8">
+                Join thousands of businesses that use MetaAnalytics to track what matters.
+            </p>
+            <a href="{% url 'account_signup' %}" class="inline-flex items-center px-8 py-4 border border-transparent text-lg font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                Get Started Now
+                <i class="fas fa-rocket ml-2"></i>
+            </a>
+            <p class="text-sm text-gray-500 mt-4">
+                No credit card required • Free plan included • Cancel anytime
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Add any home page specific JavaScript here
+    document.addEventListener('DOMContentLoaded', function() {
+        // Animate stats counting
+        const stats = document.querySelectorAll('.stat-value');
+        stats.forEach(stat => {
+            const value = parseInt(stat.getAttribute('data-value'));
+            if (!isNaN(value)) {
+                animateValue(stat, 0, value, 2000);
+            }
+        });
+    });
+    
+    function animateValue(element, start, end, duration) {
+        const range = end - start;
+        const increment = range / (duration / 10);
+        let current = start;
+        
+        const timer = setInterval(() => {
+            current += increment;
+            if (current >= end) {
+                current = end;
+                clearInterval(timer);
+            }
+            element.textContent = Math.round(current).toLocaleString();
+        }, 10);
+    }
+</script>
+{% endblock %}
