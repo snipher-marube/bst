@@ -2,76 +2,170 @@
 {% load static %}
 
 {% block content %}
-<!-- Hero Section -->
-<section class="relative bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-hidden">
-    <!-- Background Pattern -->
-    <div class="absolute inset-0 bg-grid-gray-200/50 bg-grid-8 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]"></div>
+<style>
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+    }
+
+    .bg-primary-dark { background-color: var(--primary-dark); }
+    .bg-primary-orange { background-color: var(--primary-orange); }
+    .text-primary-dark { color: var(--primary-dark); }
+    .text-primary-orange { color: var(--primary-orange); }
+    .border-primary-orange { border-color: var(--primary-orange); }
+    
+    .hover-bg-primary-dark:hover { background-color: var(--primary-dark); }
+    .hover-bg-primary-orange:hover { background-color: var(--primary-orange); }
+    .hover-text-primary-dark:hover { color: var(--primary-dark); }
+    .hover-text-primary-orange:hover { color: var(--primary-orange); }
+    
+    .gradient-primary {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #025b8c 100%);
+    }
+    
+    .gradient-cta {
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #f59e0b 100%);
+    }
+    
+    .card-hover {
+        transition: all 0.3s ease;
+    }
+    .card-hover:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 25px -5px rgba(3, 70, 110, 0.1), 0 10px 10px -5px rgba(3, 70, 110, 0.04);
+    }
+    
+    .video-wrapper {
+        position: relative;
+        padding-bottom: 56.25%; /* 16:9 aspect ratio */
+        height: 0;
+        overflow: hidden;
+        border-radius: 1rem;
+    }
+    .video-wrapper iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 1rem;
+    }
+    
+    .stat-card {
+        border-left: 4px solid var(--primary-orange);
+    }
+    
+    .feature-icon-wrapper {
+        background: linear-gradient(135deg, rgba(246, 135, 18, 0.1) 0%, rgba(246, 135, 18, 0.05) 100%);
+    }
+</style>
+
+<!-- Hero Section with Video -->
+<section class="relative gradient-primary overflow-hidden">
+    <!-- Animated background pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                    <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
+                </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)"/>
+        </svg>
+    </div>
     
     <div class="relative container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20">
         <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <!-- Left Content -->
             <div class="text-center lg:text-left">
-                <div class="inline-flex items-center bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium mb-6">
+                <div class="inline-flex items-center bg-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-medium mb-6 border border-white/20">
                     <span class="relative flex h-2 w-2 mr-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f68712] opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-[#f68712]"></span>
                     </span>
                     Introducing MetaAnalytics 2.0
                 </div>
                 
-                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
+                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6">
                     Build Your Own
-                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+                    <span class="text-[#f68712]">
                         Analytics Platform
                     </span>
                 </h1>
                 
-                <p class="text-xl text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0">
+                <p class="text-xl text-white/80 mb-8 max-w-2xl mx-auto lg:mx-0">
                     Create custom tracking systems without code. Define your categories, set up formulas, and get automatic visualizations. Perfect for SMEs, agriculture, and personal use.
                 </p>
                 
                 <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                    <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                    <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-6 py-3 border-2 border-[#f68712] text-base font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
                         Start Free Trial
-                        <i class="fas fa-arrow-right ml-2"></i>
+                        <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                        </svg>
                     </a>
-                    <a href="{% url 'core:features' %}" class="inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-all duration-200">
+                    <a href="{% url 'core:features' %}" class="inline-flex items-center justify-center px-6 py-3 border-2 border-white/30 text-base font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200">
                         See Features
-                        <i class="fas fa-play ml-2"></i>
+                        <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
                     </a>
                 </div>
                 
                 <div class="mt-8 flex items-center justify-center lg:justify-start space-x-6">
                     <div class="flex -space-x-2">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/women/44.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/men/46.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/women/68.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white" src="https://randomuser.me/api/portraits/men/75.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/women/44.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/men/46.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/women/68.jpg" alt="Customer avatar">
+                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/men/75.jpg" alt="Customer avatar">
                     </div>
-                    <div class="text-sm text-gray-600">
-                        <span class="font-bold text-gray-900">10,000+</span> businesses trust us
+                    <div class="text-sm text-white/80">
+                        <span class="font-bold text-white">10,000+</span> businesses trust us
                     </div>
                 </div>
             </div>
             
+            <!-- Right Content - Video -->
             <div class="relative">
-                <div class="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 rounded-3xl blur-3xl opacity-20"></div>
-                <img src="{% static 'images/hero-dashboard.png' %}" alt="MetaAnalytics Dashboard" class="relative rounded-2xl shadow-2xl border border-gray-200">
+                <div class="absolute inset-0 bg-[#f68712] rounded-3xl blur-3xl opacity-20"></div>
+                <div class="relative rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
+                    <div class="video-wrapper">
+                        <iframe 
+                            src="{% static 'video/analytics.mp4' %}" 
+                            title="Business Sight Technologies Analytics Demo"
+                            frameborder="0" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; loop" 
+                            allowfullscreen>
+                        </iframe>   
+                    </div>
+                    <!-- Play button overlay (optional) -->
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div class="w-20 h-20 bg-[#f68712] rounded-full flex items-center justify-center shadow-2xl opacity-90">
+                            <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </section>
 
-<!-- Stats Section -->
+<!-- Stats Section with Orange Accent -->
 {% if stats %}
-<section class="bg-white py-12 border-y border-gray-200">
+<section class="bg-white py-12 border-y border-gray-100">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
             {% for stat in stats %}
-            <div class="text-center">
-                <div class="text-3xl md:text-4xl font-bold text-blue-600 mb-2">
-                    {{ stat.prefix }}{{ stat.value }}{{ stat.suffix }}
+            <div class="text-center stat-card pl-4">
+                <div class="text-3xl md:text-4xl font-bold text-[#03466e] mb-2">
+                    {{ stat.prefix }}<span class="stat-value" data-value="{{ stat.value }}">0</span>{{ stat.suffix }}
                 </div>
-                <div class="text-sm text-gray-600">{{ stat.label }}</div>
+                <div class="text-sm text-[#2b2b2b]/70">{{ stat.label }}</div>
             </div>
             {% endfor %}
         </div>
@@ -80,38 +174,34 @@
 {% endif %}
 
 <!-- Features Section -->
-<section class="py-20 bg-gray-50">
+<section class="py-20 bg-[#f8fafc]">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center max-w-3xl mx-auto mb-16">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Features</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Everything You Need to Track Your Data
             </h2>
-            <p class="text-xl text-gray-600">
+            <p class="text-xl text-[#2b2b2b]/80">
                 No coding required. Just define your data structure and we handle the rest.
             </p>
         </div>
         
         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {% for feature in features %}
-            <div class="bg-white rounded-xl p-8 shadow-sm hover:shadow-lg transition-shadow duration-300 border border-gray-100">
-                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-6">
-                    <i class="{{ feature.icon }} text-2xl text-blue-600"></i>
+            <div class="bg-white rounded-xl p-8 shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 card-hover">
+                <div class="feature-icon-wrapper w-14 h-14 rounded-xl flex items-center justify-center mb-6">
+                    <i class="{{ feature.icon }} text-3xl text-[#f68712]"></i>
                 </div>
-                <h3 class="text-xl font-semibold text-gray-900 mb-3">{{ feature.title }}</h3>
-                <p class="text-gray-600 mb-4">{{ feature.short_description }}</p>
-                <a href="{{ feature.get_absolute_url }}" class="text-blue-600 font-medium hover:text-blue-700 inline-flex items-center">
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">{{ feature.title }}</h3>
+                <p class="text-[#2b2b2b]/70 mb-4">{{ feature.short_description }}</p>
+                <a href="{{ feature.get_absolute_url }}" class="text-[#f68712] font-medium hover:text-[#e07810] inline-flex items-center group">
                     Learn more
-                    <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    <svg class="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
                 </a>
             </div>
             {% endfor %}
-        </div>
-        
-        <div class="text-center mt-12">
-            <a href="{% url 'core:features' %}" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-700">
-                View all features
-                <i class="fas fa-arrow-right ml-2"></i>
-            </a>
         </div>
     </div>
 </section>
@@ -120,81 +210,91 @@
 <section class="py-20 bg-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center max-w-3xl mx-auto mb-16">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Process</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Get Started in Minutes
             </h2>
-            <p class="text-xl text-gray-600">
+            <p class="text-xl text-[#2b2b2b]/80">
                 Three simple steps to your custom analytics dashboard.
             </p>
         </div>
         
-        <div class="grid md:grid-cols-3 gap-8">
+        <div class="grid md:grid-cols-3 gap-8 relative">
+            <!-- Connecting lines (visible on desktop) -->
+            <div class="hidden md:block absolute top-24 left-1/4 right-1/4 h-0.5 bg-gray-200 -z-10"></div>
+            
             <div class="text-center">
-                <div class="w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                <div class="w-20 h-20 bg-[#03466e] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
                     1
                 </div>
-                <h3 class="text-xl font-semibold mb-3">Create Your Categories</h3>
-                <p class="text-gray-600">Define what you want to track - expenses, sales, crops, or anything else.</p>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Create Your Categories</h3>
+                <p class="text-[#2b2b2b]/70">Define what you want to track - expenses, sales, crops, or anything else.</p>
             </div>
             
             <div class="text-center">
-                <div class="w-16 h-16 bg-purple-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                <div class="w-20 h-20 bg-[#f68712] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
                     2
                 </div>
-                <h3 class="text-xl font-semibold mb-3">Set Up Your Fields</h3>
-                <p class="text-gray-600">Add the fields you need, create formulas, and define relationships.</p>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Set Up Your Fields</h3>
+                <p class="text-[#2b2b2b]/70">Add the fields you need, create formulas, and define relationships.</p>
             </div>
             
             <div class="text-center">
-                <div class="w-16 h-16 bg-green-600 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                <div class="w-20 h-20 bg-[#03466e] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
                     3
                 </div>
-                <h3 class="text-xl font-semibold mb-3">Start Tracking Daily</h3>
-                <p class="text-gray-600">Enter data daily and watch your dashboard come to life automatically.</p>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Start Tracking Daily</h3>
+                <p class="text-[#2b2b2b]/70">Enter data daily and watch your dashboard come to life automatically.</p>
             </div>
         </div>
     </div>
 </section>
 
-<!-- Testimonials -->
+<!-- Testimonials with Orange Quote Marks -->
 {% if testimonials %}
-<section class="py-20 bg-gray-50">
+<section class="py-20 bg-[#f8fafc]">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center max-w-3xl mx-auto mb-16">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Testimonials</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Loved by Businesses Everywhere
             </h2>
-            <p class="text-xl text-gray-600">
+            <p class="text-xl text-[#2b2b2b]/80">
                 See what our customers have to say about MetaAnalytics.
             </p>
         </div>
         
         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {% for testimonial in testimonials %}
-            <div class="bg-white rounded-xl p-8 shadow-sm border border-gray-100">
+            <div class="bg-white rounded-xl p-8 shadow-sm border border-gray-100 relative">
+                <div class="absolute top-4 right-4 text-6xl text-[#f68712] opacity-10">"</div>
                 <div class="flex items-center mb-4">
                     {% if testimonial.avatar %}
-                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-12 h-12 rounded-full mr-4">
+                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-12 h-12 rounded-full mr-4 ring-2 ring-[#f68712]/20">
                     {% else %}
-                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mr-4">
-                        <span class="text-blue-600 font-semibold">{{ testimonial.name|first }}</span>
+                    <div class="w-12 h-12 rounded-full bg-[#f68712]/10 flex items-center justify-center mr-4">
+                        <span class="text-[#f68712] font-semibold">{{ testimonial.name|first }}</span>
                     </div>
                     {% endif %}
                     <div>
-                        <h4 class="font-semibold text-gray-900">{{ testimonial.name }}</h4>
-                        <p class="text-sm text-gray-600">{{ testimonial.title }}, {{ testimonial.company }}</p>
+                        <h4 class="font-semibold text-[#03466e]">{{ testimonial.name }}</h4>
+                        <p class="text-sm text-[#2b2b2b]/70">{{ testimonial.title }}, {{ testimonial.company }}</p>
                     </div>
                 </div>
                 <div class="flex mb-4">
                     {% for i in "12345"|make_list %}
                         {% if forloop.counter <= testimonial.rating %}
-                        <i class="fas fa-star text-yellow-400"></i>
+                        <svg class="w-5 h-5 text-[#f68712]" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
                         {% else %}
-                        <i class="far fa-star text-yellow-400"></i>
+                        <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
                         {% endif %}
                     {% endfor %}
                 </div>
-                <p class="text-gray-700 italic">"{{ testimonial.content }}"</p>
+                <p class="text-[#2b2b2b]/80 relative z-10">"{{ testimonial.content }}"</p>
             </div>
             {% endfor %}
         </div>
@@ -202,42 +302,22 @@
 </section>
 {% endif %}
 
-<!-- Partners -->
-{% if partners %}
-<section class="py-12 bg-white">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <p class="text-center text-sm font-semibold text-gray-500 uppercase tracking-wide mb-8">
-            Trusted by innovative companies
-        </p>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 items-center">
-            {% for partner in partners %}
-            <div class="flex justify-center">
-                {% if partner.website %}
-                <a href="{{ partner.website }}" target="_blank" rel="noopener noreferrer">
-                    <img src="{{ partner.logo.url }}" alt="{{ partner.name }}" class="max-h-12 grayscale hover:grayscale-0 transition-all duration-200">
-                </a>
-                {% else %}
-                <img src="{{ partner.logo.url }}" alt="{{ partner.name }}" class="max-h-12 grayscale">
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</section>
-{% endif %}
-
-<!-- Pricing Teaser -->
-<section class="py-20 bg-gradient-to-br from-blue-600 to-purple-600 text-white">
+<!-- Pricing Teaser with Gradient -->
+<section class="py-20 gradient-cta text-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="text-white/80 font-semibold text-sm uppercase tracking-wider mb-2 block">Start Free</span>
         <h2 class="text-3xl md:text-4xl font-bold mb-4">
             Start Your Free Trial Today
         </h2>
-        <p class="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+        <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
             No credit card required. Get started with our free plan and upgrade as you grow.
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-blue-600 bg-white hover:bg-blue-50 transition-all duration-200">
+            <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-8 py-4 text-lg font-medium rounded-lg text-[#03466e] bg-white hover:bg-gray-100 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
                 Get Started Free
+                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                </svg>
             </a>
             <a href="{% url 'core:pricing' %}" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200">
                 View Pricing
@@ -251,44 +331,43 @@
 <section class="py-20 bg-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center max-w-3xl mx-auto mb-16">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Blog</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Latest from Our Blog
             </h2>
-            <p class="text-xl text-gray-600">
+            <p class="text-xl text-[#2b2b2b]/80">
                 Insights, tips, and updates from the MetaAnalytics team.
             </p>
         </div>
         
         <div class="grid md:grid-cols-3 gap-8">
             {% for post in blog_posts %}
-            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-300 border border-gray-100">
+            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 card-hover">
                 <a href="{{ post.get_absolute_url }}" class="block">
-                    <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
-                    <div class="p-6">
-                        <div class="flex items-center text-sm text-gray-500 mb-3">
-                            <span>{{ post.published_at|date:"M d, Y" }}</span>
-                            <span class="mx-2">•</span>
-                            <span>{{ post.read_time }} min read</span>
+                    <div class="relative overflow-hidden h-48">
+                        <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500">
+                        <div class="absolute top-4 left-4 bg-[#f68712] text-white text-xs font-semibold px-2 py-1 rounded">
+                            {{ post.read_time }} min read
                         </div>
-                        <h3 class="text-xl font-semibold text-gray-900 mb-3 hover:text-blue-600 transition-colors duration-200">
+                    </div>
+                    <div class="p-6">
+                        <div class="flex items-center text-sm text-[#2b2b2b]/60 mb-3">
+                            <span>{{ post.published_at|date:"M d, Y" }}</span>
+                        </div>
+                        <h3 class="text-xl font-semibold text-[#03466e] mb-3 hover:text-[#f68712] transition-colors duration-200">
                             {{ post.title }}
                         </h3>
-                        <p class="text-gray-600 mb-4">{{ post.excerpt|truncatewords:20 }}</p>
-                        <span class="text-blue-600 font-medium inline-flex items-center">
+                        <p class="text-[#2b2b2b]/70 mb-4">{{ post.excerpt|truncatewords:20 }}</p>
+                        <span class="text-[#f68712] font-medium inline-flex items-center group">
                             Read more
-                            <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                            <svg class="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
                         </span>
                     </div>
                 </a>
             </article>
             {% endfor %}
-        </div>
-        
-        <div class="text-center mt-12">
-            <a href="{% url 'core:blog_list' %}" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-700">
-                View all posts
-                <i class="fas fa-arrow-right ml-2"></i>
-            </a>
         </div>
     </div>
 </section>
@@ -296,13 +375,14 @@
 
 <!-- FAQ Section -->
 {% if faqs %}
-<section class="py-20 bg-gray-50">
+<section class="py-20 bg-[#f8fafc]">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center max-w-3xl mx-auto mb-16">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Support</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Frequently Asked Questions
             </h2>
-            <p class="text-xl text-gray-600">
+            <p class="text-xl text-[#2b2b2b]/80">
                 Got questions? We've got answers.
             </p>
         </div>
@@ -310,11 +390,13 @@
         <div class="max-w-3xl mx-auto divide-y divide-gray-200">
             {% for faq in faqs %}
             <div class="py-6" x-data="{ open: false }">
-                <button @click="open = !open" class="flex justify-between items-center w-full text-left">
-                    <span class="text-lg font-medium text-gray-900">{{ faq.question }}</span>
-                    <i class="fas fa-chevron-down text-gray-500 transition-transform duration-300" :class="{ 'rotate-180': open }"></i>
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
+                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">{{ faq.question }}</span>
+                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
                 </button>
-                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600">
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-[#2b2b2b]/70 leading-relaxed">
                     {{ faq.answer|linebreaks }}
                 </div>
             </div>
@@ -322,31 +404,36 @@
         </div>
         
         <div class="text-center mt-12">
-            <p class="text-gray-600 mb-4">Still have questions?</p>
-            <a href="{% url 'core:contact' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200">
+            <p class="text-[#2b2b2b]/70 mb-4">Still have questions?</p>
+            <a href="{% url 'core:contact' %}" class="inline-flex items-center px-6 py-3 text-base font-medium rounded-lg text-white bg-[#03466e] hover:bg-[#023a58] transition-all duration-200 shadow-md hover:shadow-lg">
                 Contact Support
-                <i class="fas fa-headset ml-2"></i>
+                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
             </a>
         </div>
     </div>
 </section>
 {% endif %}
 
-<!-- CTA Section -->
+<!-- Final CTA -->
 <section class="py-20 bg-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="max-w-4xl mx-auto text-center">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Get Started</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
                 Ready to Transform Your Data?
             </h2>
-            <p class="text-xl text-gray-600 mb-8">
+            <p class="text-xl text-[#2b2b2b]/80 mb-8">
                 Join thousands of businesses that use MetaAnalytics to track what matters.
             </p>
-            <a href="{% url 'account_signup' %}" class="inline-flex items-center px-8 py-4 border border-transparent text-lg font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+            <a href="{% url 'account_signup' %}" class="inline-flex items-center px-8 py-4 text-lg font-medium rounded-lg text-white bg-[#03466e] hover:bg-[#023a58] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
                 Get Started Now
-                <i class="fas fa-rocket ml-2"></i>
+                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
             </a>
-            <p class="text-sm text-gray-500 mt-4">
+            <p class="text-sm text-[#2b2b2b]/60 mt-4">
                 No credit card required • Free plan included • Cancel anytime
             </p>
         </div>
@@ -356,7 +443,6 @@
 
 {% block extra_scripts %}
 <script>
-    // Add any home page specific JavaScript here
     document.addEventListener('DOMContentLoaded', function() {
         // Animate stats counting
         const stats = document.querySelectorAll('.stat-value');
@@ -366,6 +452,20 @@
                 animateValue(stat, 0, value, 2000);
             }
         });
+
+        // Video play button click handler (optional)
+        const videoWrapper = document.querySelector('.video-wrapper');
+        const playButton = document.querySelector('.absolute.inset-0.flex.items-center.justify-center');
+        
+        if (playButton && videoWrapper) {
+            playButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const iframe = videoWrapper.querySelector('iframe');
+                const src = iframe.src;
+                iframe.src = src + (src.includes('?') ? '&' : '?') + 'autoplay=1';
+                playButton.style.display = 'none';
+            });
+        }
     });
     
     function animateValue(element, start, end, duration) {
@@ -382,5 +482,27 @@
             element.textContent = Math.round(current).toLocaleString();
         }, 10);
     }
+
+    // Intersection Observer for fade-in animations
+    const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, observerOptions);
+
+    document.querySelectorAll('.card-hover, .stat-card, .text-center > div').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(20px)';
+        el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(el);
+    });
 </script>
 {% endblock %}

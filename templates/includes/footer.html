@@ -1,15 +1,28 @@
 {% load static %}
 <!-- Footer -->
-<footer class="bg-gray-900 text-gray-300" aria-label="Site footer">
-    <!-- Newsletter Section -->
-    <div class="bg-blue-600 py-12">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+<footer class="bg-[#2b2b2b] text-gray-300" aria-label="Site footer">
+    <!-- Newsletter Section with Orange Accent -->
+    <div class="bg-[#03466e] py-16 relative overflow-hidden">
+        <!-- Decorative pattern -->
+        <div class="absolute inset-0 opacity-10">
+            <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <pattern id="footer-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                        <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#footer-grid)"/>
+            </svg>
+        </div>
+        
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative">
             <div class="max-w-3xl mx-auto text-center">
-                <h2 class="text-3xl font-bold text-white mb-4">Stay Updated</h2>
-                <p class="text-blue-100 mb-8">Get the latest features, tips, and insights delivered to your inbox.</p>
+                <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Newsletter</span>
+                <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Stay Updated</h2>
+                <p class="text-blue-200 mb-8 text-lg">Get the latest features, tips, and insights delivered to your inbox.</p>
                 
                 <!-- Newsletter Form -->
-                <form class="newsletter-form max-w-md mx-auto flex flex-col sm:flex-row gap-3" action="{% url 'core:newsletter_signup' %}" method="POST">
+                <form class="newsletter-form max-w-md mx-auto flex flex-col sm:flex-row gap-3" action="#" method="POST">
                     {% csrf_token %}
                     <div class="flex-grow">
                         <label for="newsletter-email" class="sr-only">Email address</label>
@@ -17,15 +30,18 @@
                                name="email" 
                                id="newsletter-email"
                                required
-                               class="w-full px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+                               class="w-full px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent focus:border-transparent"
                                placeholder="Enter your email">
                     </div>
                     <button type="submit" 
-                            class="px-6 py-3 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-gray-900 transition-colors duration-200">
+                            class="px-6 py-3 bg-[#f68712] text-white font-medium rounded-lg hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#03466e] focus:ring-[#f68712] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
                         Subscribe
+                        <svg class="inline-block ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                        </svg>
                     </button>
                 </form>
-                <p class="text-xs text-blue-200 mt-4">
+                <p class="text-xs text-blue-300 mt-4">
                     We respect your privacy. Unsubscribe at any time.
                 </p>
             </div>
@@ -33,25 +49,34 @@
     </div>
     
     <!-- Main Footer -->
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12">
             <!-- Company Info -->
             <div class="lg:col-span-1">
-                <img src="{% static 'images/logo-white.svg' %}" alt="MetaAnalytics" class="h-8 w-auto mb-4">
-                <p class="text-sm text-gray-400 mb-4">
+                {% if footer_logo %}
+                <img src="{% static 'images/logo.png' %}" alt="Business Sight Technologies" class="h-8 w-auto mb-4">
+                {% else %}
+                <div class="flex items-center space-x-2 mb-4">
+                    <div class="w-12 h-8 bg-[#f68712] rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-xl">BST</span>
+                    </div>
+                    <span class="text-white font-bold text-xl">Business Sight Technologies</span>
+                </div>
+                {% endif %}
+                <p class="text-sm text-gray-400 mb-4 leading-relaxed">
                     Empowering SMEs with customizable, no-code analytics. Track what matters, your way.
                 </p>
                 <div class="flex space-x-4">
-                    <a href="{{ social_media.twitter }}" class="text-gray-400 hover:text-white transition-colors duration-200" aria-label="Twitter">
+                    <a href="{{ social_media.twitter }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="Twitter">
                         <i class="fab fa-twitter text-xl"></i>
                     </a>
-                    <a href="{{ social_media.linkedin }}" class="text-gray-400 hover:text-white transition-colors duration-200" aria-label="LinkedIn">
+                    <a href="{{ social_media.linkedin }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="LinkedIn">
                         <i class="fab fa-linkedin text-xl"></i>
                     </a>
-                    <a href="{{ social_media.github }}" class="text-gray-400 hover:text-white transition-colors duration-200" aria-label="GitHub">
+                    <a href="{{ social_media.github }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="GitHub">
                         <i class="fab fa-github text-xl"></i>
                     </a>
-                    <a href="{{ social_media.youtube }}" class="text-gray-400 hover:text-white transition-colors duration-200" aria-label="YouTube">
+                    <a href="{{ social_media.youtube }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="YouTube">
                         <i class="fab fa-youtube text-xl"></i>
                     </a>
                 </div>
@@ -59,11 +84,17 @@
             
             <!-- Footer Navigation Columns -->
             <div>
-                <h3 class="text-white font-semibold mb-4">Product</h3>
-                <ul class="space-y-2">
+                <h3 class="text-white font-semibold mb-4 relative inline-block">
+                    Product
+                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
+                </h3>
+                <ul class="space-y-3 mt-6">
                     {% for item in footer_nav.product %}
                     <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
+                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
                             {{ item.title }}
                         </a>
                     </li>
@@ -72,11 +103,17 @@
             </div>
             
             <div>
-                <h3 class="text-white font-semibold mb-4">Solutions</h3>
-                <ul class="space-y-2">
+                <h3 class="text-white font-semibold mb-4 relative inline-block">
+                    Solutions
+                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
+                </h3>
+                <ul class="space-y-3 mt-6">
                     {% for item in footer_nav.solutions %}
                     <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
+                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
                             {{ item.title }}
                         </a>
                     </li>
@@ -85,11 +122,17 @@
             </div>
             
             <div>
-                <h3 class="text-white font-semibold mb-4">Resources</h3>
-                <ul class="space-y-2">
+                <h3 class="text-white font-semibold mb-4 relative inline-block">
+                    Resources
+                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
+                </h3>
+                <ul class="space-y-3 mt-6">
                     {% for item in footer_nav.resources %}
                     <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
+                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
                             {{ item.title }}
                         </a>
                     </li>
@@ -98,11 +141,17 @@
             </div>
             
             <div>
-                <h3 class="text-white font-semibold mb-4">Company</h3>
-                <ul class="space-y-2">
+                <h3 class="text-white font-semibold mb-4 relative inline-block">
+                    Company
+                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
+                </h3>
+                <ul class="space-y-3 mt-6">
                     {% for item in footer_nav.company %}
                     <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
+                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
                             {{ item.title }}
                         </a>
                     </li>
@@ -111,84 +160,233 @@
             </div>
         </div>
         
-        <!-- Contact Info -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 pt-8 border-t border-gray-800">
-            <div class="flex items-center space-x-3">
-                <i class="fas fa-envelope text-blue-500"></i>
-                <a href="mailto:{{ support_email }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
-                    {{ support_email }}
-                </a>
+        <!-- Contact Info with Orange Icons -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 pt-8 border-t border-gray-800">
+            <div class="flex items-center space-x-4 group">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
+                    <i class="fas fa-envelope text-white"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Email</p>
+                    <a href="mailto:{{ support_email }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200">
+                        {{ support_email }}
+                    </a>
+                </div>
             </div>
-            <div class="flex items-center space-x-3">
-                <i class="fas fa-phone text-blue-500"></i>
-                <a href="tel:{{ phone_number }}" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
-                    {{ phone_number }}
-                </a>
+            <div class="flex items-center space-x-4 group">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
+                    <i class="fas fa-phone text-white"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Phone</p>
+                    <a href="tel:{{ phone_number }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200">
+                        {{ phone_number }}
+                    </a>
+                </div>
             </div>
-            <div class="flex items-center space-x-3">
-                <i class="fas fa-map-marker-alt text-blue-500"></i>
-                <span class="text-sm text-gray-400">{{ address }}</span>
+            <div class="flex items-center space-x-4 group">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
+                    <i class="fas fa-map-marker-alt text-white"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Address</p>
+                    <span class="text-sm text-gray-400">{{ address }}</span>
+                </div>
             </div>
         </div>
         
         <!-- Bottom Bar -->
-        <div class="mt-8 pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center">
-            <p class="text-sm text-gray-400">
-                &copy; {% now "Y" %} MetaAnalytics. All rights reserved.
+        <div class="mt-12 pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center">
+            <p class="text-sm text-gray-400 order-2 md:order-1 mt-4 md:mt-0">
+                &copy; {% now "Y" %} Business Signt Technologies. 
+                <span class="text-[#f68712]">All rights reserved.</span>
             </p>
-            <div class="flex space-x-6 mt-4 md:mt-0">
-                <a href="/privacy/" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+            <div class="flex space-x-8 order-1 md:order-2">
+                <a href="/privacy/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
                     Privacy Policy
+                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
                 </a>
-                <a href="/terms/" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                <a href="/terms/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
                     Terms of Service
+                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
                 </a>
-                <a href="/cookies/" class="text-sm text-gray-400 hover:text-white transition-colors duration-200">
+                <a href="/cookies/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
                     Cookie Policy
+                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
                 </a>
             </div>
         </div>
     </div>
 </footer>
 
-<!-- Newsletter Form Handling -->
+<!-- Newsletter Form Handling with Toast Notifications -->
+<style>
+    .toast-notification {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem;
+        color: white;
+        font-weight: 500;
+        z-index: 9999;
+        animation: slideIn 0.3s ease-out;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    
+    .toast-success {
+        background-color: #10b981;
+        border-left: 4px solid #059669;
+    }
+    
+    .toast-error {
+        background-color: #ef4444;
+        border-left: 4px solid #dc2626;
+    }
+    
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    .toast-notification.fade-out {
+        animation: fadeOut 0.3s ease-out forwards;
+    }
+    
+    @keyframes fadeOut {
+        to {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+    }
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const newsletterForm = document.querySelector('.newsletter-form');
+    
+    // Create toast container
+    const toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    document.body.appendChild(toastContainer);
+    
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `toast-notification toast-${type}`;
+        toast.textContent = message;
+        
+        toastContainer.appendChild(toast);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 5000);
+        
+        // Click to dismiss
+        toast.addEventListener('click', () => {
+            toast.classList.add('fade-out');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        });
+    }
     
     if (newsletterForm) {
         newsletterForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            const submitButton = this.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            submitButton.innerHTML = `
+                <svg class="animate-spin inline-block w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Subscribing...
+            `;
+            submitButton.disabled = true;
+            
             const formData = new FormData(this);
-            const data = {
-                email: formData.get('email'),
-                first_name: formData.get('first_name') || ''
-            };
+            const email = formData.get('email');
+            
+            // Email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                showToast('Please enter a valid email address.', 'error');
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+                return;
+            }
             
             try {
-                const response = await fetch(this.action, {
+                const response = await fetch(this.action || '/api/newsletter/subscribe/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': formData.get('csrfmiddlewaretoken')
                     },
-                    body: JSON.stringify(data)
+                    body: JSON.stringify({ email: email })
                 });
                 
                 const result = await response.json();
                 
-                if (result.success) {
-                    // Show success message
-                    alert(result.message);
+                if (response.ok && result.success) {
+                    showToast('🎉 Successfully subscribed to newsletter!', 'success');
                     this.reset();
                 } else {
-                    alert(result.error || 'Something went wrong. Please try again.');
+                    showToast(result.error || 'Something went wrong. Please try again.', 'error');
                 }
             } catch (error) {
-                alert('Network error. Please try again.');
+                console.error('Newsletter subscription error:', error);
+                showToast('Network error. Please check your connection and try again.', 'error');
+            } finally {
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
             }
         });
     }
+
+    // Smooth scroll to top when clicking footer links (optional)
+    const footerLinks = document.querySelectorAll('footer a[href^="#"]');
+    footerLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href');
+            if (targetId === '#') {
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            } else {
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        });
+    });
 });
+
+// Add Font Awesome if not already present
+if (!document.querySelector('link[href*="font-awesome"]')) {
+    const faLink = document.createElement('link');
+    faLink.rel = 'stylesheet';
+    faLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+    document.head.appendChild(faLink);
+}
 </script>
+
+<!-- Optional: Add Alpine.js for interactive elements if needed -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
