@@ -28,16 +28,20 @@ SECRET_KEY = config("SECRET_KEY")
 # Application definition
 
 INSTALLED_APPS = [
-    'allauth',
-    'allauth.account',
-    'allauth.socialaccount',
-    'allauth.socialaccount.providers.google',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
+
+    # Allauth apps
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.linkedin_oauth2',
 
     # Local apps
     'apps.core',
@@ -85,6 +89,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'apps.core.context_processors.site_settings',
+                'apps.core.context_processors.navigation',
             ],
         },
     },
@@ -130,6 +136,110 @@ STATIC_URL = 'static/'
 
 SITE_ID = 1
 
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Default Django auth
+    'allauth.account.auth_backends.AuthenticationBackend',  # Allauth auth
+]
+
+# ============================================================================
+# ACCOUNT CONFIGURATION (Local Authentication)
+# ============================================================================
+
+# Signup fields configuration (new in 65.x) [citation:1][citation:9]
+ACCOUNT_SIGNUP_FIELDS = [
+    'email*',      # Required
+    'password1*',  # Required
+    'password2*',  # Required
+    # 'username*', # Uncomment if you want username field
+]
+
+# Login methods [citation:9]
+ACCOUNT_LOGIN_METHODS = {'email'}  # Login with email only
+
+# Email settings
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # "mandatory", "optional", or "none"
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "Business Sight Technologies - "
+
+# Password settings
+ACCOUNT_SIGNUP_PASSWORD_VERIFICATION = True  # Verify password confirmation
+ACCOUNT_PASSWORD_MIN_LENGTH = 8  # Minimum password length
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = True  # Log out user after password change
+
+# Login/Logout redirects
+LOGIN_URL = "account_login"
+LOGIN_REDIRECT_URL = "core:home"  # Redirect after login
+LOGOUT_REDIRECT_URL = "core:home"  # Redirect after logout
+ACCOUNT_LOGOUT_ON_GET = True  # Logout via GET request
+
+# Advanced features
+ACCOUNT_LOGIN_BY_CODE_ENABLED = True  # Magic link login [citation:9]
+ACCOUNT_PASSKEY_LOGIN_ENABLED = True  # Passkey support
+
+# Security
+ACCOUNT_PREVENT_ENUMERATION = True  # Prevent account enumeration attacks
+ACCOUNT_RATE_LIMITS = {
+    'login_failed': '5/5m',  # 5 attempts per 5 minutes
+    'signup': '5/5m',
+}
+
+# ============================================================================
+# SOCIAL ACCOUNT CONFIGURATION
+# ============================================================================
+
+# Enable social authentication
+SOCIALACCOUNT_ENABLED = True
+SOCIALACCOUNT_ONLY = False  # Allow both local and social auth
+SOCIALACCOUNT_AUTO_SIGNUP = True  # Auto signup with social account data 
+SOCIALACCOUNT_STORE_TOKENS = True  # Store OAuth tokens
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True  # Authenticate by email match
+
+# Social Account Providers Configuration [
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': config("GOOGLE_CLIENT_ID"),
+            'secret': config("GOOGLE_CLIENT_SECRET"),
+            'key': ''
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        },
+        'METHOD': 'oauth2',
+        'VERIFIED_EMAIL': True,  # Treat email as verified if provider says so
+        'EMAIL_AUTHENTICATION': True,  # Auto-connect if email matches
+    },
+    "openid_connect": {
+        "APPS": [
+            {
+                "provider_id": "linkedin",
+                "name": "LinkedIn",
+                "client_id": config("LINKEDIN_CLIENT_ID"),
+                "secret": config("LINKEDIN_CLIENT_SECRET"),
+                "settings": {
+                    "server_url": "https://www.linkedin.com/oauth",
+                },
+            }
+        ]
+    }
+    
+}
+
+# Sending email settings
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config("EMAIL_HOST_USER")  # Your email address
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")  # Your email password
+
 
 SUPPORT_EMAIL = config('SUPPORT_EMAIL', default='support@businessight.com')
 SALES_EMAIL = config('SALES_EMAIL', default='sales@businessight.com')
@@ -137,3 +247,4 @@ PHONE_NUMBER = config('PHONE_NUMBER', default='+254 798 393 182')
 ADDRESS = config('ADDRESS', default='123 Analytics Ave, Nairobi, CA 94105')
 SITE_NAME = config('SITE_NAME', default='Businessight')
 SITE_URL = config('SITE_URL', default='http://localhost:8000')
+

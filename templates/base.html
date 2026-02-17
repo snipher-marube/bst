@@ -7,10 +7,10 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     
     <!-- SEO Meta Tags -->
-    <title>{% block title %}{{ meta_title|default:site_settings.default_meta_title }}{% endblock %}</title>
-    <meta name="description" content="{% block meta_description %}{{ meta_description|default:site_settings.default_meta_description }}{% endblock %}">
-    <meta name="keywords" content="{% block meta_keywords %}{{ meta_keywords|default:site_settings.default_meta_keywords }}{% endblock %}">
-    <meta name="author" content="{{ site_author|default:'Snipher Marube' }}">
+    <title>{% block title %}{% firstof meta_title site_settings.default_meta_title 'MetaAnalytics' %}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{% firstof meta_description site_settings.default_meta_description 'Build your own analytics dashboard without code' %}{% endblock %}">
+    <meta name="keywords" content="{% block meta_keywords %}{% firstof meta_keywords site_settings.default_meta_keywords 'analytics, business intelligence, no-code, data tracking' %}{% endblock %}">
+    <meta name="author" content="{% firstof site_author 'Snipher Marube' %}">
     <meta name="robots" content="{% block robots %}index, follow{% endblock %}">
     
     <!-- Canonical URL -->
@@ -19,16 +19,16 @@
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="{% block og_type %}website{% endblock %}">
     <meta property="og:url" content="{{ request.build_absolute_uri }}">
-    <meta property="og:title" content="{% block og_title %}{{ og_title|default:meta_title|default:site_settings.default_meta_title }}{% endblock %}">
-    <meta property="og:description" content="{% block og_description %}{{ og_description|default:meta_description|default:site_settings.default_meta_description }}{% endblock %}">
-    <meta property="og:image" content="{% block og_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/og-default.jpg' %}{% endif %}{% endblock %}">
-    <meta property="og:site_name" content="{{ site_name }}">
+    <meta property="og:title" content="{% block og_title %}{% firstof og_title meta_title site_settings.default_meta_title 'Businessight' %}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% firstof og_description meta_description site_settings.default_meta_description 'Build your own analytics dashboard without code' %}{% endblock %}">
+    <meta property="og:image" content="{% block og_image %}{% if og_image %}{{ og_image|safe }}{% else %}{% static 'images/og-default.jpg' %}{% endif %}{% endblock %}">
+    <meta property="og:site_name" content="{% firstof site_name 'Businessight' %}">
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="{% block twitter_card %}summary_large_image{% endblock %}">
-    <meta name="twitter:title" content="{% block twitter_title %}{{ og_title|default:meta_title|default:site_settings.default_meta_title }}{% endblock %}">
-    <meta name="twitter:description" content="{% block twitter_description %}{{ og_description|default:meta_description|default:site_settings.default_meta_description }}{% endblock %}">
-    <meta name="twitter:image" content="{% block twitter_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/twitter-default.jpg' %}{% endif %}{% endblock %}">
+    <meta name="twitter:title" content="{% block twitter_title %}{% firstof og_title meta_title site_settings.default_meta_title 'Businessight' %}{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_description %}{% firstof og_description meta_description site_settings.default_meta_description 'Build your own analytics dashboard without code' %}{% endblock %}">
+    <meta name="twitter:image" content="{% block twitter_image %}{% if og_image %}{{ og_image|safe }}{% else %}{% static 'images/twitter-default.jpg' %}{% endif %}{% endblock %}">
     
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{% static 'images/favicon/favicon.ico' %}">
@@ -47,16 +47,16 @@
     <link rel="stylesheet" href="{% static 'css/output.css' %}">
     <link rel="stylesheet" href="{% static 'css/custom.css' %}">
     
-    <!-- Schema.org markup for Google+ -->
-    <meta itemprop="name" content="{% block schema_name %}{{ meta_title|default:site_settings.default_meta_title }}{% endblock %}">
-    <meta itemprop="description" content="{% block schema_description %}{{ meta_description|default:site_settings.default_meta_description }}{% endblock %}">
-    <meta itemprop="image" content="{% block schema_image %}{% if og_image %}{{ og_image|safe }}{% else %}{{ request.build_absolute_uri }}{% static 'images/schema-default.jpg' %}{% endif %}{% endblock %}">
+    <!-- Schema.org markup -->
+    <meta itemprop="name" content="{% block schema_name %}{% firstof meta_title site_settings.default_meta_title 'MetaAnalytics' %}{% endblock %}">
+    <meta itemprop="description" content="{% block schema_description %}{% firstof meta_description site_settings.default_meta_description 'Build your own analytics dashboard without code' %}{% endblock %}">
+    <meta itemprop="image" content="{% block schema_image %}{% if og_image %}{{ og_image|safe }}{% else %}{% static 'images/schema-default.jpg' %}{% endif %}{% endblock %}">
     
     {% block extra_head %}{% endblock %}
 </head>
 <body class="font-sans antialiased text-gray-800 bg-white" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-    <!-- Google Tag Manager (if configured) -->
-    {% if site_settings.google_tag_manager_id %}
+    <!-- Google Tag Manager -->
+    {% if site_settings and site_settings.google_tag_manager_id %}
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
     j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
@@ -80,7 +80,7 @@
     <!-- Footer -->
     {% include 'includes/footer.html' %}
     
-    <!-- Mobile Menu (hidden by default) -->
+    <!-- Mobile Menu -->
     {% include 'includes/mobile-menu.html' %}
     
     <!-- Cookie Consent -->
@@ -93,8 +93,8 @@
     
     {% block extra_scripts %}{% endblock %}
     
-    <!-- Google Analytics (if configured) -->
-    {% if site_settings.google_analytics_id %}
+    <!-- Google Analytics -->
+    {% if site_settings and site_settings.google_analytics_id %}
     <script async src="https://www.googletagmanager.com/gtag/js?id={{ site_settings.google_analytics_id }}"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
@@ -104,8 +104,8 @@
     </script>
     {% endif %}
     
-    <!-- Facebook Pixel (if configured) -->
-    {% if site_settings.facebook_pixel_id %}
+    <!-- Facebook Pixel -->
+    {% if site_settings and site_settings.facebook_pixel_id %}
     <script>
         !function(f,b,e,v,n,t,s)
         {if(f.fbq)return;n=f.fbq=function(){n.callMethod?

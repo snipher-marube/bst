@@ -1,26 +1,24 @@
 from django.conf import settings
+from .models import SiteSettings
 
 
 def site_settings(request):
     """
-    Context processor to inject site-wide settings into all templates
+    Context processor to inject site settings from database
     """
+    settings = SiteSettings.get_settings()
+    
     return {
-        'site_name': 'Business Sight Technologies',
-        'site_description': 'Custom Analytics Platform for SMEs - Build your own tracking system without code',
-        'site_keywords': 'analytics, business intelligence, data tracking, SME analytics, custom dashboards, no-code analytics',
-        'site_author': 'Snipher Marube',
-        'site_url': request.build_absolute_uri('/')[:-1],
-        'current_year': request.now.year if hasattr(request, 'now') else 2024,
-        'support_email': settings.SUPPORT_EMAIL if hasattr(settings, 'SUPPORT_EMAIL') else 'support@businesssight.com',
-        'sales_email': settings.SALES_EMAIL if hasattr(settings, 'SALES_EMAIL') else 'sales@businesssight.com',
-        'phone_number': settings.PHONE_NUMBER if hasattr(settings, 'PHONE_NUMBER') else '+254 798 393 182',
-        'address': settings.ADDRESS if hasattr(settings, 'ADDRESS') else '123 Analytics Ave, Nairobi, CA 94105',
+        'site_settings': settings,  # This provides the actual model instance
+        'site_name': settings.site_name if settings else 'Businessight',
+        'support_email': settings.support_email if settings else 'support@businessight.com',
+        'phone_number': settings.phone if settings else '+254 798 393 182',
+        'address': settings.address if settings else '123 Analytics Ave, Nairobi',
         'social_media': {
-            'twitter': 'https://twitter.com/businesssight',
-            'linkedin': 'https://linkedin.com/company/businesssight',
-            'github': 'https://github.com/businesssight',
-            'youtube': 'https://youtube.com/@businesssight',
+            'twitter': settings.twitter_url if settings else 'https://twitter.com/businessight',
+            'linkedin': settings.linkedin_url if settings else 'https://linkedin.com/company/businessight',
+            'github': settings.github_url if settings else 'https://github.com/businessight',
+            'youtube': settings.youtube_url if settings else 'https://youtube.com/@businessight',
         }
     }
 
