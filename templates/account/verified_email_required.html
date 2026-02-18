@@ -1,25 +1,801 @@
-{% extends "account/base_manage.html" %}
-{% load i18n %}
-{% load allauth %}
-{% block head_title %}
-    {% trans "Verify Your Email Address" %}
-{% endblock head_title %}
+{% extends "base.html" %}
+{% load static i18n allauth %}
+
+{% block title %}
+    {% trans "Verify Your Email Address" %} | {{ block.super }}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Brand color variables */
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
+        --warning-yellow: #f59e0b;
+        --info-blue: #3b82f6;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    
+    @keyframes float {
+        0% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+        100% {
+            transform: translateY(0px);
+        }
+    }
+    
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        50% {
+            transform: scale(1.05);
+            opacity: 0.8;
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes ring {
+        0% {
+            transform: rotate(0deg);
+        }
+        10% {
+            transform: rotate(10deg);
+        }
+        20% {
+            transform: rotate(-10deg);
+        }
+        30% {
+            transform: rotate(5deg);
+        }
+        40% {
+            transform: rotate(-5deg);
+        }
+        50% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(0deg);
+        }
+    }
+
+    /* Main card */
+    .verification-card {
+        background: white;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(3, 70, 110, 0.25);
+        overflow: hidden;
+        border: 1px solid rgba(3, 70, 110, 0.1);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.5s ease-out;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    
+    .card-header {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--primary-orange) 0%, 
+            #ff9f3d 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--primary-orange) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Shield icon */
+    .shield-icon-wrapper {
+        width: 6rem;
+        height: 6rem;
+        background: linear-gradient(135deg, var(--info-blue) 0%, #2563eb 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        animation: float 3s ease-in-out infinite;
+        box-shadow: 0 15px 30px -8px rgba(59, 130, 246, 0.4);
+    }
+    
+    .shield-icon {
+        color: white;
+        font-size: 3rem;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* Content styles */
+    .content-wrapper {
+        text-align: center;
+        padding: 2.5rem 2rem;
+    }
+    
+    .main-heading {
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: var(--primary-dark);
+        margin-bottom: 1.5rem;
+        line-height: 1.2;
+    }
+
+    /* Message boxes */
+    .message-box {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.03) 0%, rgba(246, 135, 18, 0.03) 100%);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        text-align: left;
+        border: 1px solid rgba(246, 135, 18, 0.2);
+        transition: all 0.3s ease;
+    }
+    
+    .message-box:hover {
+        transform: translateY(-2px);
+        border-color: rgba(246, 135, 18, 0.4);
+        box-shadow: 0 10px 25px -5px rgba(246, 135, 18, 0.2);
+    }
+    
+    .message-icon {
+        float: left;
+        margin-right: 1rem;
+        font-size: 1.5rem;
+        color: var(--primary-orange);
+    }
+    
+    .message-content {
+        overflow: hidden;
+        color: var(--gray-700);
+        line-height: 1.6;
+        font-size: 1rem;
+    }
+    
+    .message-content strong {
+        color: var(--primary-dark);
+    }
+    
+    .message-content a {
+        color: var(--primary-orange);
+        font-weight: 600;
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s ease;
+    }
+    
+    .message-content a:hover {
+        border-bottom-color: var(--primary-orange);
+        opacity: 0.9;
+    }
+    
+    .message-content a:focus {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+        border-radius: 0.25rem;
+    }
+
+    /* Info grid */
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin: 2rem 0;
+    }
+    
+    .info-item {
+        text-align: center;
+        padding: 1rem;
+        background: var(--gray-100);
+        border-radius: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .info-item:hover {
+        transform: translateY(-4px);
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        border: 1px solid rgba(246, 135, 18, 0.3);
+    }
+    
+    .info-icon {
+        font-size: 1.5rem;
+        color: var(--primary-orange);
+        margin-bottom: 0.5rem;
+    }
+    
+    .info-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+        margin-bottom: 0.25rem;
+    }
+    
+    .info-description {
+        font-size: 0.75rem;
+        color: var(--gray-500);
+    }
+
+    /* Email display */
+    .email-card {
+        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        border-radius: 1rem;
+        padding: 1.25rem;
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        border-left: 4px solid var(--info-blue);
+    }
+    
+    .email-icon {
+        width: 3rem;
+        height: 3rem;
+        background: var(--info-blue);
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+    
+    .email-details {
+        flex: 1;
+        text-align: left;
+    }
+    
+    .email-label {
+        font-size: 0.75rem;
+        color: var(--info-blue);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.25rem;
+    }
+    
+    .email-address {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+        word-break: break-all;
+    }
+
+    /* Action buttons */
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin: 2rem 0;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .btn-primary {
+        min-width: 200px;
+        padding: 1rem 2rem;
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+        border: none;
+        border-radius: 3rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        text-decoration: none;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+        left: 100%;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(246, 135, 18, 0.4);
+    }
+    
+    .btn-primary:focus {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+
+    .btn-secondary {
+        min-width: 200px;
+        padding: 1rem 2rem;
+        background: white;
+        color: var(--primary-dark);
+        font-weight: 600;
+        font-size: 1rem;
+        border: 2px solid var(--gray-200);
+        border-radius: 3rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        text-decoration: none;
+    }
+    
+    .btn-secondary:hover {
+        border-color: var(--primary-orange);
+        background-color: #fff5e6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-secondary:focus {
+        outline: none;
+        border-color: var(--primary-orange);
+        box-shadow: var(--focus-ring);
+    }
+
+    /* Note box */
+    .note-box {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border-radius: 1rem;
+        padding: 1.25rem;
+        margin-top: 2rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        border-left: 4px solid var(--warning-yellow);
+        text-align: left;
+    }
+    
+    .note-icon {
+        color: var(--warning-yellow);
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+    
+    .note-content {
+        color: #92400e;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+    
+    .note-content a {
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        transition: color 0.2s ease;
+    }
+    
+    .note-content a:hover {
+        color: var(--warning-yellow);
+    }
+
+    /* Loading spinner */
+    .spinner {
+        display: inline-block;
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Accessibility focus styles */
+    *:focus-visible {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+        .verification-card {
+            margin: 1rem;
+        }
+        
+        .main-heading {
+            font-size: 1.8rem;
+        }
+        
+        .shield-icon-wrapper {
+            width: 5rem;
+            height: 5rem;
+        }
+        
+        .shield-icon {
+            font-size: 2.5rem;
+        }
+        
+        .info-grid {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+        }
+        
+        .btn-primary, .btn-secondary {
+            width: 100%;
+        }
+        
+        .email-card {
+            flex-direction: column;
+            text-align: center;
+        }
+        
+        .message-icon {
+            float: none;
+            margin: 0 0 0.5rem 0;
+            text-align: center;
+        }
+        
+        .message-content {
+            text-align: center;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-    {% element h1 %}
-        {% trans "Verify Your Email Address" %}
-    {% endelement %}
-    {% url 'account_email' as email_url %}
-    {% element p %}
-        {% blocktrans %}This part of the site requires us to verify that
-you are who you claim to be. For this purpose, we require that you
-verify ownership of your email address. {% endblocktrans %}
-    {% endelement %}
-    {% element p %}
-        {% blocktrans %}We have sent an email to you for
-verification. Please click on the link inside that email. If you do not see the verification email in your main inbox, check your spam folder. Otherwise
-contact us if you do not receive it within a few minutes.{% endblocktrans %}
-    {% endelement %}
-    {% element p %}
-        {% blocktrans %}<strong>Note:</strong> you can still <a href="{{ email_url }}">change your email address</a>.{% endblocktrans %}
-    {% endelement %}
-{% endblock content %}
+<main class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 py-8 sm:py-12 lg:py-16 flex items-center justify-center" id="main-content">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-2xl mx-auto">
+            
+            <!-- Skip to main content link -->
+            <a href="#main-heading" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
+                {% trans "Skip to main content" %}
+            </a>
+
+            <!-- Brand Header -->
+            <div class="text-center mb-6">
+                <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
+                    {% if site_settings and site_settings.logo %}
+                    <img src="{{ site_settings.logo.url }}" 
+                         alt="{{ site_name }}" 
+                         class="h-12 w-auto mx-auto hover:scale-105 transition-transform duration-300"
+                         loading="lazy">
+                    {% else %}
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center shadow-md" aria-hidden="true">
+                            <span class="text-white font-bold text-lg">M</span>
+                        </div>
+                        <span class="text-[#03466e] font-bold text-xl">etaAnalytics</span>
+                    </div>
+                    {% endif %}
+                </a>
+            </div>
+
+            <!-- Verification Card -->
+            <div class="verification-card">
+                <div class="card-header" role="presentation"></div>
+                
+                <div class="content-wrapper">
+                    
+                    <!-- Shield Icon -->
+                    <div class="shield-icon-wrapper" aria-hidden="true">
+                        <i class="fas fa-shield-alt shield-icon"></i>
+                    </div>
+                    
+                    <!-- Main Heading -->
+                    <h1 class="main-heading" id="main-heading" tabindex="-1">
+                        {% trans "Email Verification Required" %}
+                    </h1>
+
+                    <!-- Email Display (if available) -->
+                    {% if user.email %}
+                    <div class="email-card">
+                        <div class="email-icon" aria-hidden="true">
+                            <i class="fas fa-envelope"></i>
+                        </div>
+                        <div class="email-details">
+                            <div class="email-label">{% trans "Your email address" %}</div>
+                            <div class="email-address">{{ user.email }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- First Message Box -->
+                    <div class="message-box">
+                        <div class="message-icon" aria-hidden="true">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="message-content">
+                            <strong>{% trans "Identity Verification Required" %}</strong>
+                            <p class="mt-2">
+                                {% blocktrans %}This part of the site requires us to verify that you are who you claim to be. For this purpose, we require that you verify ownership of your email address.{% endblocktrans %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Second Message Box -->
+                    <div class="message-box">
+                        <div class="message-icon" aria-hidden="true">
+                            <i class="fas fa-paper-plane"></i>
+                        </div>
+                        <div class="message-content">
+                            <strong>{% trans "Verification Email Sent" %}</strong>
+                            <p class="mt-2">
+                                {% blocktrans %}We have sent an email to you for verification. Please click on the link inside that email. If you do not see the verification email in your main inbox, check your spam folder. Otherwise contact us if you do not receive it within a few minutes.{% endblocktrans %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Info Grid -->
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-icon" aria-hidden="true">
+                                <i class="fas fa-inbox"></i>
+                            </div>
+                            <div class="info-title">{% trans "Check Inbox" %}</div>
+                            <div class="info-description">
+                                {% trans "Look for our verification email" %}
+                            </div>
+                        </div>
+                        
+                        <div class="info-item">
+                            <div class="info-icon" aria-hidden="true">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div class="info-title">{% trans "Check Spam" %}</div>
+                            <div class="info-description">
+                                {% trans "Emails sometimes end up here" %}
+                            </div>
+                        </div>
+                        
+                        <div class="info-item">
+                            <div class="info-icon" aria-hidden="true">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="info-title">{% trans "Wait Time" %}</div>
+                            <div class="info-description">
+                                {% trans "Allow 2-3 minutes for delivery" %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <button class="btn-primary" id="refresh-status">
+                            <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                            {% trans "I've Verified" %}
+                        </button>
+                        
+                        <button class="btn-secondary" id="resend-email">
+                            <i class="fas fa-redo-alt" aria-hidden="true"></i>
+                            {% trans "Resend Email" %}
+                        </button>
+                    </div>
+
+                    <!-- Note Box -->
+                    <div class="note-box">
+                        <div class="note-icon" aria-hidden="true">
+                            <i class="fas fa-pencil-alt"></i>
+                        </div>
+                        <div class="note-content">
+                            {% url 'account_email' as email_url %}
+                            {% blocktrans %}<strong>Note:</strong> You can still <a href="{{ email_url }}">change your email address</a> if you need to use a different one.{% endblocktrans %}
+                        </div>
+                    </div>
+
+                    <!-- Help Text -->
+                    <p class="text-sm text-gray-500 mt-4">
+                        {% trans "Having trouble?" %}
+                        <a href="{% url 'core:contact' %}" 
+                           class="text-[#03466e] font-medium hover:text-[#f68712] transition-colors focus:outline-none focus:underline">
+                            {% trans "Contact support" %}
+                        </a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Trust Message -->
+            <p class="text-center text-xs text-gray-500 mt-6">
+                <i class="fas fa-lock mr-1 text-[#f68712]" aria-hidden="true"></i>
+                {% trans "Email verification helps keep your account secure" %}
+            </p>
+        </div>
+    </div>
+</main>
+
+<!-- JavaScript for enhanced UX -->
+<script>
+(function() {
+    'use strict';
+
+    // Focus on main heading for screen readers
+    const mainHeading = document.getElementById('main-heading');
+    if (mainHeading) {
+        mainHeading.setAttribute('tabindex', '-1');
+        mainHeading.focus();
+    }
+
+    // Refresh/Check verification status
+    const refreshBtn = document.getElementById('refresh-status');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Checking..." %}';
+            
+            // Simulate checking verification status
+            setTimeout(() => {
+                // Show success message
+                const successMsg = document.createElement('div');
+                successMsg.className = 'bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-lg mt-4';
+                successMsg.setAttribute('role', 'status');
+                successMsg.innerHTML = `
+                    <div class="flex">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span>{% trans "If you've verified your email, please try refreshing the page. If not, please check your inbox." %}</span>
+                    </div>
+                `;
+                this.parentElement.parentElement.appendChild(successMsg);
+                
+                setTimeout(() => {
+                    successMsg.remove();
+                }, 5000);
+                
+                this.innerHTML = '<i class="fas fa-sync-alt"></i> {% trans "I\'ve Verified" %}';
+            }, 1500);
+        });
+    }
+
+    // Resend email functionality
+    const resendBtn = document.getElementById('resend-email');
+    if (resendBtn) {
+        resendBtn.addEventListener('click', function() {
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Sending..." %}';
+            
+            // Simulate resend
+            setTimeout(() => {
+                this.innerHTML = '<i class="fas fa-redo-alt"></i> {% trans "Resend Email" %}';
+                
+                // Show success message
+                const successMsg = document.createElement('div');
+                successMsg.className = 'bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-lg mt-4';
+                successMsg.setAttribute('role', 'status');
+                successMsg.innerHTML = `
+                    <div class="flex">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span>{% trans "Verification email resent! Please check your inbox." %}</span>
+                    </div>
+                `;
+                this.parentElement.parentElement.appendChild(successMsg);
+                
+                setTimeout(() => {
+                    successMsg.remove();
+                }, 5000);
+            }, 1500);
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Alt + V for "I've Verified"
+        if (e.altKey && e.key === 'v') {
+            e.preventDefault();
+            const refreshBtn = document.getElementById('refresh-status');
+            if (refreshBtn) {
+                refreshBtn.click();
+            }
+        }
+        
+        // Alt + R to resend
+        if (e.altKey && e.key === 'r') {
+            e.preventDefault();
+            const resendBtn = document.getElementById('resend-email');
+            if (resendBtn) {
+                resendBtn.click();
+            }
+        }
+        
+        // Alt + C to change email
+        if (e.altKey && e.key === 'c') {
+            e.preventDefault();
+            const changeLink = document.querySelector('a[href*="email"]');
+            if (changeLink) {
+                window.location.href = changeLink.href;
+            }
+        }
+    });
+
+    // Track page view in analytics (if available)
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'view_verification_required', {
+            'event_category': 'authentication',
+            'event_label': 'email_verification_required'
+        });
+    }
+
+    // Animate message boxes on scroll
+    const observerOptions = {
+        threshold: 0.2,
+        rootMargin: '0px 0px -50px 0px'
+    };
+    
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, observerOptions);
+    
+    document.querySelectorAll('.message-box, .info-item').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(20px)';
+        el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        observer.observe(el);
+    });
+
+    // Add hover effect to shield icon
+    const shieldIcon = document.querySelector('.shield-icon-wrapper');
+    if (shieldIcon) {
+        shieldIcon.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.1)';
+        });
+        shieldIcon.addEventListener('mouseleave', function() {
+            this.style.transform = '';
+        });
+    }
+
+})();
+</script>
+{% endblock %}

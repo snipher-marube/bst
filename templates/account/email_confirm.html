@@ -1,39 +1,749 @@
-{% extends "account/base_entrance.html" %}
-{% load i18n %}
-{% load account %}
-{% load allauth %}
-{% block head_title %}
-    {% trans "Confirm Email Address" %}
-{% endblock head_title %}
+{% extends "base.html" %}
+{% load static i18n account allauth %}
+
+{% block title %}
+    {% trans "Confirm Email Address" %} | {{ block.super }}
+{% endblock %}
+
 {% block content %}
-    {% element h1 %}
-        {% trans "Confirm Email Address" %}
-    {% endelement %}
-    {% if confirmation %}
-        {% user_display confirmation.email_address.user as user_display %}
-        {% if can_confirm %}
-            {% element p %}
-                {% blocktrans with confirmation.email_address.email as email %}Please confirm that <a href="mailto:{{ email }}">{{ email }}</a> is an email address for user {{ user_display }}.{% endblocktrans %}
-            {% endelement %}
-            {% url 'account_confirm_email' confirmation.key as action_url %}
-            {% element form method="post" action=action_url %}
-                {% slot actions %}
-                    {% csrf_token %}
-                    {{ redirect_field }}
-                    {% element button type="submit" %}
-                        {% trans 'Confirm' %}
-                    {% endelement %}
-                {% endslot %}
-            {% endelement %}
-        {% else %}
-            {% element p %}
-                {% blocktrans %}Unable to confirm {{ email }} because it is already confirmed by a different account.{% endblocktrans %}
-            {% endelement %}
-        {% endif %}
-    {% else %}
-        {% url 'account_email' as email_url %}
-        {% element p %}
-            {% blocktrans %}This email confirmation link expired or is invalid. Please <a href="{{ email_url }}">issue a new email confirmation request</a>.{% endblocktrans %}
-        {% endelement %}
-    {% endif %}
-{% endblock content %}
+<style>
+    /* Brand color variables */
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
+        --success-green: #10b981;
+        --warning-yellow: #f59e0b;
+        --error-red: #ef4444;
+        --info-blue: #3b82f6;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    
+    @keyframes float {
+        0% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+        100% {
+            transform: translateY(0px);
+        }
+    }
+    
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        50% {
+            transform: scale(1.05);
+            opacity: 0.8;
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes checkmark {
+        0% {
+            transform: scale(0) rotate(-180deg);
+            opacity: 0;
+        }
+        50% {
+            transform: scale(1.2) rotate(10deg);
+        }
+        100% {
+            transform: scale(1) rotate(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+        20%, 40%, 60%, 80% { transform: translateX(4px); }
+    }
+
+    /* Main card */
+    .confirm-card {
+        background: white;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(3, 70, 110, 0.25);
+        overflow: hidden;
+        border: 1px solid rgba(3, 70, 110, 0.1);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.5s ease-out;
+        max-width: 550px;
+        margin: 0 auto;
+    }
+    
+    .card-header {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--primary-orange) 0%, 
+            #ff9f3d 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--primary-orange) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    .card-header-success {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--success-green) 0%, 
+            #34d399 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--success-green) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    .card-header-error {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--error-red) 0%, 
+            #f87171 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--error-red) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Content wrapper */
+    .content-wrapper {
+        text-align: center;
+        padding: 2.5rem 2rem;
+    }
+
+    /* Icon styles */
+    .icon-wrapper {
+        width: 6rem;
+        height: 6rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        animation: float 3s ease-in-out infinite;
+        box-shadow: 0 15px 30px -8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .icon-wrapper-success {
+        background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+    }
+    
+    .icon-wrapper-warning {
+        background: linear-gradient(135deg, var(--warning-yellow) 0%, #d97706 100%);
+    }
+    
+    .icon-wrapper-error {
+        background: linear-gradient(135deg, var(--error-red) 0%, #dc2626 100%);
+    }
+    
+    .icon {
+        color: white;
+        font-size: 3rem;
+    }
+    
+    .icon-check {
+        animation: checkmark 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+
+    /* Heading styles */
+    .main-heading {
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: var(--primary-dark);
+        margin-bottom: 1rem;
+        line-height: 1.2;
+    }
+
+    /* Email card */
+    .email-card {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        border: 2px dashed rgba(246, 135, 18, 0.3);
+    }
+    
+    .email-label {
+        font-size: 0.875rem;
+        color: var(--gray-500);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+    
+    .email-address {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary-dark);
+        word-break: break-all;
+    }
+    
+    .user-name {
+        font-size: 1.125rem;
+        color: var(--gray-600);
+        margin-top: 0.5rem;
+    }
+
+    /* Message box */
+    .message-box {
+        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        border-left: 4px solid var(--info-blue);
+        border-radius: 1rem;
+        padding: 1.25rem;
+        margin: 1.5rem 0;
+        text-align: left;
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .message-icon {
+        color: var(--info-blue);
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+    
+    .message-content {
+        color: #1e40af;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+    
+    .message-content a {
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        transition: color 0.2s ease;
+    }
+    
+    .message-content a:hover {
+        color: var(--info-blue);
+    }
+
+    /* Error box */
+    .error-box {
+        background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        border-left: 4px solid var(--error-red);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        text-align: center;
+        animation: shake 0.5s ease-in-out;
+    }
+    
+    .error-icon {
+        font-size: 2rem;
+        color: var(--error-red);
+        margin-bottom: 0.5rem;
+    }
+    
+    .error-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #991b1b;
+        margin-bottom: 0.5rem;
+    }
+    
+    .error-message {
+        color: #7f1d1d;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+    
+    .error-message a {
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: underline;
+        transition: color 0.2s ease;
+    }
+    
+    .error-message a:hover {
+        color: var(--error-red);
+    }
+
+    /* User info card */
+    .user-info {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.03) 0%, rgba(246, 135, 18, 0.03) 100%);
+        border-radius: 1rem;
+        padding: 1rem;
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        border: 1px solid rgba(246, 135, 18, 0.2);
+    }
+    
+    .user-info i {
+        color: var(--primary-orange);
+    }
+
+    /* Action buttons */
+    .action-buttons {
+        margin: 2rem 0 1rem;
+    }
+    
+    .btn-primary {
+        width: 100%;
+        padding: 1rem 2rem;
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 1.125rem;
+        border: none;
+        border-radius: 3rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+        left: 100%;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(246, 135, 18, 0.4);
+    }
+    
+    .btn-primary:focus {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+    
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+    
+    .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .btn-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--primary-dark);
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        transition: all 0.2s ease;
+        margin-top: 1rem;
+    }
+    
+    .btn-link:hover {
+        background: rgba(246, 135, 18, 0.1);
+        color: var(--primary-orange);
+    }
+    
+    .btn-link:focus {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Loading spinner */
+    .spinner {
+        display: inline-block;
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Accessibility focus styles */
+    *:focus-visible {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+        .confirm-card {
+            margin: 1rem;
+        }
+        
+        .main-heading {
+            font-size: 1.8rem;
+        }
+        
+        .icon-wrapper {
+            width: 5rem;
+            height: 5rem;
+        }
+        
+        .icon {
+            font-size: 2.5rem;
+        }
+        
+        .email-address {
+            font-size: 1.25rem;
+        }
+        
+        .message-box {
+            flex-direction: column;
+            text-align: center;
+        }
+        
+        .message-icon {
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+
+<main class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 py-8 sm:py-12 lg:py-16 flex items-center justify-center" id="main-content">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-lg mx-auto">
+            
+            <!-- Skip to main content link -->
+            <a href="#main-heading" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
+                {% trans "Skip to main content" %}
+            </a>
+
+            <!-- Brand Header -->
+            <div class="text-center mb-6">
+                <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
+                    {% if site_settings and site_settings.logo %}
+                    <img src="{{ site_settings.logo.url }}" 
+                         alt="{{ site_name }}" 
+                         class="h-12 w-auto mx-auto hover:scale-105 transition-transform duration-300"
+                         loading="lazy">
+                    {% else %}
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center shadow-md" aria-hidden="true">
+                            <span class="text-white font-bold text-lg">M</span>
+                        </div>
+                        <span class="text-[#03466e] font-bold text-xl">etaAnalytics</span>
+                    </div>
+                    {% endif %}
+                </a>
+            </div>
+
+            <!-- Email Confirmation Card -->
+            {% if confirmation %}
+                {% if can_confirm %}
+                    <!-- Valid Confirmation State -->
+                    <div class="confirm-card">
+                        <div class="card-header" role="presentation"></div>
+                        
+                        <div class="content-wrapper">
+                            <!-- Success Icon -->
+                            <div class="icon-wrapper icon-wrapper-success">
+                                <i class="fas fa-envelope-open-text icon icon-check"></i>
+                            </div>
+                            
+                            <!-- Heading -->
+                            <h1 class="main-heading" id="main-heading" tabindex="-1">
+                                {% trans "Confirm Your Email" %}
+                            </h1>
+
+                            <!-- Email Card -->
+                            <div class="email-card">
+                                <div class="email-label">{% trans "Email to confirm" %}</div>
+                                <div class="email-address">
+                                    <i class="fas fa-envelope text-[#f68712] mr-2" aria-hidden="true"></i>
+                                    {{ confirmation.email_address.email }}
+                                </div>
+                                {% user_display confirmation.email_address.user as user_display %}
+                                <div class="user-name">
+                                    <i class="fas fa-user text-[#f68712] mr-1" aria-hidden="true"></i>
+                                    {% blocktrans %}Account: {{ user_display }}{% endblocktrans %}
+                                </div>
+                            </div>
+
+                            <!-- Confirmation Message -->
+                            <div class="message-box">
+                                <i class="fas fa-shield-alt message-icon" aria-hidden="true"></i>
+                                <div class="message-content">
+                                    {% blocktrans with email=confirmation.email_address.email %}Please confirm that <strong>{{ email }}</strong> is your email address. This helps us verify your identity and secure your account.{% endblocktrans %}
+                                </div>
+                            </div>
+
+                            <!-- User Info -->
+                            <div class="user-info">
+                                <i class="fas fa-check-circle"></i>
+                                <span>{% trans "You're about to verify ownership of this email address" %}</span>
+                            </div>
+
+                            <!-- Confirmation Form -->
+                            {% url 'account_confirm_email' confirmation.key as action_url %}
+                            
+                            <form id="confirm-form" method="post" action="{{ action_url }}">
+                                {% csrf_token %}
+                                {{ redirect_field }}
+                                
+                                <div class="action-buttons">
+                                    <button type="submit" class="btn-primary" id="confirm-submit">
+                                        <i class="fas fa-check-circle" aria-hidden="true"></i>
+                                        {% trans 'Confirm Email Address' %}
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Help Link -->
+                            <a href="{% url 'account_email' %}" class="btn-link">
+                                <i class="fas fa-arrow-left"></i>
+                                {% trans "Back to email settings" %}
+                            </a>
+                        </div>
+                    </div>
+                {% else %}
+                    <!-- Already Confirmed State -->
+                    <div class="confirm-card">
+                        <div class="card-header-error" role="presentation"></div>
+                        
+                        <div class="content-wrapper">
+                            <!-- Warning Icon -->
+                            <div class="icon-wrapper icon-wrapper-warning">
+                                <i class="fas fa-exclamation-triangle icon"></i>
+                            </div>
+                            
+                            <h1 class="main-heading" id="main-heading" tabindex="-1">
+                                {% trans "Email Already Confirmed" %}
+                            </h1>
+
+                            <!-- Error Box -->
+                            <div class="error-box">
+                                <div class="error-icon" aria-hidden="true">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                </div>
+                                <div class="error-title">
+                                    {% trans "Already Verified" %}
+                                </div>
+                                <div class="error-message">
+                                    {% with email=confirmation.email_address.email %}
+                                        {% blocktrans %}Unable to confirm <strong>{{ email }}</strong> because it is already confirmed by a different account.{% endblocktrans %}
+                                    {% endwith %}
+                                </div>
+                            </div>
+
+                            <!-- Help Box -->
+                            <div class="message-box">
+                                <i class="fas fa-lightbulb message-icon" aria-hidden="true"></i>
+                                <div class="message-content">
+                                    <strong>{% trans "What can I do?" %}</strong>
+                                    <p class="mt-1">
+                                        {% trans "If you believe this is a mistake, please contact our support team for assistance." %}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Action Links -->
+                            <div class="action-buttons">
+                                <a href="{% url 'account_login' %}" class="btn-primary">
+                                    <i class="fas fa-sign-in-alt" aria-hidden="true"></i>
+                                    {% trans "Sign In" %}
+                                </a>
+                            </div>
+
+                            <a href="{% url 'core:contact' %}" class="btn-link">
+                                <i class="fas fa-headset"></i>
+                                {% trans "Contact Support" %}
+                            </a>
+                        </div>
+                    </div>
+                {% endif %}
+            {% else %}
+                <!-- Invalid/Expired Link State -->
+                <div class="confirm-card">
+                    <div class="card-header-error" role="presentation"></div>
+                    
+                    <div class="content-wrapper">
+                        <!-- Error Icon -->
+                        <div class="icon-wrapper icon-wrapper-error">
+                            <i class="fas fa-clock icon"></i>
+                        </div>
+                        
+                        <h1 class="main-heading" id="main-heading" tabindex="-1">
+                            {% trans "Link Expired" %}
+                        </h1>
+
+                        <!-- Error Box -->
+                        <div class="error-box">
+                            <div class="error-icon" aria-hidden="true">
+                                <i class="fas fa-hourglass-end"></i>
+                            </div>
+                            <div class="error-title">
+                                {% trans "Confirmation Link Invalid" %}
+                            </div>
+                            <div class="error-message">
+                                <p>{% trans "This email confirmation link has expired or is invalid." %}</p>
+                                <p class="mt-2">{% trans "Confirmation links are valid for 24 hours for security reasons." %}</p>
+                            </div>
+                        </div>
+
+                        <!-- Help Box -->
+                        <div class="message-box">
+                            <i class="fas fa-redo-alt message-icon" aria-hidden="true"></i>
+                            <div class="message-content">
+                                <strong>{% trans "Request a new link" %}</strong>
+                                <p class="mt-1">
+                                    {% url 'account_email' as email_url %}
+                                    {% blocktrans %}Please <a href="{{ email_url }}">request a new email confirmation</a> to continue.{% endblocktrans %}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Action Links -->
+                        <div class="action-buttons">
+                            <a href="{% url 'account_email' %}" class="btn-primary">
+                                <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                                {% trans "New Confirmation" %}
+                            </a>
+                        </div>
+
+                        <a href="{% url 'account_login' %}" class="btn-link">
+                            <i class="fas fa-arrow-left"></i>
+                            {% trans "Back to Sign In" %}
+                        </a>
+                    </div>
+                </div>
+            {% endif %}
+
+            <!-- Trust Message -->
+            <p class="text-center text-xs text-gray-500 mt-6">
+                <i class="fas fa-shield-alt mr-1 text-[#f68712]" aria-hidden="true"></i>
+                {% trans "Email verification helps keep your account secure" %}
+            </p>
+        </div>
+    </div>
+</main>
+
+<!-- JavaScript for enhanced UX -->
+<script>
+(function() {
+    'use strict';
+
+    // Focus on main heading for screen readers
+    const mainHeading = document.getElementById('main-heading');
+    if (mainHeading) {
+        mainHeading.setAttribute('tabindex', '-1');
+        mainHeading.focus();
+    }
+
+    // Confirmation form handling
+    const confirmForm = document.getElementById('confirm-form');
+    const submitBtn = document.getElementById('confirm-submit');
+    
+    if (confirmForm && submitBtn) {
+        confirmForm.addEventListener('submit', function() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<div class="spinner" role="status" aria-label="{% trans 'Loading' %}"></div><span class="sr-only">{% trans 'Confirming...' %}</span>';
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Alt + C to confirm (if available)
+        if (e.altKey && e.key === 'c') {
+            e.preventDefault();
+            const submitBtn = document.getElementById('confirm-submit');
+            if (submitBtn && !submitBtn.disabled) {
+                submitBtn.click();
+            }
+        }
+        
+        // Alt + N for new confirmation (if available)
+        if (e.altKey && e.key === 'n') {
+            e.preventDefault();
+            const newConfirmLink = document.querySelector('a[href*="email"]');
+            if (newConfirmLink) {
+                window.location.href = newConfirmLink.href;
+            }
+        }
+    });
+
+    // Track page view in analytics (if available)
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'view_email_confirmation', {
+            'event_category': 'authentication',
+            'event_label': 'email_confirm'
+        });
+    }
+
+    // Animate icon
+    const icon = document.querySelector('.icon-wrapper');
+    if (icon) {
+        icon.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.1)';
+        });
+        icon.addEventListener('mouseleave', function() {
+            this.style.transform = '';
+        });
+    }
+
+})();
+</script>
+{% endblock %}

@@ -1,25 +1,646 @@
-{% extends "account/base_manage.html" %}
-{% load allauth i18n %}
-{% block head_title %}
-    {% trans "Sign Out" %}
-{% endblock head_title %}
+{% extends "base.html" %}
+{% load static allauth i18n %}
+
+{% block title %}
+    {% trans "Sign Out" %} | {{ block.super }}
+{% endblock title %}
+
+
 {% block content %}
-    {% element h1 %}
-        {% trans "Sign Out" %}
-    {% endelement %}
-    {% element p %}
-        {% trans 'Are you sure you want to sign out?' %}
-    {% endelement %}
-    {% url 'account_logout' as action_url %}
-    {% element form method="post" action=action_url no_visible_fields=True %}
-        {% slot body %}
-            {% csrf_token %}
-            {{ redirect_field }}
-        {% endslot %}
-        {% slot actions %}
-            {% element button type="submit" %}
-                {% trans 'Sign Out' %}
-            {% endelement %}
-        {% endslot %}
-    {% endelement %}
-{% endblock content %}
+<style>
+    /* Brand color variables */
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
+        --warning-yellow: #f59e0b;
+        --error-red: #ef4444;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes float {
+        0% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-5px);
+        }
+        100% {
+            transform: translateY(0px);
+        }
+    }
+    
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(246, 135, 18, 0.4);
+        }
+        70% {
+            box-shadow: 0 0 0 10px rgba(246, 135, 18, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(246, 135, 18, 0);
+        }
+    }
+    
+    @keyframes warningPulse {
+        0% {
+            opacity: 1;
+            transform: scale(1);
+        }
+        50% {
+            opacity: 0.8;
+            transform: scale(1.05);
+        }
+        100% {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    /* Main card */
+    .logout-card {
+        background: white;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(3, 70, 110, 0.25);
+        overflow: hidden;
+        border: 1px solid rgba(3, 70, 110, 0.1);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.5s ease-out;
+        max-width: 480px;
+        margin: 0 auto;
+    }
+    
+    .card-header {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--primary-orange) 0%, 
+            #ff9f3d 25%, 
+            var(--warning-yellow) 50%, 
+            #fbbf24 75%, 
+            var(--primary-orange) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Warning icon */
+    .warning-icon-wrapper {
+        width: 5rem;
+        height: 5rem;
+        background: linear-gradient(135deg, var(--warning-yellow) 0%, #fbbf24 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        animation: float 3s ease-in-out infinite, pulse 2s infinite;
+        box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.4);
+    }
+    
+    .warning-icon {
+        color: white;
+        font-size: 2.5rem;
+        animation: warningPulse 2s ease-in-out infinite;
+    }
+
+    /* User info card */
+    .user-info-card {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        border: 2px dashed rgba(246, 135, 18, 0.3);
+    }
+    
+    .user-avatar {
+        width: 4rem;
+        height: 4rem;
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #025b8c 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        color: white;
+        font-size: 2rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .user-email {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+        text-align: center;
+        word-break: break-all;
+    }
+    
+    .user-name {
+        font-size: 0.875rem;
+        color: var(--dark-gray);
+        opacity: 0.7;
+        text-align: center;
+        margin-top: 0.25rem;
+    }
+
+    /* Session info */
+    .session-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: #f9fafb;
+        border-radius: 1rem;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .session-icon {
+        color: var(--primary-orange);
+        font-size: 1.25rem;
+    }
+    
+    .session-details {
+        flex: 1;
+    }
+    
+    .session-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+    }
+    
+    .session-time {
+        font-size: 0.75rem;
+        color: #6b7280;
+    }
+
+    /* Action buttons */
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin: 2rem 0;
+    }
+    
+    .btn-primary {
+        flex: 1;
+        padding: 1rem 1.5rem;
+        background: linear-gradient(135deg, var(--error-red) 0%, #dc2626 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+        border: none;
+        border-radius: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+        left: 100%;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(239, 68, 68, 0.4);
+    }
+    
+    .btn-primary:focus {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+    
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .btn-secondary {
+        flex: 1;
+        padding: 1rem 1.5rem;
+        background: white;
+        color: var(--primary-dark);
+        font-weight: 600;
+        font-size: 1rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        text-decoration: none;
+    }
+    
+    .btn-secondary:hover {
+        border-color: var(--primary-orange);
+        background-color: #fff5e6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-secondary:focus {
+        outline: none;
+        border-color: var(--primary-orange);
+        box-shadow: var(--focus-ring);
+    }
+
+    /* Warning messages */
+    .warning-message {
+        background: #fef3c7;
+        border-left: 4px solid var(--warning-yellow);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .warning-message-icon {
+        color: var(--warning-yellow);
+        font-size: 1.25rem;
+        flex-shrink: 0;
+        margin-top: 0.125rem;
+    }
+    
+    .warning-message-content {
+        color: #92400e;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    /* Feature list */
+    .feature-list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+        margin: 1.5rem 0;
+    }
+    
+    .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 0.75rem;
+        background: #f9fafb;
+        font-size: 0.875rem;
+        color: var(--dark-gray);
+    }
+    
+    .feature-item i {
+        color: var(--primary-orange);
+        font-size: 0.875rem;
+    }
+
+    /* Loading spinner */
+    .spinner {
+        display: inline-block;
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Accessibility focus styles */
+    *:focus-visible {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+        .logout-card {
+            margin: 1rem;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+        }
+        
+        .warning-icon-wrapper {
+            width: 4rem;
+            height: 4rem;
+        }
+        
+        .warning-icon {
+            font-size: 2rem;
+        }
+        
+        .feature-list {
+            grid-template-columns: 1fr;
+        }
+        
+        .user-avatar {
+            width: 3.5rem;
+            height: 3.5rem;
+            font-size: 1.75rem;
+        }
+    }
+</style>
+<main class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 py-8 sm:py-12 lg:py-16 flex items-center justify-center" id="main-content">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <!-- Skip to main content link for keyboard users -->
+        <a href="#logout-form" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
+            {% trans "Skip to logout confirmation" %}
+        </a>
+
+        <!-- Brand Logo (minimal) -->
+        <div class="text-center mb-6">
+            <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
+                {% if site_settings and site_settings.logo %}
+                <img src="{{ site_settings.logo.url }}" 
+                     alt="{{ site_name }}" 
+                     class="h-12 w-auto mx-auto hover:scale-105 transition-transform duration-300"
+                     loading="lazy">
+                {% else %}
+                <div class="flex items-center justify-center space-x-2">
+                    <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center shadow-md" aria-hidden="true">
+                        <span class="text-white font-bold text-lg">M</span>
+                    </div>
+                    <span class="text-[#03466e] font-bold text-xl">etaAnalytics</span>
+                </div>
+                {% endif %}
+            </a>
+        </div>
+
+        <!-- Logout Confirmation Card -->
+        <div class="logout-card">
+            <div class="card-header" role="presentation"></div>
+            
+            <div class="p-6 sm:p-8">
+                
+                <!-- Warning Icon -->
+                <div class="warning-icon-wrapper" aria-hidden="true">
+                    <i class="fas fa-sign-out-alt warning-icon"></i>
+                </div>
+                
+                <!-- Header -->
+                <h1 class="text-3xl sm:text-4xl font-bold text-center text-[#03466e] mb-2" id="form-heading" tabindex="-1">
+                    {% trans "Ready to leave?" %}
+                </h1>
+                
+                <p class="text-center text-lg text-[#2b2b2b]/70 mb-6">
+                    {% trans 'We'll miss you! Are you sure you want to sign out?' %}
+                </p>
+
+                <!-- User Info -->
+                {% if user.is_authenticated %}
+                <div class="user-info-card">
+                    <div class="user-avatar" aria-hidden="true">
+                        {{ user.email|first|upper }}
+                    </div>
+                    <div class="user-email" id="user-email">
+                        {{ user.email }}
+                    </div>
+                    {% if user.get_full_name %}
+                    <div class="user-name">
+                        {{ user.get_full_name }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Session Info -->
+                <div class="session-info">
+                    <i class="fas fa-clock session-icon" aria-hidden="true"></i>
+                    <div class="session-details">
+                        <div class="session-title">{% trans "Active session" %}</div>
+                        <div class="session-time">
+                            {% trans "Signed in since:" %} 
+                            {% if user.last_login %}
+                                {{ user.last_login|date:"M d, Y H:i" }}
+                            {% else %}
+                                {% trans "Current session" %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Warning Message -->
+                <div class="warning-message" role="alert">
+                    <i class="fas fa-exclamation-triangle warning-message-icon" aria-hidden="true"></i>
+                    <div class="warning-message-content">
+                        <strong>{% trans "Important:" %}</strong>
+                        {% trans "You'll need to sign in again to access your dashboard, analytics, and saved reports." %}
+                    </div>
+                </div>
+
+                <!-- What you'll miss -->
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <i class="fas fa-check-circle"></i>
+                        <span>{% trans "Real-time analytics" %}</span>
+                    </div>
+                    <div class="feature-item">
+                        <i class="fas fa-check-circle"></i>
+                        <span>{% trans "Custom dashboards" %}</span>
+                    </div>
+                    <div class="feature-item">
+                        <i class="fas fa-check-circle"></i>
+                        <span>{% trans "Saved reports" %}</span>
+                    </div>
+                    <div class="feature-item">
+                        <i class="fas fa-check-circle"></i>
+                        <span>{% trans "Data exports" %}</span>
+                    </div>
+                </div>
+
+                <!-- Logout Form -->
+                {% url 'account_logout' as action_url %}
+                
+                <form id="logout-form" method="post" action="{{ action_url }}" novalidate>
+                    {% csrf_token %}
+                    {{ redirect_field }}
+                    
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <a href="javascript:history.back()" 
+                           class="btn-secondary"
+                           aria-label="{% trans 'Cancel and return to previous page' %}">
+                            <i class="fas fa-times" aria-hidden="true"></i>
+                            {% trans "Cancel" %}
+                        </a>
+                        
+                        <button type="submit" 
+                                class="btn-primary"
+                                id="logout-submit"
+                                aria-label="{% trans 'Confirm sign out' %}">
+                            <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                            {% trans "Sign Out" %}
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Additional Options -->
+                <div class="mt-6 text-center">
+                    <p class="text-sm text-[#2b2b2b]/60">
+                        {% trans "Changed your mind?" %}
+                        <a href="/" class="text-[#03466e] font-semibold hover:text-[#f68712] transition-colors focus:outline-none focus:underline">
+                            {% trans "Return to dashboard" %}
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trust Message -->
+        <p class="text-center text-xs text-gray-500 mt-6">
+            <i class="fas fa-shield-alt mr-1 text-[#f68712]" aria-hidden="true"></i>
+            {% trans "Your session will be securely terminated. No data will be lost." %}
+        </p>
+    </div>
+</main>
+
+<!-- JavaScript for enhanced UX -->
+<script>
+(function() {
+    'use strict';
+
+    // Focus on form heading for screen readers
+    const formHeading = document.getElementById('form-heading');
+    if (formHeading) {
+        formHeading.setAttribute('tabindex', '-1');
+        formHeading.focus();
+    }
+
+    // Loading state on submit
+    const logoutForm = document.getElementById('logout-form');
+    const submitBtn = document.getElementById('logout-submit');
+    
+    if (logoutForm && submitBtn) {
+        logoutForm.addEventListener('submit', function() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<div class="spinner" role="status" aria-label="{% trans 'Loading' %}"></div><span class="sr-only">{% trans 'Signing out...' %}</span>';
+        });
+    }
+
+    // Warn about unsaved changes (optional)
+    let hasUnsavedChanges = false;
+    
+    // Add confirmation dialog for cancel button if there are forms with unsaved data
+    const cancelBtn = document.querySelector('.btn-secondary[href*="javascript:history.back()"]');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Check for any unsaved form data on the page
+            const forms = document.querySelectorAll('form:not(#logout-form)');
+            forms.forEach(form => {
+                const inputs = form.querySelectorAll('input, textarea, select');
+                inputs.forEach(input => {
+                    if (input.value && input.type !== 'hidden') {
+                        hasUnsavedChanges = true;
+                    }
+                });
+            });
+            
+            if (hasUnsavedChanges) {
+                const confirmLeave = confirm("{% trans 'You have unsaved changes. Are you sure you want to leave?' %}");
+                if (confirmLeave) {
+                    window.history.back();
+                }
+            } else {
+                window.history.back();
+            }
+        });
+    }
+
+    // Add keyboard shortcut: Escape to cancel
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && !e.target.matches('input, textarea')) {
+            const cancelBtn = document.querySelector('.btn-secondary');
+            if (cancelBtn) {
+                e.preventDefault();
+                cancelBtn.click();
+            }
+        }
+        
+        // Alt+S to sign out
+        if (e.key === 's' && e.altKey) {
+            e.preventDefault();
+            const logoutBtn = document.getElementById('logout-submit');
+            if (logoutBtn && !logoutBtn.disabled) {
+                logoutBtn.click();
+            }
+        }
+    });
+
+    // Track logout view in analytics (if available)
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'view_logout', {
+            'event_category': 'authentication',
+            'event_label': 'logout_confirmation'
+        });
+    }
+
+    // Add smooth animation for user avatar
+    const avatar = document.querySelector('.user-avatar');
+    if (avatar) {
+        avatar.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.1) rotate(5deg)';
+        });
+        
+        avatar.addEventListener('mouseleave', function() {
+            this.style.transform = '';
+        });
+    }
+
+    // Remember user decision for session (optional)
+    const rememberCheckbox = document.createElement('div');
+    rememberCheckbox.className = 'mt-4 text-center';
+    rememberCheckbox.innerHTML = `
+        <label class="inline-flex items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" id="remember-decision" class="rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+            {% trans "Don't ask again for this session" %}
+        </label>
+    `;
+    
+    // Uncomment to add the "don't ask again" feature
+    // document.querySelector('.logout-card .p-8').appendChild(rememberCheckbox);
+
+})();
+</script>
+{% endblock %}

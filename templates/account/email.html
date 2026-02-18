@@ -1,83 +1,936 @@
-{% extends "account/base_manage_email.html" %}
+{% extends "base.html" %}
 {% load static allauth i18n %}
-{% block head_title %}
-    {% trans "Email Addresses" %}
-{% endblock head_title %}
+
+{% block title %}
+    {% trans "Email Addresses" %} | {{ block.super }}
+{% endblock title %}
+
 {% block content %}
-    {% element h1 %}
-        {% trans "Email Addresses" %}
-    {% endelement %}
-    {% if emailaddresses %}
-        {% element p %}
-            {% trans 'The following email addresses are associated with your account:' %}
-        {% endelement %}
-        {% url 'account_email' as email_url %}
-        {% element form form=form action=email_url method="post" tags="email,list" %}
-            {% slot body %}
-                {% csrf_token %}
-                {% for radio in emailaddress_radios %}
-                    {% with emailaddress=radio.emailaddress %}
-                        {% element field type="radio" checked=radio.checked name="email" value=emailaddress.email id=radio.id %}
-                            {% slot label %}
-                                {{ emailaddress.email }}
-                                {% if emailaddress.verified %}
-                                    {% element badge tags="success,email,verified" %}
-                                        {% translate "Verified" %}
-                                    {% endelement %}
-                                {% else %}
-                                    {% element badge tags="warning,email,unverified" %}
-                                        {% translate "Unverified" %}
-                                    {% endelement %}
-                                {% endif %}
-                                {% if emailaddress.primary %}
-                                    {% element badge tags="email,primary" %}
-                                        {% translate "Primary" %}
-                                    {% endelement %}
-                                {% endif %}
-                            {% endslot %}
-                        {% endelement %}
-                    {% endwith %}
-                {% endfor %}
-            {% endslot %}
-            {% slot actions %}
-                {% element button type="submit" name="action_primary" %}
-                    {% trans 'Make Primary' %}
-                {% endelement %}
-                {% element button tags="secondary" type="submit" name="action_send" %}
-                    {% trans 'Re-send Verification' %}
-                {% endelement %}
-                {% element button tags="danger,delete" type="submit" name="action_remove" %}
-                    {% trans 'Remove' %}
-                {% endelement %}
-            {% endslot %}
-        {% endelement %}
-    {% else %}
-        {% include "account/snippets/warn_no_email.html" %}
-    {% endif %}
-    {% if can_add_email %}
-        {% element h2 %}
-            {% trans "Add Email Address" %}
-        {% endelement %}
-        {% url 'account_email' as action_url %}
-        {% element form form=form method="post" action=action_url tags="email,add" %}
-            {% slot body %}
-                {% csrf_token %}
-                {% element fields form=form %}
-                {% endelement %}
-            {% endslot %}
-            {% slot actions %}
-                {% element button name="action_add" type="submit" %}
-                    {% trans "Add Email" %}
-                {% endelement %}
-            {% endslot %}
-        {% endelement %}
-    {% endif %}
-{% endblock content %}
+<style>
+    /* Brand color variables */
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
+        --success-green: #10b981;
+        --warning-yellow: #f59e0b;
+        --error-red: #ef4444;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(246, 135, 18, 0.4);
+        }
+        70% {
+            box-shadow: 0 0 0 10px rgba(246, 135, 18, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(246, 135, 18, 0);
+        }
+    }
+
+    /* Main card */
+    .email-card {
+        background: white;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(3, 70, 110, 0.25);
+        overflow: hidden;
+        border: 1px solid rgba(3, 70, 110, 0.1);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    .card-header {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--primary-orange) 0%, 
+            #ff9f3d 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--primary-orange) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Section headers */
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 2rem 0 1.5rem;
+    }
+    
+    .section-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.25rem;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary-dark);
+        margin: 0;
+    }
+
+    /* Email list */
+    .email-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+    }
+    
+    .email-item {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.02) 0%, rgba(246, 135, 18, 0.02) 100%);
+        border: 2px solid var(--gray-200);
+        border-radius: 1rem;
+        padding: 1rem;
+        transition: all 0.2s ease;
+        animation: fadeIn 0.5s ease-out;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .email-item:hover {
+        border-color: var(--primary-orange);
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -10px rgba(246, 135, 18, 0.3);
+    }
+    
+    .email-item.selected {
+        border-color: var(--primary-orange);
+        background: linear-gradient(135deg, rgba(246, 135, 18, 0.1) 0%, rgba(246, 135, 18, 0.05) 100%);
+        box-shadow: 0 0 0 4px rgba(246, 135, 18, 0.1);
+    }
+    
+    .email-radio {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    
+    .email-content {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        cursor: pointer;
+        padding-left: 2rem;
+        position: relative;
+    }
+    
+    .email-content::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 2px solid var(--gray-300);
+        border-radius: 50%;
+        transition: all 0.2s ease;
+        background: white;
+    }
+    
+    .email-radio:checked + .email-content::before {
+        border-color: var(--primary-orange);
+        background: var(--primary-orange);
+        box-shadow: inset 0 0 0 4px white;
+    }
+    
+    .email-radio:focus + .email-content::before {
+        border-color: var(--primary-orange);
+        box-shadow: 0 0 0 3px rgba(246, 135, 18, 0.3);
+    }
+    
+    .email-address {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--primary-dark);
+        flex: 1;
+        min-width: 200px;
+        word-break: break-all;
+    }
+    
+    .email-badges {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    /* Badges */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 2rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    
+    .badge-verified {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        color: #065f46;
+        border: 1px solid #34d399;
+    }
+    
+    .badge-unverified {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        color: #92400e;
+        border: 1px solid #fbbf24;
+    }
+    
+    .badge-primary {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #025b8c 100%);
+        color: white;
+        border: 1px solid var(--primary-orange);
+    }
+
+    /* Action buttons */
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin: 2rem 0;
+        flex-wrap: wrap;
+    }
+    
+    .btn-primary {
+        flex: 1;
+        min-width: 140px;
+        padding: 0.875rem 1.5rem;
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #025b8c 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border: none;
+        border-radius: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+        left: 100%;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(3, 70, 110, 0.4);
+    }
+    
+    .btn-primary:focus {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+    
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .btn-secondary {
+        flex: 1;
+        min-width: 140px;
+        padding: 0.875rem 1.5rem;
+        background: white;
+        color: var(--primary-dark);
+        font-weight: 600;
+        font-size: 0.95rem;
+        border: 2px solid var(--gray-200);
+        border-radius: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    .btn-secondary:hover {
+        border-color: var(--primary-orange);
+        background-color: #fff5e6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-secondary:focus {
+        outline: none;
+        border-color: var(--primary-orange);
+        box-shadow: var(--focus-ring);
+    }
+
+    .btn-danger {
+        flex: 1;
+        min-width: 140px;
+        padding: 0.875rem 1.5rem;
+        background: linear-gradient(135deg, var(--error-red) 0%, #dc2626 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border: none;
+        border-radius: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-danger::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-danger:hover::before {
+        left: 100%;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(239, 68, 68, 0.4);
+    }
+    
+    .btn-danger:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+    }
+
+    /* Add email form */
+    .add-email-form {
+        background: var(--gray-100);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+        border: 1px solid var(--gray-200);
+    }
+    
+    .form-input {
+        width: 100%;
+        padding: 0.875rem 1rem;
+        border: 2px solid var(--gray-200);
+        border-radius: 1rem;
+        font-size: 1rem;
+        transition: all 0.2s ease;
+        background: white;
+    }
+    
+    .form-input:hover {
+        border-color: var(--gray-300);
+    }
+    
+    .form-input:focus {
+        outline: none;
+        border-color: var(--primary-orange);
+        box-shadow: var(--focus-ring);
+    }
+    
+    .form-input.error {
+        border-color: var(--error-red);
+        background: #fef2f2;
+    }
+
+    /* Info message */
+    .info-message {
+        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        border-left: 4px solid var(--primary-dark);
+        border-radius: 1rem;
+        padding: 1rem;
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .info-message-icon {
+        color: var(--primary-dark);
+        font-size: 1.25rem;
+        flex-shrink: 0;
+        margin-top: 0.125rem;
+    }
+    
+    .info-message-content {
+        color: #1e3a8a;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+
+    /* Loading spinner */
+    .spinner {
+        display: inline-block;
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    .spinner-dark {
+        border-top-color: var(--primary-dark);
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Accessibility focus styles */
+    *:focus-visible {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+        .action-buttons {
+            flex-direction: column;
+        }
+        
+        .btn-primary, .btn-secondary, .btn-danger {
+            width: 100%;
+        }
+        
+        .email-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        
+        .email-badges {
+            margin-left: 0;
+        }
+        
+        .section-header {
+            margin: 1.5rem 0 1rem;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+        }
+    }
+</style>
+<main class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 py-8 sm:py-12 lg:py-16" id="main-content">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto">
+            
+            <!-- Skip to form link for keyboard users -->
+            <a href="#email-list" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
+                {% trans "Skip to email list" %}
+            </a>
+
+            <!-- Brand Header -->
+            <header class="text-center mb-8">
+                <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
+                    {% if site_settings and site_settings.logo %}
+                    <img src="{{ site_settings.logo.url }}" 
+                         alt="{{ site_name }}" 
+                         class="h-16 w-auto mx-auto mb-4 hover:scale-105 transition-transform duration-300"
+                         loading="lazy">
+                    {% else %}
+                    <div class="flex items-center justify-center space-x-3 mb-4">
+                        <div class="w-12 h-12 bg-[#f68712] rounded-xl flex items-center justify-center shadow-lg transform hover:rotate-6 transition-transform duration-300" 
+                             aria-hidden="true">
+                            <span class="text-white font-bold text-2xl">M</span>
+                        </div>
+                        <span class="text-[#03466e] font-bold text-3xl tracking-tight">etaAnalytics</span>
+                    </div>
+                    {% endif %}
+                </a>
+            </header>
+
+            <!-- Main Card -->
+            <div class="email-card">
+                <div class="card-header" role="presentation"></div>
+                
+                <div class="p-6 sm:p-8">
+                    
+                    <!-- Page Header -->
+                    <div class="section-header">
+                        <div class="section-icon" aria-hidden="true">
+                            <i class="fas fa-envelope"></i>
+                        </div>
+                        <h1 class="section-title" id="page-heading" tabindex="-1">
+                            {% trans "Email Addresses" %}
+                        </h1>
+                    </div>
+
+                    <!-- Info Message -->
+                    <div class="info-message">
+                        <i class="fas fa-info-circle info-message-icon" aria-hidden="true"></i>
+                        <div class="info-message-content">
+                            <strong>{% trans "Manage your email addresses:" %}</strong>
+                            {% trans "You can add, remove, or set a primary email address. Verified emails help secure your account." %}
+                        </div>
+                    </div>
+
+                    <!-- Email List Section -->
+                    {% if emailaddresses %}
+                        <div id="email-list">
+                            <p class="text-[#2b2b2b]/70 mb-4">
+                                {% trans 'The following email addresses are associated with your account:' %}
+                            </p>
+                            
+                            {% url 'account_email' as email_url %}
+                            
+                            <form method="post" action="{{ email_url }}" id="email-form">
+                                {% csrf_token %}
+                                
+                                <div class="email-list" role="group" aria-label="{% trans 'Email addresses' %}">
+                                    {% for radio in emailaddress_radios %}
+                                        {% with emailaddress=radio.emailaddress %}
+                                            <div class="email-item {% if radio.checked %}selected{% endif %}">
+                                                <input type="radio" 
+                                                       name="email" 
+                                                       value="{{ emailaddress.email }}"
+                                                       id="{{ radio.id }}"
+                                                       class="email-radio"
+                                                       {% if radio.checked %}checked{% endif %}
+                                                       aria-describedby="email-status-{{ forloop.counter }}">
+                                                
+                                                <label for="{{ radio.id }}" class="email-content">
+                                                    <span class="email-address">{{ emailaddress.email }}</span>
+                                                    
+                                                    <span class="email-badges" id="email-status-{{ forloop.counter }}">
+                                                        {% if emailaddress.verified %}
+                                                            <span class="badge badge-verified">
+                                                                <i class="fas fa-check-circle" aria-hidden="true"></i>
+                                                                {% translate "Verified" %}
+                                                            </span>
+                                                        {% else %}
+                                                            <span class="badge badge-unverified">
+                                                                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                                                                {% translate "Unverified" %}
+                                                            </span>
+                                                        {% endif %}
+                                                        
+                                                        {% if emailaddress.primary %}
+                                                            <span class="badge badge-primary">
+                                                                <i class="fas fa-star" aria-hidden="true"></i>
+                                                                {% translate "Primary" %}
+                                                            </span>
+                                                        {% endif %}
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        {% endwith %}
+                                    {% endfor %}
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="action-buttons" role="group" aria-label="{% trans 'Email actions' %}">
+                                    <button type="submit" 
+                                            name="action_primary" 
+                                            class="btn-primary"
+                                            id="make-primary-btn"
+                                            aria-label="{% trans 'Set selected email as primary' %}">
+                                        <i class="fas fa-star" aria-hidden="true"></i>
+                                        {% trans 'Make Primary' %}
+                                    </button>
+                                    
+                                    <button type="submit" 
+                                            name="action_send" 
+                                            class="btn-secondary"
+                                            id="resend-verification-btn"
+                                            aria-label="{% trans 'Resend verification to selected email' %}">
+                                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                                        {% trans 'Re-send Verification' %}
+                                    </button>
+                                    
+                                    <button type="submit" 
+                                            name="action_remove" 
+                                            class="btn-danger"
+                                            id="remove-email-btn"
+                                            aria-label="{% trans 'Remove selected email' %}">
+                                        <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                                        {% trans 'Remove' %}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    {% else %}
+                        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-yellow-700">
+                                        {% trans "No email addresses are associated with this account." %}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Add Email Section -->
+                    {% if can_add_email %}
+                        <div class="section-header" id="add-email-section">
+                            <div class="section-icon" style="background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);">
+                                <i class="fas fa-plus"></i>
+                            </div>
+                            <h2 class="section-title">
+                                {% trans "Add Email Address" %}
+                            </h2>
+                        </div>
+
+                        <div class="add-email-form">
+                            {% url 'account_email' as action_url %}
+                            
+                            <form method="post" action="{{ action_url }}" id="add-email-form" novalidate>
+                                {% csrf_token %}
+                                
+                                <div class="mb-4">
+                                    <label for="id_email" class="block text-sm font-semibold text-[#2b2b2b] mb-2">
+                                        {% trans "Email address" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
+                                        <span class="sr-only">required</span>
+                                    </label>
+                                    
+                                    <input type="email" 
+                                           name="email" 
+                                           id="id_email" 
+                                           required
+                                           aria-required="true"
+                                           aria-describedby="email-help"
+                                           class="form-input"
+                                           placeholder="{% trans 'you@example.com' %}"
+                                           value="{{ form.email.value|default:'' }}">
+                                    
+                                    {% if form.email.errors %}
+                                        <p class="text-red-600 text-sm mt-1">
+                                            <i class="fas fa-exclamation-circle mr-1"></i>
+                                            {{ form.email.errors.0 }}
+                                        </p>
+                                    {% endif %}
+                                    
+                                    <p id="email-help" class="text-xs text-gray-500 mt-2">
+                                        {% trans "We'll send a verification link to this address." %}
+                                    </p>
+                                </div>
+                                
+                                <button type="submit" 
+                                        name="action_add" 
+                                        class="btn-primary"
+                                        style="background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);"
+                                        id="add-email-btn">
+                                    <i class="fas fa-plus-circle" aria-hidden="true"></i>
+                                    {% trans "Add Email" %}
+                                </button>
+                            </form>
+                        </div>
+                    {% endif %}
+
+                    <!-- Security Note -->
+                    <p class="text-center text-xs text-gray-500 mt-8">
+                        <i class="fas fa-shield-alt mr-1 text-[#f68712]" aria-hidden="true"></i>
+                        {% trans "Email addresses are used for account recovery and notifications." %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- JavaScript for enhanced UX -->
+<script>
+(function() {
+    'use strict';
+
+    // Focus on page heading for screen readers
+    const pageHeading = document.getElementById('page-heading');
+    if (pageHeading) {
+        pageHeading.setAttribute('tabindex', '-1');
+        pageHeading.focus();
+    }
+
+    // Email selection highlighting
+    const emailRadios = document.querySelectorAll('.email-radio');
+    const emailItems = document.querySelectorAll('.email-item');
+    
+    emailRadios.forEach((radio, index) => {
+        radio.addEventListener('change', function() {
+            // Remove selected class from all items
+            emailItems.forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Add selected class to parent item
+            if (this.checked) {
+                this.closest('.email-item').classList.add('selected');
+            }
+        });
+    });
+
+    // Confirm before removal
+    const removeBtn = document.getElementById('remove-email-btn');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const selectedEmail = document.querySelector('.email-radio:checked');
+            if (!selectedEmail) {
+                alert("{% trans 'Please select an email address to remove.' %}");
+                return;
+            }
+            
+            const emailAddress = selectedEmail.closest('.email-item').querySelector('.email-address').textContent;
+            const confirmMessage = "{% trans 'Do you really want to remove the email address:' %} " + emailAddress + "?";
+            
+            if (confirm(confirmMessage)) {
+                // Create hidden form submission
+                const form = document.getElementById('email-form');
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'action_remove';
+                input.value = 'remove';
+                form.appendChild(input);
+                form.submit();
+            }
+        });
+    }
+
+    // Loading states
+    const emailForm = document.getElementById('email-form');
+    const addEmailForm = document.getElementById('add-email-form');
+    
+    function setLoadingState(button, isLoading) {
+        if (isLoading) {
+            button.disabled = true;
+            button.dataset.originalText = button.innerHTML;
+            button.innerHTML = '<div class="spinner" role="status" aria-label="{% trans 'Loading' %}"></div><span class="sr-only">{% trans 'Processing...' %}</span>';
+        } else {
+            button.disabled = false;
+            button.innerHTML = button.dataset.originalText;
+        }
+    }
+    
+    if (emailForm) {
+        emailForm.addEventListener('submit', function(e) {
+            const submitter = e.submitter;
+            if (submitter && submitter.name) {
+                setLoadingState(submitter, true);
+            }
+        });
+    }
+    
+    if (addEmailForm) {
+        addEmailForm.addEventListener('submit', function(e) {
+            const submitBtn = document.getElementById('add-email-btn');
+            setLoadingState(submitBtn, true);
+            
+            // Basic email validation
+            const emailInput = document.getElementById('id_email');
+            if (emailInput && !emailInput.value.includes('@')) {
+                e.preventDefault();
+                setLoadingState(submitBtn, false);
+                
+                let errorDiv = emailInput.nextElementSibling;
+                if (!errorDiv || !errorDiv.classList.contains('text-red-600')) {
+                    errorDiv = document.createElement('p');
+                    errorDiv.className = 'text-red-600 text-sm mt-1';
+                    errorDiv.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i> {% trans "Please enter a valid email address." %}';
+                    emailInput.parentNode.insertBefore(errorDiv, emailInput.nextSibling);
+                }
+            }
+        });
+    }
+
+    // Resend verification feedback
+    const resendBtn = document.getElementById('resend-verification-btn');
+    if (resendBtn) {
+        resendBtn.addEventListener('click', function(e) {
+            const selectedEmail = document.querySelector('.email-radio:checked');
+            if (!selectedEmail) {
+                e.preventDefault();
+                alert("{% trans 'Please select an email address to resend verification.' %}");
+                return;
+            }
+            
+            const emailItem = selectedEmail.closest('.email-item');
+            if (emailItem.querySelector('.badge-verified')) {
+                const confirmResend = confirm("{% trans 'This email is already verified. Resend verification anyway?' %}");
+                if (!confirmResend) {
+                    e.preventDefault();
+                }
+            }
+        });
+    }
+
+    // Make primary confirmation
+    const makePrimaryBtn = document.getElementById('make-primary-btn');
+    if (makePrimaryBtn) {
+        makePrimaryBtn.addEventListener('click', function(e) {
+            const selectedEmail = document.querySelector('.email-radio:checked');
+            if (!selectedEmail) {
+                e.preventDefault();
+                alert("{% trans 'Please select an email address to set as primary.' %}");
+                return;
+            }
+            
+            const emailItem = selectedEmail.closest('.email-item');
+            if (emailItem.querySelector('.badge-primary')) {
+                e.preventDefault();
+                alert("{% trans 'This email is already your primary address.' %}");
+                return;
+            }
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Alt + P for Make Primary
+        if (e.altKey && e.key === 'p') {
+            e.preventDefault();
+            const primaryBtn = document.getElementById('make-primary-btn');
+            if (primaryBtn && !primaryBtn.disabled) {
+                primaryBtn.click();
+            }
+        }
+        
+        // Alt + R for Resend
+        if (e.altKey && e.key === 'r') {
+            e.preventDefault();
+            const resendBtn = document.getElementById('resend-verification-btn');
+            if (resendBtn && !resendBtn.disabled) {
+                resendBtn.click();
+            }
+        }
+        
+        // Alt + D for Remove
+        if (e.altKey && e.key === 'd') {
+            e.preventDefault();
+            const removeBtn = document.getElementById('remove-email-btn');
+            if (removeBtn && !removeBtn.disabled) {
+                removeBtn.click();
+            }
+        }
+        
+        // Alt + A for Add Email focus
+        if (e.altKey && e.key === 'a') {
+            e.preventDefault();
+            const addEmailInput = document.getElementById('id_email');
+            if (addEmailInput) {
+                addEmailInput.focus();
+            }
+        }
+    });
+
+    // Live validation for add email form
+    const emailInput = document.getElementById('id_email');
+    if (emailInput) {
+        emailInput.addEventListener('blur', function() {
+            const email = this.value;
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            if (email && !emailRegex.test(email)) {
+                this.classList.add('error');
+            } else {
+                this.classList.remove('error');
+            }
+        });
+        
+        emailInput.addEventListener('input', function() {
+            this.classList.remove('error');
+        });
+    }
+
+    // Track page view in analytics (if available)
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'view_email_management', {
+            'event_category': 'account',
+            'event_label': 'email_settings'
+        });
+    }
+
+})();
+</script>
+{% endblock %}
+
 {% block extra_body %}
-    <script src="{% static 'account/js/account.js' %}"></script>
-    <script src="{% static 'account/js/onload.js' %}"></script>
-    <script data-allauth-onload="allauth.account.forms.manageEmailForm" type="application/json">{
-    "i18n": {"confirmDelete": "{% trans 'Do you really want to remove the selected email address?' %}"}
-}
+    {{ block.super }}
+    <!-- Override default allauth scripts with enhanced version -->
+    <script>
+        // Custom confirmation dialog that uses our styled alert
+        window.allauth = window.allauth || {};
+        window.allauth.account = window.allauth.account || {};
+        window.allauth.account.forms = window.allauth.account.forms || {};
+        
+        window.allauth.account.forms.manageEmailForm = {
+            confirmDelete: function(email) {
+                return confirm("{% trans 'Do you really want to remove the selected email address?' %}");
+            }
+        };
     </script>
 {% endblock extra_body %}

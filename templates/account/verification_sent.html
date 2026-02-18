@@ -1,14 +1,865 @@
-{% extends "account/base_entrance.html" %}
-{% load i18n %}
-{% load allauth %}
-{% block head_title %}
-    {% trans "Verify Your Email Address" %}
-{% endblock head_title %}
+{% extends "base.html" %}
+{% load static i18n allauth %}
+
+{% block title %}
+    {% trans "Verify Your Email Address" %} | {{ block.super }}
+{% endblock %}
+
 {% block content %}
-    {% element h1 %}
-        {% trans "Verify Your Email Address" %}
-    {% endelement %}
-    {% element p %}
-        {% blocktrans %}We have sent an email to you for verification. Follow the link provided to finalize the signup process. If you do not see the verification email in your main inbox, check your spam folder. Please contact us if you do not receive the verification email within a few minutes.{% endblocktrans %}
-    {% endelement %}
-{% endblock content %}
+<style>
+    /* Brand color variables */
+    :root {
+        --primary-dark: #03466e;
+        --primary-orange: #f68712;
+        --dark-gray: #2b2b2b;
+        --light-bg: #f8fafc;
+        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
+        --success-green: #10b981;
+        --info-blue: #3b82f6;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    
+    @keyframes float {
+        0% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+        100% {
+            transform: translateY(0px);
+        }
+    }
+    
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        50% {
+            transform: scale(1.05);
+            opacity: 0.8;
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes envelopeOpen {
+        0% {
+            transform: scale(1) rotate(0deg);
+        }
+        25% {
+            transform: scale(1.1) rotate(-5deg);
+        }
+        50% {
+            transform: scale(1.2) rotate(5deg);
+        }
+        75% {
+            transform: scale(1.1) rotate(-5deg);
+        }
+        100% {
+            transform: scale(1) rotate(0deg);
+        }
+    }
+    
+    @keyframes mailSent {
+        0% {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        50% {
+            opacity: 1;
+            transform: translateY(-5px);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Main card */
+    .verification-card {
+        background: white;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(3, 70, 110, 0.25);
+        overflow: hidden;
+        border: 1px solid rgba(3, 70, 110, 0.1);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.5s ease-out;
+        max-width: 550px;
+        margin: 0 auto;
+    }
+    
+    .card-header {
+        height: 0.75rem;
+        background: linear-gradient(90deg, 
+            var(--primary-orange) 0%, 
+            #ff9f3d 25%, 
+            var(--primary-dark) 50%, 
+            #025b8c 75%, 
+            var(--primary-orange) 100%);
+        background-size: 200% 100%;
+        animation: gradient 3s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Email icon animation */
+    .email-icon-wrapper {
+        width: 7rem;
+        height: 7rem;
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        animation: float 3s ease-in-out infinite, pulse 2s ease-in-out infinite;
+        box-shadow: 0 15px 30px -8px rgba(246, 135, 18, 0.4);
+        position: relative;
+    }
+    
+    .email-icon {
+        color: white;
+        font-size: 3.5rem;
+        animation: envelopeOpen 2s ease-in-out 0.5s;
+    }
+    
+    .checkmark-overlay {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        background: var(--success-green);
+        border-radius: 50%;
+        width: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1rem;
+        border: 3px solid white;
+        animation: mailSent 0.5s ease-out 0.8s both;
+    }
+
+    /* Content styles */
+    .content-wrapper {
+        text-align: center;
+        padding: 2rem 2rem 2.5rem;
+    }
+    
+    .main-heading {
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: var(--primary-dark);
+        margin-bottom: 1rem;
+        line-height: 1.2;
+    }
+    
+    .main-message {
+        font-size: 1.125rem;
+        color: var(--gray-700);
+        margin-bottom: 2rem;
+        line-height: 1.6;
+    }
+
+    /* Email display card */
+    .email-display {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        border: 2px dashed rgba(246, 135, 18, 0.3);
+    }
+    
+    .email-label {
+        font-size: 0.875rem;
+        color: var(--gray-500);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+    
+    .email-address {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+        word-break: break-all;
+        background: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 3rem;
+        display: inline-block;
+        border: 2px solid var(--gray-200);
+    }
+    
+    .email-address i {
+        color: var(--primary-orange);
+        margin-right: 0.5rem;
+    }
+
+    /* Tips grid */
+    .tips-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin: 2rem 0;
+    }
+    
+    .tip-item {
+        text-align: center;
+        padding: 1rem;
+        background: var(--gray-100);
+        border-radius: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .tip-item:hover {
+        transform: translateY(-4px);
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.05) 0%, rgba(246, 135, 18, 0.05) 100%);
+        border: 1px solid rgba(246, 135, 18, 0.3);
+    }
+    
+    .tip-icon {
+        font-size: 1.75rem;
+        color: var(--primary-orange);
+        margin-bottom: 0.5rem;
+    }
+    
+    .tip-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--primary-dark);
+        margin-bottom: 0.25rem;
+    }
+    
+    .tip-description {
+        font-size: 0.75rem;
+        color: var(--gray-500);
+        line-height: 1.4;
+    }
+
+    /* Progress steps */
+    .progress-steps {
+        display: flex;
+        justify-content: space-between;
+        margin: 2rem 0;
+        position: relative;
+    }
+    
+    .progress-steps::before {
+        content: '';
+        position: absolute;
+        top: 1.5rem;
+        left: 2rem;
+        right: 2rem;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary-orange) 50%, var(--gray-200) 50%);
+        z-index: 1;
+    }
+    
+    .step {
+        text-align: center;
+        position: relative;
+        z-index: 2;
+        background: white;
+        padding: 0 0.5rem;
+    }
+    
+    .step-circle {
+        width: 3rem;
+        height: 3rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 0.5rem;
+        font-weight: 600;
+        font-size: 1.25rem;
+    }
+    
+    .step.completed .step-circle {
+        background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+        color: white;
+    }
+    
+    .step.active .step-circle {
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        color: white;
+        animation: pulse 2s infinite;
+    }
+    
+    .step.pending .step-circle {
+        background: var(--gray-200);
+        color: var(--gray-500);
+    }
+    
+    .step-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--dark-gray);
+    }
+    
+    .step-time {
+        font-size: 0.75rem;
+        color: var(--gray-400);
+    }
+
+    /* Action buttons */
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin: 2rem 0;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .btn-primary {
+        min-width: 200px;
+        padding: 1rem 2rem;
+        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+        border: none;
+        border-radius: 3rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        text-decoration: none;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+        left: 100%;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(246, 135, 18, 0.4);
+    }
+    
+    .btn-primary:focus {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+
+    .btn-secondary {
+        min-width: 200px;
+        padding: 1rem 2rem;
+        background: white;
+        color: var(--primary-dark);
+        font-weight: 600;
+        font-size: 1rem;
+        border: 2px solid var(--gray-200);
+        border-radius: 3rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        text-decoration: none;
+    }
+    
+    .btn-secondary:hover {
+        border-color: var(--primary-orange);
+        background-color: #fff5e6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-secondary:focus {
+        outline: none;
+        border-color: var(--primary-orange);
+        box-shadow: var(--focus-ring);
+    }
+
+    /* Resend section */
+    .resend-section {
+        background: linear-gradient(135deg, rgba(3, 70, 110, 0.03) 0%, rgba(246, 135, 18, 0.03) 100%);
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+        margin-top: 2rem;
+        border: 1px solid rgba(246, 135, 18, 0.2);
+    }
+    
+    .resend-timer {
+        font-size: 0.875rem;
+        color: var(--gray-600);
+        margin-bottom: 0.75rem;
+    }
+    
+    .resend-timer i {
+        color: var(--primary-orange);
+        margin-right: 0.25rem;
+    }
+    
+    .resend-link {
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .resend-link:hover {
+        background: rgba(246, 135, 18, 0.1);
+        color: var(--primary-orange);
+    }
+    
+    .resend-link:focus {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Accessibility focus styles */
+    *:focus-visible {
+        outline: 2px solid var(--primary-orange);
+        outline-offset: 2px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+        .verification-card {
+            margin: 1rem;
+        }
+        
+        .main-heading {
+            font-size: 1.8rem;
+        }
+        
+        .email-icon-wrapper {
+            width: 6rem;
+            height: 6rem;
+        }
+        
+        .email-icon {
+            font-size: 3rem;
+        }
+        
+        .tips-grid {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+        
+        .progress-steps {
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .progress-steps::before {
+            display: none;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            text-align: left;
+            gap: 1rem;
+        }
+        
+        .step-circle {
+            margin: 0;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+        }
+        
+        .btn-primary, .btn-secondary {
+            width: 100%;
+        }
+        
+        .email-address {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+        }
+    }
+</style>
+
+<main class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 py-8 sm:py-12 lg:py-16 flex items-center justify-center" id="main-content">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-2xl mx-auto">
+            
+            <!-- Skip to main content link -->
+            <a href="#main-message" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
+                {% trans "Skip to main message" %}
+            </a>
+
+            <!-- Brand Header -->
+            <div class="text-center mb-6">
+                <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
+                    {% if site_settings and site_settings.logo %}
+                    <img src="{{ site_settings.logo.url }}" 
+                         alt="{{ site_name }}" 
+                         class="h-12 w-auto mx-auto hover:scale-105 transition-transform duration-300"
+                         loading="lazy">
+                    {% else %}
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center shadow-md" aria-hidden="true">
+                            <span class="text-white font-bold text-lg">M</span>
+                        </div>
+                        <span class="text-[#03466e] font-bold text-xl">etaAnalytics</span>
+                    </div>
+                    {% endif %}
+                </a>
+            </div>
+
+            <!-- Verification Card -->
+            <div class="verification-card">
+                <div class="card-header" role="presentation"></div>
+                
+                <div class="content-wrapper">
+                    
+                    <!-- Animated Email Icon -->
+                    <div class="email-icon-wrapper" aria-hidden="true">
+                        <i class="fas fa-envelope-open-text email-icon"></i>
+                        <div class="checkmark-overlay">
+                            <i class="fas fa-check"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Main Heading -->
+                    <h1 class="main-heading" id="main-message" tabindex="-1">
+                        {% trans "Check Your Inbox" %}
+                    </h1>
+                    
+                    <!-- Main Message -->
+                    <div class="main-message">
+                        <p>{% trans "We've sent a verification link to your email address." %}</p>
+                    </div>
+
+                    <!-- Email Display -->
+                    {% if email %}
+                    <div class="email-display">
+                        <div class="email-label">{% trans "Verification sent to" %}</div>
+                        <div class="email-address">
+                            <i class="fas fa-envelope" aria-hidden="true"></i>
+                            {{ email }}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Progress Steps -->
+                    <div class="progress-steps" role="list" aria-label="{% trans 'Verification progress' %}">
+                        <div class="step completed" role="listitem">
+                            <div class="step-circle">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <div>
+                                <div class="step-label">{% trans "Sign Up" %}</div>
+                                <div class="step-time">{% trans "Completed" %}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="step active" role="listitem">
+                            <div class="step-circle">
+                                <span>2</span>
+                            </div>
+                            <div>
+                                <div class="step-label">{% trans "Verify Email" %}</div>
+                                <div class="step-time">{% trans "Pending" %}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="step pending" role="listitem">
+                            <div class="step-circle">
+                                <span>3</span>
+                            </div>
+                            <div>
+                                <div class="step-label">{% trans "Get Started" %}</div>
+                                <div class="step-time">{% trans "After verification" %}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tips Grid -->
+                    <div class="tips-grid">
+                        <div class="tip-item">
+                            <div class="tip-icon" aria-hidden="true">
+                                <i class="fas fa-inbox"></i>
+                            </div>
+                            <div class="tip-title">{% trans "Check Main Inbox" %}</div>
+                            <div class="tip-description">
+                                {% trans "The email should arrive in your primary inbox" %}
+                            </div>
+                        </div>
+                        
+                        <div class="tip-item">
+                            <div class="tip-icon" aria-hidden="true">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="tip-title">{% trans "Check Spam" %}</div>
+                            <div class="tip-description">
+                                {% trans "Sometimes emails end up in spam folder" %}
+                            </div>
+                        </div>
+                        
+                        <div class="tip-item">
+                            <div class="tip-icon" aria-hidden="true">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="tip-title">{% trans "Wait a Moment" %}</div>
+                            <div class="tip-description">
+                                {% trans "Delivery can take 2-3 minutes" %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <button class="btn-primary" id="open-mail-app">
+                            <i class="fas fa-envelope" aria-hidden="true"></i>
+                            {% trans "Open Mail App" %}
+                        </button>
+                        
+                        <a href="/" class="btn-secondary">
+                            <i class="fas fa-home" aria-hidden="true"></i>
+                            {% trans "Go to Home" %}
+                        </a>
+                    </div>
+
+                    <!-- Resend Section -->
+                    <div class="resend-section">
+                        <div class="resend-timer" id="resend-timer">
+                            <i class="fas fa-hourglass-half"></i>
+                            <span id="timer-display">02:00</span>
+                            <span>{% trans "until you can request another email" %}</span>
+                        </div>
+                        
+                        <div class="text-center">
+                            <a href="#" class="resend-link" id="resend-link">
+                                <i class="fas fa-redo-alt"></i>
+                                {% trans "Resend verification email" %}
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Contact Support -->
+                    <p class="text-sm text-gray-500 mt-4">
+                        {% trans "Still not receiving it?" %}
+                        <a href="{% url 'core:contact' %}" 
+                           class="text-[#03466e] font-medium hover:text-[#f68712] transition-colors focus:outline-none focus:underline">
+                            {% trans "Contact support" %}
+                        </a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Trust Message -->
+            <p class="text-center text-xs text-gray-500 mt-6">
+                <i class="fas fa-shield-alt mr-1 text-[#f68712]" aria-hidden="true"></i>
+                {% trans "The verification link will expire in 24 hours for security" %}
+            </p>
+        </div>
+    </div>
+</main>
+
+<!-- JavaScript for enhanced UX -->
+<script>
+(function() {
+    'use strict';
+
+    // Focus on main message for screen readers
+    const mainMessage = document.getElementById('main-message');
+    if (mainMessage) {
+        mainMessage.setAttribute('tabindex', '-1');
+        mainMessage.focus();
+    }
+
+    // Open mail app functionality
+    const openMailBtn = document.getElementById('open-mail-app');
+    if (openMailBtn) {
+        openMailBtn.addEventListener('click', function() {
+            // Try to open default mail client
+            window.location.href = 'mailto:';
+            
+            // Show feedback
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Opening..." %}';
+            setTimeout(() => {
+                this.innerHTML = '<i class="fas fa-envelope"></i> {% trans "Open Mail App" %}';
+            }, 2000);
+        });
+    }
+
+    // Resend timer
+    const timerDisplay = document.getElementById('timer-display');
+    const resendLink = document.getElementById('resend-link');
+    
+    if (timerDisplay && resendLink) {
+        let timeLeft = 120; // 2 minutes in seconds
+        let resendEnabled = false;
+        
+        function updateTimer() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            if (timeLeft <= 0) {
+                timerDisplay.parentElement.style.opacity = '0.5';
+                resendEnabled = true;
+                resendLink.style.pointerEvents = 'auto';
+                resendLink.style.opacity = '1';
+                resendLink.removeAttribute('aria-disabled');
+            } else {
+                timeLeft--;
+                setTimeout(updateTimer, 1000);
+            }
+        }
+        
+        // Start timer
+        resendEnabled = false;
+        resendLink.style.pointerEvents = 'none';
+        resendLink.style.opacity = '0.5';
+        resendLink.setAttribute('aria-disabled', 'true');
+        updateTimer();
+        
+        // Handle resend click
+        resendLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (!resendEnabled) {
+                // Show tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'text-xs text-red-600 mt-2';
+                tooltip.setAttribute('role', 'alert');
+                tooltip.innerHTML = '<i class="fas fa-exclamation-circle"></i> {% trans "Please wait for the timer to complete" %}';
+                this.parentElement.appendChild(tooltip);
+                
+                setTimeout(() => {
+                    tooltip.remove();
+                }, 3000);
+                return;
+            }
+            
+            // Simulate resend
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Sending..." %}';
+            
+            setTimeout(() => {
+                this.innerHTML = '<i class="fas fa-redo-alt"></i> {% trans "Resend verification email" %}';
+                
+                // Show success message
+                const successMsg = document.createElement('div');
+                successMsg.className = 'text-green-600 text-sm mt-2';
+                successMsg.setAttribute('role', 'status');
+                successMsg.innerHTML = '<i class="fas fa-check-circle"></i> {% trans "Verification email resent!" %}';
+                this.parentElement.appendChild(successMsg);
+                
+                setTimeout(() => {
+                    successMsg.remove();
+                }, 5000);
+                
+                // Reset timer
+                resendEnabled = false;
+                timeLeft = 120;
+                updateTimer();
+                this.style.pointerEvents = 'none';
+                this.style.opacity = '0.5';
+                this.setAttribute('aria-disabled', 'true');
+            }, 1500);
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Alt + M to open mail app
+        if (e.altKey && e.key === 'm') {
+            e.preventDefault();
+            const mailBtn = document.getElementById('open-mail-app');
+            if (mailBtn) {
+                mailBtn.click();
+            }
+        }
+        
+        // Alt + H for home
+        if (e.altKey && e.key === 'h') {
+            e.preventDefault();
+            window.location.href = '/';
+        }
+        
+        // Alt + R to resend (when enabled)
+        if (e.altKey && e.key === 'r') {
+            e.preventDefault();
+            const resendLink = document.getElementById('resend-link');
+            if (resendLink && !resendLink.hasAttribute('aria-disabled')) {
+                resendLink.click();
+            }
+        }
+    });
+
+    // Track page view in analytics (if available)
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'view_verification_sent', {
+            'event_category': 'authentication',
+            'event_label': 'verification_email_sent'
+        });
+    }
+
+    // Animate progress steps
+    const steps = document.querySelectorAll('.step');
+    steps.forEach((step, index) => {
+        step.style.opacity = '0';
+        step.style.transform = 'translateX(-20px)';
+        step.style.transition = `opacity 0.3s ease ${index * 0.2}s, transform 0.3s ease ${index * 0.2}s`;
+        
+        setTimeout(() => {
+            step.style.opacity = '1';
+            step.style.transform = 'translateX(0)';
+        }, 500);
+    });
+
+})();
+</script>
+{% endblock %}
