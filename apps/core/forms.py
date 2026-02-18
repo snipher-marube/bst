@@ -1,6 +1,6 @@
 from django import forms
 from django.core.validators import EmailValidator
-from .models import ContactMessage, NewsletterSubscriber
+from .models import ContactMessage
 
 
 class ContactForm(forms.Form):
@@ -57,28 +57,6 @@ class ContactForm(forms.Form):
             'placeholder': 'Tell us more about your needs...',
             'rows': 5,
             'required': True
-        })
-    )
-
-
-class NewsletterForm(forms.Form):
-    """
-    Newsletter signup form
-    """
-    email = forms.EmailField(
-        widget=forms.EmailInput(attrs={
-            'class': 'w-full px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200',
-            'placeholder': 'Enter your email',
-            'required': True
-        })
-    )
-    
-    first_name = forms.CharField(
-        max_length=100,
-        required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'w-full px-4 py-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200',
-            'placeholder': 'First name (optional)'
         })
     )
 

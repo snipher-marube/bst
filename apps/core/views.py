@@ -8,11 +8,12 @@ from django.views.decorators.csrf import csrf_protect
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
+from django.urls import reverse
 from .models import (
     Testimonial, FAQ, Feature, Statistic, Partner, 
-    BlogPost, ContactMessage, NewsletterSubscriber, SiteSettings
+    BlogPost, ContactMessage, SiteSettings
 )
-from .forms import ContactForm, NewsletterForm
+from .forms import ContactForm
 import json
 
 
@@ -288,60 +289,6 @@ class BlogDetailView(DetailView):
         context['og_description'] = post.og_description or post.excerpt
         
         return context
-
-
-@require_POST
-@csrf_protect
-def newsletter_signup(request):
-    """
-    Handle newsletter signups via AJAX
-    """
-    try:
-        data = json.loads(request.body)
-        email = data.get('email')
-        first_name = data.get('first_name', '')
-        
-        if not email:
-            return JsonResponse({'success': False, 'error': 'Email is required'}, status=400)
-        
-        # Create or update subscriber
-        subscriber, created = NewsletterSubscriber.objects.update_or_create(
-            email=email,
-            defaults={
-                'first_name': first_name,
-                'is_active': True,
-                'unsubscribed_at': None
-            }
-        )
-        
-        # Send welcome email
-        try:
-            send_mail(
-                subject='Welcome to MetaAnalytics Newsletter!',
-                message=f"""
-                Hi {first_name or 'there'}!
-                
-                Thank you for subscribing to the MetaAnalytics newsletter. We'll send you updates about new features, tips, and insights.
-                
-                Best regards,
-                The MetaAnalytics Team
-                """,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
-            )
-        except Exception:
-            pass
-        
-        return JsonResponse({
-            'success': True,
-            'message': 'Successfully subscribed to newsletter!'
-        })
-        
-    except json.JSONDecodeError:
-        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 def sitemap_view(request):

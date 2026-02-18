@@ -5,16 +5,21 @@
         <div class="flex items-center justify-between h-16 md:h-20">
             <!-- Logo -->
             <div class="flex-shrink-0">
-                <a href="{% url 'core:home' %}" class="flex items-center space-x-2" aria-label="Business SIght Technologies Home">
-                    <img src="{% static 'images/logo.png' %}" alt="Business SIght Technologies Logo" class="h-12 w-auto md:h-14">
+                <a href="{% url 'core:home' %}" class="flex items-center space-x-2 group" aria-label="Business Sight Technologies Home">
+                    <img src="{% static 'images/logo.png' %}" alt="Business Sight Technologies Logo" class="h-12 w-auto md:h-14 transition-transform duration-300 group-hover:scale-105">
                 </a>
             </div>
             
             <!-- Desktop Navigation -->
-            <div class="hidden md:flex md:items-center md:space-x-8">
+            <div class="hidden md:flex md:items-center md:space-x-1">
                 {% for item in main_nav %}
                 <a href="{{ item.url }}" 
-                   class="text-sm font-medium transition-colors duration-200 {% if item.active %}text-blue-600{% else %}text-gray-700 hover:text-blue-600{% endif %}"
+                   class="px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 
+                          {% if item.active %}
+                          text-[#f68712] bg-orange-50
+                          {% else %}
+                          text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50
+                          {% endif %}"
                    {% if item.active %}aria-current="page"{% endif %}>
                     {{ item.title }}
                 </a>
@@ -22,28 +27,87 @@
             </div>
             
             <!-- Desktop Right Navigation -->
-            <div class="hidden md:flex md:items-center md:space-x-4">
+            <div class="hidden md:flex md:items-center md:space-x-3">
                 {% if user.is_authenticated %}
-                    <a href="#" class="text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors duration-200">
-                        Dashboard
+                    <a href="#" 
+                       class="px-4 py-2 text-sm font-medium text-[#03466e] hover:text-[#f68712] transition-colors duration-200 rounded-lg hover:bg-orange-50">
+                        <i class="fas fa-chart-pie mr-2"></i>Dashboard
                     </a>
+                    
+                    <!-- User Menu -->
                     <div class="relative" x-data="{ open: false }">
-                        <button @click="open = !open" class="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors duration-200 focus:outline-none" aria-expanded="false" :aria-expanded="open.toString()">
-                            <span>{{ user.email|truncatechars:20 }}</span>
-                            <i class="fas fa-chevron-down text-xs"></i>
+                        <button @click="open = !open" 
+                                class="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] rounded-lg hover:bg-orange-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#f68712] focus:ring-offset-2"
+                                :aria-expanded="open.toString()"
+                                aria-haspopup="true"
+                                aria-label="User menu">
+                            <div class="w-8 h-8 bg-gradient-to-br from-[#03466e] to-[#f68712] rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                                {{ user.email|first|upper }}
+                            </div>
+                            <span class="hidden lg:inline">{{ user.email|truncatechars:20 }}</span>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-200" 
+                               :class="{ 'rotate-180': open }"></i>
                         </button>
-                        <div x-show="open" @click.away="open = false" x-transition:enter="transition ease-out duration-100" x-transition:enter-start="transform opacity-0 scale-95" x-transition:enter-end="transform opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="transform opacity-100 scale-100" x-transition:leave-end="transform opacity-0 scale-95" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 border border-gray-100" style="display: none;">
-                            <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Profile</a>
-                            <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Settings</a>
+                        
+                        <!-- Dropdown Menu -->
+                        <div x-show="open" 
+                             @click.away="open = false" 
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="transform opacity-0 scale-95"
+                             x-transition:enter-end="transform opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="transform opacity-100 scale-100"
+                             x-transition:leave-end="transform opacity-0 scale-95"
+                             class="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg py-2 border border-gray-100"
+                             style="display: none;"
+                             role="menu"
+                             aria-orientation="vertical">
+                            
+                            <div class="px-4 py-3 border-b border-gray-100">
+                                <p class="text-xs text-gray-500">Signed in as</p>
+                                <p class="text-sm font-semibold text-[#03466e] truncate">{{ user.email }}</p>
+                            </div>
+                            
+                            <a href="#" 
+                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
+                               role="menuitem">
+                                <i class="fas fa-user w-5 text-gray-400"></i>
+                                <span class="ml-2">Profile</span>
+                            </a>
+                            
+                            <a href="{% url 'account_email' %}" 
+                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
+                               role="menuitem">
+                                <i class="fas fa-envelope w-5 text-gray-400"></i>
+                                <span class="ml-2">Email Settings</span>
+                            </a>
+                            
+                            <a href="{% url 'account_change_password' %}" 
+                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
+                               role="menuitem">
+                                <i class="fas fa-lock w-5 text-gray-400"></i>
+                                <span class="ml-2">Change Password</span>
+                            </a>
+                            
                             <div class="border-t border-gray-100 my-1"></div>
-                            <a href="{% url 'account_logout' %}" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-50">Sign out</a>
+                            
+                            <a href="{% url 'account_logout' %}" 
+                               class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
+                               role="menuitem">
+                                <i class="fas fa-sign-out-alt w-5"></i>
+                                <span class="ml-2">Sign out</span>
+                            </a>
                         </div>
                     </div>
                 {% else %}
-                    <a href="{% url 'account_login' %}" class="text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors duration-200">
+                    <a href="{% url 'account_login' %}" 
+                       class="px-4 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] transition-colors duration-200 rounded-lg hover:bg-orange-50">
                         Sign in
                     </a>
-                    <a href="{% url 'account_signup' %}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md">
+                    
+                    <a href="{% url 'account_signup' %}" 
+                       class="inline-flex items-center px-5 py-2 border-2 border-[#f68712] text-sm font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] hover:border-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f68712] transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5">
+                        <i class="fas fa-rocket mr-2"></i>
                         Start Free Trial
                     </a>
                 {% endif %}
@@ -52,7 +116,7 @@
             <!-- Mobile menu button -->
             <div class="flex md:hidden">
                 <button type="button" 
-                        class="mobile-menu-button inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                        class="mobile-menu-button inline-flex items-center justify-center p-2 rounded-lg text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#f68712] transition-colors duration-200"
                         aria-expanded="false"
                         aria-label="Toggle navigation menu">
                     <span class="sr-only">Open main menu</span>
@@ -62,3 +126,6 @@
         </div>
     </nav>
 </header>
+
+<!-- Add Alpine.js if not already included -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>

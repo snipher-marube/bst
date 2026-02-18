@@ -16,9 +16,6 @@ urlpatterns = [
     path('blog/', views.BlogListView.as_view(), name='blog_list'),
     path('blog/<slug:slug>/', views.BlogDetailView.as_view(), name='blog_detail'),
     
-    # API endpoints
-    path('api/newsletter-signup/', views.newsletter_signup, name='newsletter_signup'),
-    
     # SEO
     path('sitemap.xml/', views.sitemap_view, name='sitemap'),
 ]

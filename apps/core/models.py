@@ -260,21 +260,6 @@ class ContactMessage(models.Model):
         return f"{self.name} - {self.subject}"
 
 
-class NewsletterSubscriber(models.Model):
-    """
-    Newsletter subscribers
-    """
-    email = models.EmailField(unique=True)
-    first_name = models.CharField(max_length=100, blank=True)
-    is_active = models.BooleanField(default=True)
-    subscribed_at = models.DateTimeField(auto_now_add=True)
-    unsubscribed_at = models.DateTimeField(null=True, blank=True)
-    
-    class Meta:
-        ordering = ['-subscribed_at']
-    
-    def __str__(self):
-        return self.email
 
 
 class SiteSettings(models.Model):

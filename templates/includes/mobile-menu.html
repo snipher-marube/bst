@@ -1,14 +1,17 @@
 <!-- Mobile menu, show/hide based on menu state -->
- {% load static %}
+{% load static %}
 <div class="mobile-menu hidden md:hidden fixed inset-0 z-40 transform transition-transform duration-300 ease-in-out">
     <!-- Overlay -->
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <div class="fixed inset-0 bg-[#03466e] bg-opacity-75 backdrop-blur-sm transition-opacity" aria-hidden="true"></div>
     
     <!-- Menu panel -->
     <div class="fixed inset-y-0 right-0 max-w-xs w-full bg-white shadow-xl flex flex-col">
+        <!-- Mobile header -->
         <div class="flex items-center justify-between px-4 py-5 border-b border-gray-200">
-            <img src="{% static 'images/logo.png' %}" alt="MetaAnalytics" class="h-8 w-auto">
-            <button type="button" class="mobile-menu-close rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <a href="{% url 'core:home' %}" class="group">
+                <img src="{% static 'images/logo.png' %}" alt="MetaAnalytics" class="h-8 w-auto transition-transform duration-300 group-hover:scale-105">
+            </a>
+            <button type="button" class="mobile-menu-close rounded-md text-gray-400 hover:text-[#f68712] hover:bg-orange-50 p-2 focus:outline-none focus:ring-2 focus:ring-[#f68712] transition-colors duration-200">
                 <span class="sr-only">Close menu</span>
                 <i class="fas fa-times text-2xl"></i>
             </button>
@@ -16,34 +19,65 @@
         
         <!-- Mobile navigation links -->
         <div class="flex-1 overflow-y-auto py-4 px-4">
-            <nav class="grid gap-y-3">
+            <nav class="grid gap-y-1">
                 {% for item in main_nav %}
                 <a href="{{ item.url }}" 
-                   class="text-base font-medium {% if item.active %}text-blue-600 bg-blue-50{% else %}text-gray-900{% endif %} px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                   class="text-base font-medium px-4 py-3 rounded-lg transition-all duration-200
+                          {% if item.active %}
+                          text-[#f68712] bg-orange-50 border-l-4 border-[#f68712]
+                          {% else %}
+                          text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 hover:border-l-4 hover:border-[#f68712]
+                          {% endif %}"
+                   {% if item.active %}aria-current="page"{% endif %}>
                     {{ item.title }}
                 </a>
                 {% endfor %}
                 
+                <!-- Divider -->
                 <div class="border-t border-gray-200 my-4"></div>
                 
                 {% if user.is_authenticated %}
-                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                        Dashboard
+                    <a href="#" 
+                       class="flex items-center px-4 py-3 text-base font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-chart-pie w-6 text-gray-400"></i>
+                        <span class="ml-2">Dashboard</span>
                     </a>
-                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                        Profile
+                    
+                    <a href="#" 
+                       class="flex items-center px-4 py-3 text-base font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-user w-6 text-gray-400"></i>
+                        <span class="ml-2">Profile</span>
                     </a>
-                    <a href="#" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                        Settings
+                    
+                    <a href="{% url 'account_email' %}" 
+                       class="flex items-center px-4 py-3 text-base font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-envelope w-6 text-gray-400"></i>
+                        <span class="ml-2">Email Settings</span>
                     </a>
-                    <a href="{% url 'account_logout' %}" class="text-base font-medium text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors duration-200">
-                        Sign out
+                    
+                    <a href="{% url 'account_change_password' %}" 
+                       class="flex items-center px-4 py-3 text-base font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-lock w-6 text-gray-400"></i>
+                        <span class="ml-2">Change Password</span>
+                    </a>
+                    
+                    <div class="border-t border-gray-200 my-2"></div>
+                    
+                    <a href="{% url 'account_logout' %}" 
+                       class="flex items-center px-4 py-3 text-base font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-sign-out-alt w-6"></i>
+                        <span class="ml-2">Sign out</span>
                     </a>
                 {% else %}
-                    <a href="{% url 'account_login' %}" class="text-base font-medium text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                    <a href="{% url 'account_login' %}" 
+                       class="block w-full px-4 py-3 text-base font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-sign-in-alt w-6 inline-block mr-2"></i>
                         Sign in
                     </a>
-                    <a href="{% url 'account_signup' %}" class="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200">
+                    
+                    <a href="{% url 'account_signup' %}" 
+                       class="mt-3 block w-full text-center px-4 py-3 border-2 border-[#f68712] text-base font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] hover:border-[#e07810] transition-all duration-200">
+                        <i class="fas fa-rocket mr-2"></i>
                         Start Free Trial
                     </a>
                 {% endif %}
@@ -53,7 +87,7 @@
         <!-- Mobile footer -->
         <div class="border-t border-gray-200 px-4 py-4">
             <p class="text-xs text-gray-500 text-center">
-                &copy; {% now "Y" %} MetaAnalytics. All rights reserved.
+                &copy; {% now "Y" %} Business Sight Technologies. All rights reserved.
             </p>
         </div>
     </div>
@@ -82,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Close menu when clicking overlay
     mobileMenu?.addEventListener('click', function(e) {
-        if (e.target === mobileMenu) {
+        if (e.target === mobileMenu || e.target.classList.contains('bg-opacity-75')) {
             closeMenu();
         }
     });
