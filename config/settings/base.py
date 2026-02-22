@@ -60,7 +60,8 @@ INSTALLED_APPS = [
     'apps.subscriptions',
     'apps.teams',
     'apps.templates_app',
-    'apps.workspaces'
+    'apps.workspaces',
+    'apps.newsletter',
 
 
 ]
@@ -158,7 +159,6 @@ ACCOUNT_SIGNUP_FIELDS = [
 ACCOUNT_LOGIN_METHODS = {'email'}  # Login with email only
 
 # Email settings
-ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # "mandatory", "optional", or "none"
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
@@ -247,4 +247,30 @@ PHONE_NUMBER = config('PHONE_NUMBER', default='+254 798 393 182')
 ADDRESS = config('ADDRESS', default='123 Analytics Ave, Nairobi, CA 94105')
 SITE_NAME = config('SITE_NAME', default='Businessight')
 SITE_URL = config('SITE_URL', default='http://localhost:8000')
+
+# Newsletter Settings
+NEWSLETTER_CONFIRM_REDIRECT = '/'  # Where to redirect after confirmation
+DISPOSABLE_EMAIL_DOMAINS = ['tempmail.com', 'throwaway.com']  # Optional
+
+# Rate limiting (requires django-ratelimit)
+RATELIMIT_ENABLE = True
+RATELIMIT_USE_CACHE = 'default'
+
+# Cache settings (for tracking pixels)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+    }
+}
+
+# Add Celery configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 

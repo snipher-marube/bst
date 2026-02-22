@@ -1,0 +1,27 @@
+<!-- newsletter/templates/newsletter/email_templates/welcome_email.html -->
+{% extends "newsletter/email_templates/base_email.html" %}
+
+{% block subject %}Confirm Your Subscription{% endblock %}
+
+{% block header_title %}Welcome to {{ site_name }}!{% endblock %}
+
+{% block content %}
+<h2>Hello{% if subscriber.first_name %} {{ subscriber.first_name }}{% endif %},</h2>
+
+<p>Thank you for subscribing to our newsletter! We're excited to have you on board.</p>
+
+<p>Please confirm your email address by clicking the button below:</p>
+
+<p style="text-align: center; margin: 30px 0;">
+    <a href="{{ confirmation_url }}" class="button">Confirm Subscription</a>
+</p>
+
+<p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
+<p style="word-break: break-all;"><small>{{ confirmation_url }}</small></p>
+
+<p>This confirmation helps us ensure that you really want to receive our emails and that we have the correct email address.</p>
+
+<p>If you didn't sign up for this newsletter, you can safely ignore this email.</p>
+
+<p>Best regards,<br>The {{ site_name }} Team</p>
+{% endblock %}

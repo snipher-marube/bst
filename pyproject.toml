@@ -5,14 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "celery>=5.6.2",
     "cryptography>=46.0.5",
     "django>=6.0.2",
     "django-allauth>=65.14.3",
-    "django-newsletter>=1.2.1",
+    "django-ratelimit>=4.1.0",
     "pillow>=12.1.1",
     "psycopg[binary]>=3.3.2",
     "pyjwt>=2.11.0",
     "python-decouple>=3.8",
+    "redis>=7.2.0",
     "requests>=2.32.5",
     "whitenoise>=6.11.0",
 ]

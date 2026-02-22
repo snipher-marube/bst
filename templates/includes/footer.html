@@ -22,7 +22,7 @@
                 <p class="text-blue-200 mb-8 text-lg">Get the latest features, tips, and insights delivered to your inbox.</p>
                 
                 <!-- Newsletter Form -->
-                <form class="newsletter-form max-w-md mx-auto flex flex-col sm:flex-row gap-3" action="#" method="POST">
+                <form class="newsletter-form max-w-md mx-auto flex flex-col sm:flex-row gap-3" action="{% url 'newsletter:api_subscribe' %}" method="POST">
                     {% csrf_token %}
                     <div class="flex-grow">
                         <label for="newsletter-email" class="sr-only">Email address</label>
@@ -271,31 +271,56 @@
 document.addEventListener('DOMContentLoaded', function() {
     const newsletterForm = document.querySelector('.newsletter-form');
     
-    // Create toast container
-    const toastContainer = document.createElement('div');
-    toastContainer.id = 'toast-container';
-    document.body.appendChild(toastContainer);
+    // Create toast container if it doesn't exist
+    if (!document.getElementById('toast-container')) {
+        const toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.style.position = 'fixed';
+        toastContainer.style.bottom = '20px';
+        toastContainer.style.right = '20px';
+        toastContainer.style.zIndex = '9999';
+        document.body.appendChild(toastContainer);
+    }
     
     function showToast(message, type = 'success') {
         const toast = document.createElement('div');
         toast.className = `toast-notification toast-${type}`;
         toast.textContent = message;
+        toast.style.padding = '1rem 1.5rem';
+        toast.style.borderRadius = '0.5rem';
+        toast.style.color = 'white';
+        toast.style.fontWeight = '500';
+        toast.style.marginBottom = '10px';
+        toast.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+        toast.style.animation = 'slideIn 0.3s ease-out';
         
-        toastContainer.appendChild(toast);
+        if (type === 'success') {
+            toast.style.backgroundColor = '#10b981';
+            toast.style.borderLeft = '4px solid #059669';
+        } else {
+            toast.style.backgroundColor = '#ef4444';
+            toast.style.borderLeft = '4px solid #dc2626';
+        }
+        
+        document.getElementById('toast-container').appendChild(toast);
         
         // Auto remove after 5 seconds
         setTimeout(() => {
-            toast.classList.add('fade-out');
+            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
             setTimeout(() => {
-                toast.remove();
+                if (toast.parentNode) {
+                    toast.remove();
+                }
             }, 300);
         }, 5000);
         
         // Click to dismiss
         toast.addEventListener('click', () => {
-            toast.classList.add('fade-out');
+            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
             setTimeout(() => {
-                toast.remove();
+                if (toast.parentNode) {
+                    toast.remove();
+                }
             }, 300);
         });
     }
@@ -306,8 +331,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const submitButton = this.querySelector('button[type="submit"]');
             const originalText = submitButton.innerHTML;
+            
+            // Show loading state
             submitButton.innerHTML = `
-                <svg class="animate-spin inline-block w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="animate-spin inline-block w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -315,8 +342,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
             submitButton.disabled = true;
             
-            const formData = new FormData(this);
-            const email = formData.get('email');
+            const email = this.querySelector('input[name="email"]').value;
             
             // Email validation
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -327,14 +353,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            // Get the CSRF token from the form
+            const csrfToken = this.querySelector('input[name="csrfmiddlewaretoken"]').value;
+            
+            // Get the correct URL - don't manipulate it, use the form's action attribute directly
+            const formAction = this.getAttribute('action');
+            
             try {
-                const response = await fetch(this.action || '/api/newsletter/subscribe/', {
+                const response = await fetch(formAction, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify({ email: email })
+                    body: JSON.stringify({ 
+                        email: email,
+                        consent: true
+                    })
                 });
                 
                 const result = await response.json();
@@ -354,38 +390,43 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-
-    // Smooth scroll to top when clicking footer links (optional)
-    const footerLinks = document.querySelectorAll('footer a[href^="#"]');
-    footerLinks.forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const targetId = this.getAttribute('href');
-            if (targetId === '#') {
-                window.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
-            } else {
-                const targetElement = document.querySelector(targetId);
-                if (targetElement) {
-                    targetElement.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            }
-        });
-    });
 });
 
-// Add Font Awesome if not already present
-if (!document.querySelector('link[href*="font-awesome"]')) {
-    const faLink = document.createElement('link');
-    faLink.rel = 'stylesheet';
-    faLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
-    document.head.appendChild(faLink);
-}
+// Add CSS animations
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes fadeOut {
+        to {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+    }
+    
+    .animate-spin {
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+`;
+document.head.appendChild(style);
 </script>
 
 <!-- Optional: Add Alpine.js for interactive elements if needed -->

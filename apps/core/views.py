@@ -15,6 +15,7 @@ from .models import (
 )
 from .forms import ContactForm
 import json
+from apps.newsletter.forms import NewsletterSubscriptionForm
 
 
 class HomeView(TemplateView):
@@ -44,7 +45,7 @@ class HomeView(TemplateView):
         context['og_image'] = 'images/og-home.jpg'
         
         # Forms
-        context['newsletter_form'] = NewsletterForm()
+        context['newsletter_form'] = NewsletterSubscriptionForm()
         context['contact_form'] = ContactForm()
         
         return context
