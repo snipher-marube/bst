@@ -26,76 +26,139 @@ from .utils import send_confirmation_email
 logger = logging.getLogger(__name__)
 
 @require_POST
-@ratelimit(key='ip', rate='5/h', method='POST', block=True)
+@ratelimit(key='ip', rate='10/h', method='POST', block=True)
 def newsletter_subscribe(request):
     """
     Handle newsletter subscription with rate limiting and validation
     """
+    # Parse request data
+    data = _parse_request_data(request)
+    if isinstance(data, JsonResponse):
+        return data
+
+    # Validate form
+    form = NewsletterSubscriptionForm(data)
+    if not form.is_valid():
+        return JsonResponse({
+            'success': False,
+            'error': _get_first_form_error(form)
+        }, status=400)
+
+    # Process subscription
+    result = _process_subscription(form.cleaned_data, request)
+    
+    return JsonResponse(result)
+
+
+def _parse_request_data(request):
+    """Parse JSON or form data from request"""
     try:
-        data = json.loads(request.body) if request.body else request.POST
+        if request.content_type == 'application/json':
+            return json.loads(request.body)
+        return request.POST.dict()
     except json.JSONDecodeError:
         return JsonResponse({
             'success': False,
             'error': 'Invalid request format'
         }, status=400)
+
+
+def _get_first_form_error(form):
+    """Extract first error message from form"""
+    for field, errors in form.errors.items():
+        return errors[0]
+    return 'Invalid form data'
+
+
+def _process_subscription(cleaned_data, request):
+    """Process subscription and add to list"""
+    email = cleaned_data['email'].lower()
+    first_name = cleaned_data.get('first_name', '')
+    list_id = cleaned_data.get('list_id')
     
-    form = NewsletterSubscriptionForm(data)
-    
-    if not form.is_valid():
-        return JsonResponse({
-            'success': False,
-            'error': form.errors.get('email', ['Invalid email'])[0]
-        }, status=400)
-    
-    email = form.cleaned_data['email'].lower()
-    first_name = form.cleaned_data.get('first_name', '')
-    
-    # Check for existing subscriber
+    # Get or create subscriber
     subscriber, created = Subscriber.objects.get_or_create(
         email=email,
         defaults={
             'first_name': first_name,
             'status': Subscriber.Status.PENDING,
             'ip_address': request.META.get('REMOTE_ADDR'),
-            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-            'consent_given': form.cleaned_data.get('consent', False),
+            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
+            'consent_given': cleaned_data.get('consent', False),
             'consent_ip': request.META.get('REMOTE_ADDR'),
             'consent_date': timezone.now(),
             'source': Subscriber.Source.WEBSITE
         }
     )
     
+    # Handle existing subscriber
     if not created:
-        if subscriber.status == Subscriber.Status.ACTIVE:
-            return JsonResponse({
-                'success': False,
-                'error': 'This email is already subscribed to our newsletter.'
-            }, status=400)
-        elif subscriber.status == Subscriber.Status.UNSUBSCRIBED:
-            # Reactivate
-            subscriber.status = Subscriber.Status.PENDING
-            subscriber.save(update_fields=['status'])
+        status_check = _check_existing_subscriber(subscriber)
+        if status_check:
+            return status_check
+    
+    # Add to list
+    list_result = _add_subscriber_to_list(subscriber, list_id)
+    if isinstance(list_result, JsonResponse):
+        return list_result
     
     # Send confirmation email
+    _send_confirmation_async(subscriber, email)
+    
+    return {
+        'success': True,
+        'message': 'Please check your email to confirm your subscription.'
+    }
+
+
+def _check_existing_subscriber(subscriber):
+    """Check if existing subscriber can be resubscribed"""
+    if subscriber.status == Subscriber.Status.ACTIVE:
+        return {
+            'success': False,
+            'error': 'This email is already subscribed to our newsletter.'
+        }
+    elif subscriber.status == Subscriber.Status.UNSUBSCRIBED:
+        # Reactivate
+        subscriber.status = Subscriber.Status.PENDING
+        subscriber.save(update_fields=['status'])
+    return None
+
+
+def _add_subscriber_to_list(subscriber, list_id=None):
+    """Add subscriber to specified list or default analytics list"""
+    try:
+        if list_id:
+            email_list = List.objects.get(id=list_id, is_public=True)
+        else:
+            # Get or create default analytics list
+            email_list, _ = List.objects.get_or_create(
+                slug='analytics-newsletter',
+                defaults={
+                    'name': 'Analytics Newsletter',
+                    'description': 'Newsletter for analytics tips, features, and updates',
+                    'is_public': True,
+                }
+            )
+        
+        # Add subscriber to list if not already added
+        if not email_list.subscribers.filter(id=subscriber.id).exists():
+            email_list.subscribers.add(subscriber)
+            logger.info(f"Added {subscriber.email} to list '{email_list.name}'")
+        
+        return email_list
+        
+    except List.DoesNotExist:
+        logger.error(f"List with id {list_id} not found")
+        return None
+
+
+def _send_confirmation_async(subscriber, email):
+    """Send confirmation email with error logging"""
     try:
         send_confirmation_email(subscriber)
     except Exception as e:
         logger.error(f"Failed to send confirmation email to {email}: {str(e)}")
-        # Still return success to user, but log error
-    
-    # Add to default list if specified
-    list_id = form.cleaned_data.get('list_id')
-    if list_id:
-        try:
-            email_list = List.objects.get(id=list_id, is_public=True)
-            email_list.subscribers.add(subscriber)
-        except List.DoesNotExist:
-            pass
-    
-    return JsonResponse({
-        'success': True,
-        'message': 'Please check your email to confirm your subscription.'
-    })
 
 
 @require_GET

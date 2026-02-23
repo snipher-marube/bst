@@ -1,21 +1,22 @@
 # newsletter/admin.py
 from django.contrib import admin
 from django import forms
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.contrib import messages
 from django.template.response import TemplateResponse
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
 import json
+from django.utils.safestring import mark_safe
 
 from .models import (
     Subscriber, Campaign, List, EmailTemplate,
     CampaignRecipient, ClickLink, BounceReport,
     WebhookEvent, ListSubscription
 )
-from .tasks import send_campaign
+from .tasks import send_campaign as send_campaign_task
 from .utils import export_subscribers_csv
 
 # ============================================================================
@@ -182,7 +183,11 @@ class SubscriberAdmin(admin.ModelAdmin):
     ]
     
     list_per_page = 50
-    list_select_related = ['lists']
+
+    def get_queryset(self, request):
+        """Optimize queryset with prefetch_related for ManyToManyField"""
+        return super().get_queryset(request).prefetch_related('lists')
+    
     save_on_top = True
     
     def email_display(self, obj):
@@ -226,7 +231,7 @@ class SubscriberAdmin(admin.ModelAdmin):
         count = obj.lists.count()
         return format_html(
             '<span title="{}">{}</span>',
-            ', '.join(obj.lists.values_list('name', flat=True)),
+            ', '.join(obj.lists.values_list('name', flat=True)[:3]) + ('...' if count > 3 else ''),
             count
         )
     list_membership.short_description = "Lists"
@@ -235,11 +240,11 @@ class SubscriberAdmin(admin.ModelAdmin):
         """Calculate engagement score"""
         total = obj.total_opens + (obj.total_clicks * 2)
         if total == 0:
-            return format_html('<span style="color: #999;">Low</span>')
+            return mark_safe('<span style="color: #999;">Low</span>')
         elif total < 5:
-            return format_html('<span style="color: #ffc107;">Medium</span>')
+            return mark_safe('<span style="color: #ffc107;">Medium</span>')
         else:
-            return format_html('<span style="color: #28a745;">High</span>')
+            return mark_safe('<span style="color: #28a745;">High</span>')
     engagement_score.short_description = "Engagement"
     
     def subscribed_at_display(self, obj):
@@ -441,20 +446,24 @@ class CampaignAdmin(admin.ModelAdmin):
             if form.is_valid():
                 test_email = form.cleaned_data['test_email']
                 for campaign in queryset:
-                    send_campaign.delay(
+                    # FIXED: Using send_campaign_task.delay() instead of send_campaign.delay()
+                    send_campaign_task.delay(
                         campaign.id,
                         test_mode=True,
                         test_email=test_email
                     )
-                self.message_user(
-                    request,
-                    f"✅ Test campaign(s) queued for sending to {test_email}"
-                )
-                return redirect(request.get_full_path())
+                
+                # Return success template
+                return render(request, 'admin/newsletter/send_campaign_success.html', {
+                    'campaigns': queryset,
+                    'action': 'send_test',
+                    'test_email': test_email,
+                    'now': timezone.now(),
+                })
         else:
             form = CampaignSendForm()
         
-        return TemplateResponse(request, 'admin/newsletter/send_campaign.html', {
+        return render(request, 'admin/newsletter/send_campaign.html', {
             'campaigns': queryset,
             'form': form,
             'action': 'send_test',
@@ -464,18 +473,49 @@ class CampaignAdmin(admin.ModelAdmin):
     send_test.short_description = "📧 Send test email"
     
     def send_campaign_action(self, request, queryset):
-        """Send campaign action"""
+        """Send campaign action with debugging"""
         if 'apply' in request.POST:
             form = CampaignSendForm(request.POST)
             if form.is_valid() and form.cleaned_data['confirm_send']:
+                sent_count = 0
+                error_count = 0
+                
                 for campaign in queryset.filter(status='draft'):
-                    campaign.status = 'scheduled'
-                    campaign.save()
-                    send_campaign.delay(campaign.id)
-                self.message_user(
-                    request,
-                    f"✅ {queryset.count()} campaign(s) queued for sending"
-                )
+                    try:
+                        # Update campaign status
+                        campaign.status = 'scheduled'
+                        campaign.save()
+                        
+                        # FIXED: Using send_campaign_task.delay() instead of send_campaign.delay()
+                        result = send_campaign_task.delay(campaign.id)
+                        
+                        # Log the task ID
+                        print(f"✅ Campaign '{campaign.name}' queued with task ID: {result.id}")
+                        
+                        # Add message to admin
+                        self.message_user(
+                            request,
+                            f"✅ Campaign '{campaign.name}' queued (Task ID: {result.id})",
+                            level='INFO'
+                        )
+                        sent_count += 1
+                        
+                    except Exception as e:
+                        error_count += 1
+                        print(f"❌ Error queuing campaign '{campaign.name}': {str(e)}")
+                        self.message_user(
+                            request,
+                            f"❌ Error with '{campaign.name}': {str(e)}",
+                            level='ERROR'
+                        )
+                
+                if sent_count > 0:
+                    self.message_user(
+                        request,
+                        f"✅ {sent_count} campaign(s) queued successfully. Check Celery logs for progress.",
+                        level='SUCCESS'
+                    )
+                
                 return redirect(request.get_full_path())
         else:
             form = CampaignSendForm()
@@ -508,12 +548,7 @@ class ListAdmin(admin.ModelAdmin):
     search_fields = ['name', 'slug', 'description']
     prepopulated_fields = {'slug': ('name',)}
     
-    # Fixed: Remove filter_horizontal for subscribers with through model
-    # Instead, use raw_id_fields or exclude it
-    raw_id_fields = ['subscribers']  # Alternative: use raw_id_fields
-    # Or simply don't include it in the form:
-    # exclude = ['subscribers']
-    
+    raw_id_fields = ['subscribers']
     actions = [export_list_subscribers]
     
     fieldsets = (
@@ -534,22 +569,15 @@ class ListAdmin(admin.ModelAdmin):
     
     def name_display(self, obj):
         """Display name with icon"""
-        return format_html(
-            '<strong>{}</strong>',
-            obj.name
-        )
+        return format_html('<strong>{}</strong>', obj.name) 
     name_display.short_description = "Name"
     name_display.admin_order_field = 'name'
     
     def status_badge(self, obj):
         """Display public/private status"""
         if obj.is_public:
-            return format_html(
-                '<span style="color: #28a745;">🌐 Public</span>'
-            )
-        return format_html(
-            '<span style="color: #6c757d;">🔒 Private</span>'
-        )
+            return format_html('<span style="color: #28a745;">🌐 {}</span>', 'Public') 
+        return format_html('<span style="color: #6c757d;">🔒 {}</span>', 'Private')  
     status_badge.short_description = "Visibility"
     
     def subscriber_count(self, obj):
@@ -570,7 +598,7 @@ class ListAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queryset with counts"""
         return super().get_queryset(request).annotate(
-            subscriber_count=Count('subscribers', filter=Q(subscribers__status='active'))
+            subscriber_count=Count('subscribers', filter=Q(subscribers__status=Subscriber.Status.ACTIVE))
         )
 
 

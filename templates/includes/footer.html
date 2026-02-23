@@ -2,51 +2,107 @@
 <!-- Footer -->
 <footer class="bg-[#2b2b2b] text-gray-300" aria-label="Site footer">
     <!-- Newsletter Section with Orange Accent -->
-    <div class="bg-[#03466e] py-16 relative overflow-hidden">
-        <!-- Decorative pattern -->
-        <div class="absolute inset-0 opacity-10">
-            <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <pattern id="footer-grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                        <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
-                    </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#footer-grid)"/>
-            </svg>
-        </div>
-        
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-            <div class="max-w-3xl mx-auto text-center">
-                <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Newsletter</span>
-                <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Stay Updated</h2>
-                <p class="text-blue-200 mb-8 text-lg">Get the latest features, tips, and insights delivered to your inbox.</p>
+<div class="bg-[#03466e] py-16 relative overflow-hidden">
+    <!-- Decorative pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <pattern id="footer-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                    <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
+                </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#footer-grid)"/>
+        </svg>
+    </div>
+    
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative">
+        <div class="max-w-3xl mx-auto text-center">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Newsletter</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Stay Updated</h2>
+            <p class="text-blue-200 mb-8 text-lg">Get the latest features, tips, and insights delivered to your inbox.</p>
+            
+            <!-- Newsletter Form - Compact Design -->
+            <form class="newsletter-form max-w-xl mx-auto" action="{% url 'newsletter:api_subscribe' %}" method="POST">
+                {% csrf_token %}
                 
-                <!-- Newsletter Form -->
-                <form class="newsletter-form max-w-md mx-auto flex flex-col sm:flex-row gap-3" action="{% url 'newsletter:api_subscribe' %}" method="POST">
-                    {% csrf_token %}
-                    <div class="flex-grow">
-                        <label for="newsletter-email" class="sr-only">Email address</label>
+                <!-- Hidden field with the Analytics List ID -->
+                {% if analytics_list_id %}
+                <input type="hidden" name="list_id" value="{{ analytics_list_id }}">
+                {% endif %}
+                
+                <!-- Glass morphism card -->
+                <div class="bg-white/5 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                    <!-- Email Input with floating label effect -->
+                    <div class="relative mb-3">
                         <input type="email" 
                                name="email" 
                                id="newsletter-email"
                                required
-                               class="w-full px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent focus:border-transparent"
-                               placeholder="Enter your email">
+                               placeholder=" "
+                               class="peer w-full px-4 pt-6 pb-2 text-white bg-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent transition-all duration-200 placeholder-transparent">
+                        <label for="newsletter-email" 
+                               class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm peer-focus:text-xs peer-focus:-translate-y-6 peer-focus:text-[#f68712] peer-valid:text-xs peer-valid:-translate-y-6 transition-all duration-200">
+                            Email address <span class="text-red-400">*</span>
+                        </label>
+                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                            <svg class="w-5 h-5 text-gray-400 peer-focus:text-[#f68712] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
                     </div>
-                    <button type="submit" 
-                            class="px-6 py-3 bg-[#f68712] text-white font-medium rounded-lg hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#03466e] focus:ring-[#f68712] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                        Subscribe
-                        <svg class="inline-block ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-                        </svg>
-                    </button>
-                </form>
-                <p class="text-xs text-blue-300 mt-4">
-                    We respect your privacy. Unsubscribe at any time.
+                    
+                    <!-- First Name Input with floating label -->
+                    <div class="relative mb-4">
+                        <input type="text" 
+                               name="first_name" 
+                               id="first-name"
+                               placeholder=" "
+                               class="peer w-full px-4 pt-6 pb-2 text-white bg-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent transition-all duration-200 placeholder-transparent">
+                        <label for="first-name" 
+                               class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm peer-focus:text-xs peer-focus:-translate-y-6 peer-focus:text-[#f68712] peer-valid:text-xs peer-valid:-translate-y-6 transition-all duration-200">
+                            First name <span class="text-gray-500 text-xs">(optional)</span>
+                        </label>
+                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                            <svg class="w-5 h-5 text-gray-400 peer-focus:text-[#f68712] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    <!-- Consent and Submit Row -->
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div class="flex items-center space-x-3">
+                            <input type="checkbox" 
+                                   name="consent" 
+                                   id="consent" 
+                                   required
+                                   class="w-5 h-5 rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+                            <label for="consent" class="text-sm text-blue-200">
+                                I agree to the <a href="/privacy/" class="text-white hover:text-[#f68712] underline">privacy policy</a>
+                            </label>
+                        </div>
+                        
+                        <button type="submit" 
+                                class="px-8 py-3 bg-[#f68712] text-white font-semibold rounded-xl hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#03466e] focus:ring-[#f68712] transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center space-x-2 group">
+                            <span>Subscribe</span>
+                            <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Privacy Note -->
+                <p class="text-xs text-blue-300 mt-4 flex items-center justify-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <span>We respect your privacy. Unsubscribe at any time.</span>
                 </p>
-            </div>
+            </form>
         </div>
     </div>
+</div>
     
     <!-- Main Footer -->
     <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -270,161 +326,81 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const newsletterForm = document.querySelector('.newsletter-form');
-    
-    // Create toast container if it doesn't exist
-    if (!document.getElementById('toast-container')) {
-        const toastContainer = document.createElement('div');
-        toastContainer.id = 'toast-container';
-        toastContainer.style.position = 'fixed';
-        toastContainer.style.bottom = '20px';
-        toastContainer.style.right = '20px';
-        toastContainer.style.zIndex = '9999';
-        document.body.appendChild(toastContainer);
-    }
-    
-    function showToast(message, type = 'success') {
+    if (!newsletterForm) return;
+
+    // Create toast container
+    const toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
+    document.body.appendChild(toastContainer);
+
+    const showToast = (message, type = 'success') => {
         const toast = document.createElement('div');
         toast.className = `toast-notification toast-${type}`;
         toast.textContent = message;
-        toast.style.padding = '1rem 1.5rem';
-        toast.style.borderRadius = '0.5rem';
-        toast.style.color = 'white';
-        toast.style.fontWeight = '500';
-        toast.style.marginBottom = '10px';
-        toast.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-        toast.style.animation = 'slideIn 0.3s ease-out';
+        toast.style.cssText = `
+            padding: 1rem 1.5rem; border-radius: 0.5rem; color: white;
+            font-weight: 500; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out; background-color: ${type === 'success' ? '#10b981' : '#ef4444'};
+            border-left: 4px solid ${type === 'success' ? '#059669' : '#dc2626'};
+        `;
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    };
+
+    newsletterForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        if (type === 'success') {
-            toast.style.backgroundColor = '#10b981';
-            toast.style.borderLeft = '4px solid #059669';
-        } else {
-            toast.style.backgroundColor = '#ef4444';
-            toast.style.borderLeft = '4px solid #dc2626';
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        
+        // Show loading state
+        submitBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⏳</span> Subscribing...';
+        submitBtn.disabled = true;
+
+        // Collect form data
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch(e.target.action, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': data.csrfmiddlewaretoken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    email: data.email,
+                    first_name: data.first_name || '',
+                    consent: data.consent === 'on',
+                    list_id: data.list_id
+                })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                showToast('✅ Successfully subscribed! Check your email.', 'success');
+                e.target.reset();
+            } else {
+                showToast(result.error || 'Subscription failed', 'error');
+            }
+        } catch (error) {
+            showToast('Network error. Please try again.', 'error');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
         }
-        
-        document.getElementById('toast-container').appendChild(toast);
-        
-        // Auto remove after 5 seconds
-        setTimeout(() => {
-            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.remove();
-                }
-            }, 300);
-        }, 5000);
-        
-        // Click to dismiss
-        toast.addEventListener('click', () => {
-            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.remove();
-                }
-            }, 300);
-        });
-    }
-    
-    if (newsletterForm) {
-        newsletterForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const submitButton = this.querySelector('button[type="submit"]');
-            const originalText = submitButton.innerHTML;
-            
-            // Show loading state
-            submitButton.innerHTML = `
-                <svg class="animate-spin inline-block w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Subscribing...
-            `;
-            submitButton.disabled = true;
-            
-            const email = this.querySelector('input[name="email"]').value;
-            
-            // Email validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                showToast('Please enter a valid email address.', 'error');
-                submitButton.innerHTML = originalText;
-                submitButton.disabled = false;
-                return;
-            }
-            
-            // Get the CSRF token from the form
-            const csrfToken = this.querySelector('input[name="csrfmiddlewaretoken"]').value;
-            
-            // Get the correct URL - don't manipulate it, use the form's action attribute directly
-            const formAction = this.getAttribute('action');
-            
-            try {
-                const response = await fetch(formAction, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify({ 
-                        email: email,
-                        consent: true
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok && result.success) {
-                    showToast('🎉 Successfully subscribed to newsletter!', 'success');
-                    this.reset();
-                } else {
-                    showToast(result.error || 'Something went wrong. Please try again.', 'error');
-                }
-            } catch (error) {
-                console.error('Newsletter subscription error:', error);
-                showToast('Network error. Please check your connection and try again.', 'error');
-            } finally {
-                submitButton.innerHTML = originalText;
-                submitButton.disabled = false;
-            }
-        });
-    }
+    });
 });
 
 // Add CSS animations
 const style = document.createElement('style');
 style.textContent = `
-    @keyframes slideIn {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    @keyframes fadeOut {
-        to {
-            opacity: 0;
-            transform: translateY(100%);
-        }
-    }
-    
-    .animate-spin {
-        animation: spin 1s linear infinite;
-    }
-    
-    @keyframes spin {
-        from {
-            transform: rotate(0deg);
-        }
-        to {
-            transform: rotate(360deg);
-        }
-    }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .animate-spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 `;
 document.head.appendChild(style);
 </script>

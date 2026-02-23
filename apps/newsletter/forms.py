@@ -14,15 +14,19 @@ class NewsletterSubscriptionForm(forms.Form):
             'class': 'w-full px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent',
             'placeholder': 'Enter your email',
             'id': 'newsletter-email',
-            'required': True
         }),
-        validators=[EmailValidator()]
+        validators=[EmailValidator()],
+        error_messages={
+            'required': 'Email address is required',
+            'invalid': 'Please enter a valid email address',
+        }
     )
     
     first_name = forms.CharField(
         required=False,
+        max_length=100,
         widget=forms.TextInput(attrs={
-            'class': 'w-full px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f68712]',
+            'class': 'w-full sm:w-auto px-4 py-3 text-gray-900 placeholder-gray-500 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent',
             'placeholder': 'First name (optional)'
         })
     )
@@ -32,7 +36,10 @@ class NewsletterSubscriptionForm(forms.Form):
         widget=forms.CheckboxInput(attrs={
             'class': 'rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]'
         }),
-        label="I agree to receive newsletters and accept the privacy policy"
+        label="I agree to receive newsletters and accept the privacy policy",
+        error_messages={
+            'required': 'You must consent to receive newsletters'
+        }
     )
     
     list_id = forms.IntegerField(
@@ -41,39 +48,49 @@ class NewsletterSubscriptionForm(forms.Form):
     )
     
     def clean_email(self):
-        """Additional email validation"""
+        """Validate and normalize email"""
         email = self.cleaned_data['email'].lower().strip()
         
-        # Check for disposable emails if enabled
-        if hasattr(settings, 'DISPOSABLE_EMAIL_DOMAINS'):
-            domain = email.split('@')[1]
-            if domain in settings.DISPOSABLE_EMAIL_DOMAINS:
-                raise forms.ValidationError(
-                    'Disposable email addresses are not allowed. Please use a permanent email address.'
-                )
+        # Check for disposable emails
+        if self._is_disposable_email(email):
+            raise forms.ValidationError(
+                'Disposable email addresses are not allowed. Please use a permanent email address.'
+            )
         
         return email
     
-    def clean(self):
-        cleaned_data = super().clean()
-        
-        # Check if already subscribed but unsubscribed
-        email = cleaned_data.get('email')
-        if email:
+    def _is_disposable_email(self, email):
+        """Check if email domain is disposable"""
+        disposable_domains = getattr(settings, 'DISPOSABLE_EMAIL_DOMAINS', [])
+        if disposable_domains:
             try:
-                subscriber = Subscriber.objects.get(email=email)
-                if subscriber.status == Subscriber.Status.UNSUBSCRIBED:
-                    # Allow resubscription
-                    pass
-                elif subscriber.status == Subscriber.Status.ACTIVE:
-                    raise forms.ValidationError(
-                        'This email is already subscribed to our newsletter.'
-                    )
-            except Subscriber.DoesNotExist:
-                pass
+                domain = email.split('@')[1]
+                return domain in disposable_domains
+            except IndexError:
+                return False
+        return False
+    
+    def clean(self):
+        """Validate subscription status"""
+        cleaned_data = super().clean()
+        email = cleaned_data.get('email')
+        
+        if email:
+            self._check_existing_subscription(email)
         
         return cleaned_data
-
+    
+    def _check_existing_subscription(self, email):
+        """Check if email is already actively subscribed"""
+        try:
+            subscriber = Subscriber.objects.get(email=email)
+            if subscriber.status == Subscriber.Status.ACTIVE:
+                raise forms.ValidationError(
+                    'This email is already subscribed to our newsletter.',
+                    code='already_subscribed'
+                )
+        except Subscriber.DoesNotExist:
+            pass
 
 class CampaignForm(forms.ModelForm):
     """Form for creating/editing campaigns"""
