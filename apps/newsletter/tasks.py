@@ -68,17 +68,17 @@ def send_campaign(self, campaign_id: int, test_mode: bool = False, test_email: O
     """
     campaign = _get_campaign(campaign_id)
     if not campaign:
+        logger.error(f"Campaign {campaign_id} not found or invalid status")
         return
-
-    _update_campaign_status(campaign, Campaign.Status.SENDING)
 
     try:
         if test_mode and test_email:
             _send_test_campaign(campaign, test_email)
+            # Don't update status for test emails
+            logger.info(f"✅ Test campaign {campaign_id} sent to {test_email}")
         else:
             _send_bulk_campaign(campaign)
-        
-        _update_campaign_status(campaign, Campaign.Status.SENT, sent_at=timezone.now())
+            _update_campaign_status(campaign, Campaign.Status.SENT, sent_at=timezone.now())
         
     except Exception as exc:
         logger.error(f"Campaign {campaign_id} failed: {str(exc)}", exc_info=True)
@@ -87,7 +87,6 @@ def send_campaign(self, campaign_id: int, test_mode: bool = False, test_email: O
         # Retry with exponential backoff
         countdown = 60 * (2 ** self.request.retries)
         self.retry(exc=exc, countdown=min(countdown, 3600))  # Max 1 hour
-
 
 # ============================================================================
 # WEBHOOK TASK
@@ -129,18 +128,16 @@ def process_webhook_event(event_id: int):
 # ============================================================================
 # CAMPAIGN SENDING HELPERS
 # ============================================================================
-
 def _get_campaign(campaign_id: int) -> Optional[Campaign]:
-    """Get campaign by ID with proper status"""
+    """Get campaign by ID with proper status - allow scheduled status"""
     try:
         return Campaign.objects.select_related().get(
             id=campaign_id,
-            status__in=['draft', 'scheduled']
+            status__in=['draft', 'scheduled', 'sending'] 
         )
     except Campaign.DoesNotExist:
-        logger.error(f"Campaign {campaign_id} not found or not in draft/scheduled status")
+        logger.error(f"Campaign {campaign_id} not found or not in valid status")
         return None
-
 
 def _update_campaign_status(campaign: Campaign, status: str, **extra_fields):
     """Update campaign status and optional fields"""
@@ -162,6 +159,7 @@ def _send_test_campaign(campaign: Campaign, test_email: str):
     logger.info(f"✅ Test campaign {campaign.name} sent to {test_email}")
 
 
+
 def _send_bulk_campaign(campaign: Campaign):
     """Send campaign to all active subscribers in batches"""
     subscribers = _get_active_subscribers(campaign)
@@ -169,6 +167,9 @@ def _send_bulk_campaign(campaign: Campaign):
     
     if total == 0:
         logger.warning(f"⚠️ No active subscribers for campaign {campaign.name}")
+        campaign.total_recipients = 0
+        campaign.total_sent = 0
+        campaign.save(update_fields=['total_recipients', 'total_sent'])
         return
 
     campaign.total_recipients = total
@@ -181,36 +182,61 @@ def _send_bulk_campaign(campaign: Campaign):
     }
 
     for subscriber in subscribers.iterator(chunk_size=100):
-        success = _process_recipient(campaign, subscriber)
-        if success:
-            stats['sent'] += 1
-        else:
+        try:
+            success = _process_recipient(campaign, subscriber)
+            if success:
+                stats['sent'] += 1
+            else:
+                stats['failed'] += 1
+        except Exception as e:
+            logger.error(f"Error processing {subscriber.email}: {str(e)}")
             stats['failed'] += 1
+            _create_failed_recipient(campaign, subscriber, str(e))
 
-        _log_progress(campaign, stats)
+        # Log progress every 100 emails
+        if stats['sent'] % 100 == 0 or stats['sent'] == total:
+            logger.info(
+                f"Campaign {campaign.name}: "
+                f"{stats['sent']}/{stats['total']} sent, "
+                f"{stats['failed']} failed"
+            )
+            campaign.total_sent = stats['sent']
+            campaign.save(update_fields=['total_sent'])
 
     _finalize_campaign(campaign, stats)
-
 
 def _get_active_subscribers(campaign: Campaign):
     """Get active subscribers for campaign lists"""
     return Subscriber.objects.filter(
         lists__in=campaign.lists.all(),
         status=Subscriber.Status.ACTIVE
-    ).distinct().only('id', 'email', 'first_name', 'unsubscribe_token')
+    ).distinct().only('id', 'email', 'first_name', 'last_name', 'unsubscribe_token')
 
 
 def _process_recipient(campaign: Campaign, subscriber: Subscriber) -> bool:
-    """Process a single recipient"""
+    """Process a single recipient with better error handling"""
     try:
-        with transaction.atomic():
-            _send_single_email(campaign, subscriber, subscriber.email)
+        # Create recipient record first
+        recipient, created = CampaignRecipient.objects.get_or_create(
+            campaign=campaign,
+            subscriber=subscriber,
+            defaults={'status': CampaignRecipient.Status.PENDING}
+        )
+        
+        # Send email
+        _send_single_email(campaign, subscriber, subscriber.email)
+        
+        # Update recipient status
+        recipient.status = CampaignRecipient.Status.SENT
+        recipient.sent_at = timezone.now()
+        recipient.save(update_fields=['status', 'sent_at'])
+        
         return True
+        
     except Exception as e:
         logger.error(f"Failed to send to {subscriber.email}: {str(e)}")
         _create_failed_recipient(campaign, subscriber, str(e))
         return False
-
 
 def _log_progress(campaign: Campaign, stats: Dict[str, int]):
     """Log progress periodically"""
@@ -240,18 +266,26 @@ def _finalize_campaign(campaign: Campaign, stats: Dict[str, int]):
 # EMAIL SENDING HELPERS
 # ============================================================================
 
-def _send_single_email(campaign: Campaign, subscriber: Optional[Subscriber], email: str):
+def _send_single_email(campaign: Campaign, subscriber: Subscriber, email: str):
     """
     Send a single email with personalization and tracking
     """
-    recipient = _get_or_create_recipient(campaign, subscriber)
     html_content, text_content = _prepare_email_content(campaign, subscriber)
 
     email_message = _create_email_message(campaign, email, text_content, html_content)
+    
+    # Add message ID for tracking
+    message_id = f"<{campaign.id}.{subscriber.id}.{timezone.now().timestamp()}@{settings.SITE_NAME}>"
+    email_message.extra_headers['Message-ID'] = message_id
+    
     email_message.send(fail_silently=False)
-
-    _update_recipient_status(recipient)
-
+    
+    # Update recipient with message_id if we have one
+    if subscriber:
+        CampaignRecipient.objects.filter(
+            campaign=campaign,
+            subscriber=subscriber
+        ).update(message_id=message_id)
 
 def _get_or_create_recipient(campaign: Campaign, subscriber: Optional[Subscriber]):
     """Get or create campaign recipient record"""
