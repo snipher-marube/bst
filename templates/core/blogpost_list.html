@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<!-- Redirect to blog_list -->
+<meta http-equiv="refresh" content="0; url={% url 'core:blog_list' %}">
+{% endblock %}

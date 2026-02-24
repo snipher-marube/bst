@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ post.meta_title|default:post.title }} - {{ site_settings.site_name }} Blog{% endblock %}
+
+{% block meta_description %}{{ post.meta_description|default:post.excerpt }}{% endblock %}
+
+{% block og_title %}{{ post.og_title|default:post.title }}{% endblock %}
+{% block og_description %}{{ post.og_description|default:post.excerpt }}{% endblock %}
+{% block og_image %}{% if post.featured_image %}{{ request.build_absolute_uri }}{{ post.featured_image.url }}{% endif %}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav class="bg-gray-50 py-3" aria-label="Breadcrumb">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <ol class="flex items-center space-x-2 text-sm">
+            <li>
+                <a href="{% url 'core:home' %}" class="text-gray-600 hover:text-[#03466e]">Home</a>
+            </li>
+            <li>
+                <i class="fas fa-chevron-right text-gray-400 text-xs" aria-hidden="true"></i>
+            </li>
+            <li>
+                <a href="{% url 'core:blog_list' %}" class="text-gray-600 hover:text-[#03466e]">Blog</a>
+            </li>
+            <li>
+                <i class="fas fa-chevron-right text-gray-400 text-xs" aria-hidden="true"></i>
+            </li>
+            <li>
+                <span class="text-[#03466e] font-medium" aria-current="page">{{ post.title|truncatechars:50 }}</span>
+            </li>
+        </ol>
+    </div>
+</nav>
+
+<!-- Article Header -->
+<header class="bg-white py-12 border-b border-gray-200">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+        <!-- Categories & Meta -->
+        <div class="flex items-center gap-4 mb-6">
+            <span class="inline-block bg-[#f68712] text-white text-sm font-semibold px-4 py-1.5 rounded-full">
+                {{ post.get_category_display }}
+            </span>
+            <span class="text-sm text-gray-500">
+                <i class="far fa-clock mr-1"></i>{{ post.read_time }} min read
+            </span>
+            <span class="text-sm text-gray-500">
+                <i class="far fa-eye mr-1"></i>{{ post.views }} views
+            </span>
+        </div>
+
+        <!-- Title -->
+        <h1 class="text-4xl md:text-5xl font-bold text-[#03466e] mb-6">
+            {{ post.title }}
+        </h1>
+
+        <!-- Excerpt -->
+        <p class="text-xl text-gray-600 mb-8">
+            {{ post.excerpt }}
+        </p>
+
+        <!-- Author Info -->
+        <div class="flex items-center justify-between">
+            <div class="flex items-center">
+                {% if post.author %}
+                <div class="w-14 h-14 bg-gradient-to-br from-[#03466e] to-[#f68712] rounded-full flex items-center justify-center text-white font-bold text-xl">
+                    {{ post.author.email|first|upper }}
+                </div>
+                <div class="ml-4">
+                    <p class="text-lg font-semibold text-gray-900">
+                        {{ post.author.get_full_name|default:post.author.email }}
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        Published on <time datetime="{{ post.published_at|date:'Y-m-d' }}">{{ post.published_at|date:"F j, Y" }}</time>
+                        {% if post.updated_at != post.published_at %}
+                            · Updated {{ post.updated_at|date:"F j, Y" }}
+                        {% endif %}
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Share Buttons -->
+            <div class="flex space-x-2">
+                <a href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ request.build_absolute_uri }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="w-10 h-10 bg-[#1DA1F2] text-white rounded-full flex items-center justify-center hover:bg-opacity-90 transition-colors duration-200"
+                   aria-label="Share on Twitter">
+                    <i class="fab fa-twitter"></i>
+                </a>
+                <a href="https://www.linkedin.com/sharing/share-offsite/?url={{ request.build_absolute_uri }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="w-10 h-10 bg-[#0077B5] text-white rounded-full flex items-center justify-center hover:bg-opacity-90 transition-colors duration-200"
+                   aria-label="Share on LinkedIn">
+                    <i class="fab fa-linkedin-in"></i>
+                </a>
+                <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.build_absolute_uri }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="w-10 h-10 bg-[#4267B2] text-white rounded-full flex items-center justify-center hover:bg-opacity-90 transition-colors duration-200"
+                   aria-label="Share on Facebook">
+                    <i class="fab fa-facebook-f"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Featured Image -->
+{% if post.featured_image %}
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl -mt-8 mb-12">
+    <figure class="relative">
+        <img src="{{ post.featured_image.url }}" 
+             alt="{{ post.title }}" 
+             class="w-full h-auto rounded-2xl shadow-xl"
+             loading="lazy">
+        {% if post.featured_image.caption %}
+        <figcaption class="text-sm text-gray-500 mt-2 text-center">{{ post.featured_image.caption }}</figcaption>
+        {% endif %}
+    </figure>
+</div>
+{% endif %}
+
+<!-- Article Content -->
+<article class="py-12 bg-white" itemscope itemtype="https://schema.org/BlogPosting">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto">
+            <!-- Main Content -->
+            <div class="prose prose-lg prose-headings:text-[#03466e] prose-a:text-[#f68712] hover:prose-a:text-[#e07810] max-w-none"
+                 itemprop="articleBody">
+                {{ post.content|linebreaks }}
+            </div>
+
+            <!-- Tags -->
+            {% if post.tags %}
+            <div class="mt-12 pt-8 border-t border-gray-200">
+                <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Tags</h2>
+                <div class="flex flex-wrap gap-2">
+                    {% for tag in post.tags.split %}
+                    <a href="{% url 'core:blog_list' %}?tag={{ tag|urlencode }}" 
+                       class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-[#f68712] hover:text-white transition-colors duration-200">
+                        #{{ tag }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Author Bio -->
+            {% if post.author %}
+            <div class="mt-12 p-8 bg-gray-50 rounded-2xl border border-gray-200">
+                <div class="flex items-center">
+                    <div class="w-16 h-16 bg-gradient-to-br from-[#03466e] to-[#f68712] rounded-full flex items-center justify-center text-white font-bold text-2xl">
+                        {{ post.author.email|first|upper }}
+                    </div>
+                    <div class="ml-6">
+                        <h3 class="text-xl font-semibold text-[#03466e] mb-2">
+                            About {{ post.author.get_full_name|default:post.author.email }}
+                        </h3>
+                        
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</article>
+
+<!-- Related Posts -->
+{% if related_posts %}
+<section class="py-16 bg-gray-50" aria-labelledby="related-posts-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 id="related-posts-heading" class="text-3xl font-bold text-center text-[#03466e] mb-12">
+            Related Articles
+        </h2>
+
+        <div class="grid md:grid-cols-3 gap-8">
+            {% for related in related_posts %}
+            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100">
+                <a href="{{ related.get_absolute_url }}" class="block">
+                    <div class="relative h-48 overflow-hidden">
+                        {% if related.featured_image %}
+                        <img src="{{ related.featured_image.url }}" 
+                             alt="{{ related.title }}" 
+                             class="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                             loading="lazy">
+                        {% endif %}
+                        <span class="absolute top-4 left-4 bg-[#f68712] text-white text-xs font-semibold px-3 py-1 rounded-full">
+                            {{ related.get_category_display }}
+                        </span>
+                    </div>
+                    <div class="p-6">
+                        <h3 class="text-lg font-semibold text-[#03466e] mb-3 hover:text-[#f68712] transition-colors duration-200">
+                            {{ related.title }}
+                        </h3>
+                        <p class="text-gray-600 text-sm mb-4 line-clamp-2">
+                            {{ related.excerpt }}
+                        </p>
+                        <div class="flex items-center text-sm text-gray-500">
+                            <i class="far fa-clock mr-1"></i>{{ related.read_time }} min read
+                        </div>
+                    </div>
+                </a>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Comments Section (if you want to add later) -->
+<section class="py-16 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
+        <h2 class="text-2xl font-bold text-[#03466e] mb-8">Comments</h2>
+        <p class="text-gray-600 text-center py-8 border-t border-gray-200">
+            Comments are coming soon! In the meantime, feel free to 
+            <a href="{% url 'core:contact' %}?subject=Blog: {{ post.title|urlencode }}" class="text-[#f68712] hover:underline">
+                reach out to us directly
+            </a>.
+        </p>
+    </div>
+</section>
+
+<!-- Structured Data -->
+{% block structured_data %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "{{ post.title|escapejs }}",
+    "description": "{{ post.excerpt|escapejs }}",
+    "image": "{% if post.featured_image %}{{ request.build_absolute_uri }}{{ post.featured_image.url }}{% endif %}",
+    "datePublished": "{{ post.published_at|date:'Y-m-d' }}",
+    "dateModified": "{{ post.updated_at|date:'Y-m-d' }}",
+    "author": {
+        "@type": "Person",
+        "name": "{{ post.author.get_full_name|default:post.author.email|escapejs }}"
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "{% if site_settings.logo %}{{ request.build_absolute_uri }}{{ site_settings.logo.url }}{% endif %}"
+        }
+    },
+    "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "{{ request.build_absolute_uri }}"
+    },
+    "keywords": "{{ post.tags|escapejs }}",
+    "articleSection": "{{ post.get_category_display|escapejs }}",
+    "wordCount": "{{ post.content|wordcount }}"
+}
+</script>
+{% endblock %}
+{% endblock %}

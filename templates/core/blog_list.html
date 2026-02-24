@@ -1,0 +1,277 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Blog - {{ site_settings.site_name }} Insights & Updates{% endblock %}
+
+{% block meta_description %}Read the latest insights, tutorials, and updates from the {{ site_settings.site_name }} team. Learn about data analytics, business intelligence, and no-code solutions for SMEs.{% endblock %}
+
+{% block content %}
+
+
+<!-- Featured Post -->
+{% if featured_post %}
+<section class="py-12 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-gradient-to-r from-[#03466e]/5 to-[#f68712]/5 rounded-2xl p-8 border border-gray-200">
+            <div class="grid lg:grid-cols-2 gap-8 items-center">
+                <div>
+                    <span class="inline-block bg-[#f68712] text-white text-sm font-semibold px-3 py-1 rounded-full mb-4">
+                        Featured Post
+                    </span>
+                    <h2 class="text-3xl font-bold text-[#03466e] mb-4">
+                        <a href="{{ featured_post.get_absolute_url }}" class="hover:text-[#f68712] transition-colors duration-200">
+                            {{ featured_post.title }}
+                        </a>
+                    </h2>
+                    <p class="text-gray-600 mb-6 text-lg">
+                        {{ featured_post.excerpt }}
+                    </p>
+                    <div class="flex items-center mb-6">
+                        <div class="flex items-center">
+                            {% if featured_post.author %}
+                                <div class="w-10 h-10 bg-[#03466e] rounded-full flex items-center justify-center text-white font-bold">
+                                    {{ featured_post.author.email|first|upper }}
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-medium text-gray-900">{{ featured_post.author.get_full_name|default:featured_post.author.email }}</p>
+                                    <p class="text-xs text-gray-500">{{ featured_post.published_at|date:"F j, Y" }} · {{ featured_post.read_time }} min read</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <a href="{{ featured_post.get_absolute_url }}" 
+                       class="inline-flex items-center px-6 py-3 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors duration-200 font-medium">
+                        Read Featured Post
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </a>
+                </div>
+                <div class="relative">
+                    {% if featured_post.featured_image %}
+                    <img src="{{ featured_post.featured_image.url }}" 
+                         alt="{{ featured_post.title }}" 
+                         class="rounded-xl shadow-xl w-full h-auto object-cover"
+                         loading="lazy">
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Blog Posts Grid -->
+<section class="py-12 bg-gray-50" aria-labelledby="posts-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 id="posts-heading" class="sr-only">Blog Posts</h2>
+        
+        <!-- Category Filter -->
+        {% if categories %}
+        <div class="mb-8 flex flex-wrap gap-2 justify-center">
+            <a href="{% url 'core:blog_list' %}" 
+               class="px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 {% if not request.GET.category %}bg-[#f68712] text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+                All Posts
+            </a>
+            {% for category in categories %}
+            <a href="?category={{ category }}" 
+               class="px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 {% if request.GET.category == category %}bg-[#f68712] text-white{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">
+                {{ category|title }}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Search Bar -->
+        <div class="max-w-xl mx-auto mb-12">
+            <form method="get" class="relative">
+                <label for="blog-search" class="sr-only">Search blog posts</label>
+                <input type="search" 
+                       name="q" 
+                       id="blog-search"
+                       value="{{ request.GET.q }}"
+                       placeholder="Search articles..." 
+                       class="w-full px-6 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                <button type="submit" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#03466e]">
+                    <i class="fas fa-search"></i>
+                </button>
+            </form>
+        </div>
+
+        <!-- Posts Grid -->
+        {% if posts %}
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for post in posts %}
+            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 card-hover"
+                     itemscope itemtype="https://schema.org/BlogPosting">
+                <a href="{{ post.get_absolute_url }}" class="block">
+                    <!-- Featured Image -->
+                    <div class="relative overflow-hidden h-48">
+                        {% if post.featured_image %}
+                        <img src="{{ post.featured_image.url }}" 
+                             alt="{{ post.title }}" 
+                             class="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                             loading="lazy"
+                             itemprop="image">
+                        {% else %}
+                        <div class="w-full h-full bg-gradient-to-br from-[#03466e] to-[#f68712] flex items-center justify-center">
+                            <i class="fas fa-newspaper text-4xl text-white/50"></i>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Category Badge -->
+                        <span class="absolute top-4 left-4 bg-[#f68712] text-white text-xs font-semibold px-3 py-1 rounded-full">
+                            {{ post.get_category_display }}
+                        </span>
+                        
+                        <!-- Read Time -->
+                        <span class="absolute top-4 right-4 bg-black/50 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
+                            <i class="far fa-clock mr-1"></i>{{ post.read_time }} min read
+                        </span>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="p-6">
+                        <!-- Title -->
+                        <h3 class="text-xl font-semibold text-[#03466e] mb-3 hover:text-[#f68712] transition-colors duration-200"
+                            itemprop="headline">
+                            {{ post.title }}
+                        </h3>
+
+                        <!-- Excerpt -->
+                        <p class="text-gray-600 mb-4 line-clamp-3" itemprop="description">
+                            {{ post.excerpt }}
+                        </p>
+
+                        <!-- Meta Info -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                {% if post.author %}
+                                <div class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-semibold text-sm">
+                                    {{ post.author.email|first|upper }}
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-medium text-gray-900" itemprop="author">
+                                        {{ post.author.get_full_name|default:post.author.email }}
+                                    </p>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <time datetime="{{ post.published_at|date:'Y-m-d' }}" 
+                                  class="text-sm text-gray-500"
+                                  itemprop="datePublished">
+                                {{ post.published_at|date:"M d, Y" }}
+                            </time>
+                        </div>
+
+                        <!-- Read More Link -->
+                        <div class="mt-4 pt-4 border-t border-gray-100">
+                            <span class="text-[#f68712] font-medium inline-flex items-center group">
+                                Read Article
+                                <i class="fas fa-arrow-right ml-2 transform group-hover:translate-x-1 transition-transform"></i>
+                            </span>
+                        </div>
+                    </div>
+                </a>
+
+                <!-- Structured Data -->
+                <meta itemprop="url" content="{{ request.build_absolute_uri }}{{ post.get_absolute_url }}">
+                <meta itemprop="dateModified" content="{{ post.updated_at|date:'Y-m-d' }}">
+            </article>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="mt-12 flex justify-center">
+            <nav class="flex items-center space-x-2" aria-label="Pagination">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" 
+                   class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                   aria-label="Previous page">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <span class="px-4 py-2 bg-[#f68712] text-white rounded-lg" aria-current="page">{{ num }}</span>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <a href="?page={{ num }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" 
+                       class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                        {{ num }}
+                    </a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" 
+                   class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                   aria-label="Next page">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <!-- No Results -->
+        <div class="text-center py-12">
+            <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fas fa-newspaper text-4xl text-gray-400"></i>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">No posts found</h3>
+            <p class="text-gray-600 mb-6">
+                {% if request.GET.q %}
+                    No articles matching "{{ request.GET.q }}". Try a different search term.
+                {% else %}
+                    No blog posts available at the moment. Please check back later.
+                {% endif %}
+            </p>
+            <a href="{% url 'core:blog_list' %}" class="inline-flex items-center text-[#f68712] hover:text-[#e07810] font-medium">
+                Clear filters
+                <i class="fas fa-times ml-2"></i>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+
+
+<!-- Structured Data -->
+{% block structured_data %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "name": "{{ site_settings.site_name }} Blog",
+    "description": "Insights, tutorials, and updates from the {{ site_settings.site_name }} team",
+    "url": "{{ request.build_absolute_uri }}",
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "{% if site_settings.logo %}{{ request.build_absolute_uri }}{{ site_settings.logo.url }}{% endif %}"
+        }
+    },
+    "blogPost": [
+        {% for post in posts %}
+        {
+            "@type": "BlogPosting",
+            "headline": "{{ post.title|escapejs }}",
+            "description": "{{ post.excerpt|escapejs }}",
+            "url": "{{ request.build_absolute_uri }}{{ post.get_absolute_url }}",
+            "datePublished": "{{ post.published_at|date:'Y-m-d' }}",
+            "dateModified": "{{ post.updated_at|date:'Y-m-d' }}",
+            "author": {
+                "@type": "Person",
+                "name": "{{ post.author.get_full_name|default:post.author.email|escapejs }}"
+            }
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+</script>
+{% endblock %}
+{% endblock %}
