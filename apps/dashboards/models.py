@@ -221,6 +221,132 @@ class DataTable(models.Model):
         avg_record_size = 1024  # Assume 1KB per record average
         return self.record_count * avg_record_size
 
+    def generate_default_dashboard(self):
+        """Automatically create a dashboard for this table"""
+        from .models import Dashboard, Widget
+        
+        # Create a dashboard named after the table
+        dashboard = Dashboard.objects.create(
+            workspace=self.workspace,
+            name=f"{self.name} Dashboard",
+            description=f"Auto-generated dashboard for {self.name}",
+            slug=f"{self.name.lower().replace(' ', '-')}-dashboard",
+            created_by=self.created_by,
+            layout_config={
+                "columns": 12,
+                "rowHeight": 100,
+                "compact": True
+            }
+        )
+        
+        # Analyze schema to create appropriate widgets
+        position_x = 0
+        position_y = 0
+        
+        for field in self.schema:
+            field_name = field['name']
+            field_type = field['type']
+            
+            # Create different widgets based on field type
+            if field_type in ['number', 'currency', 'percentage']:
+                # Create summary widget for numeric fields
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='metric',
+                    title=f"Total {field_name}",
+                    table=self,
+                    query_config={
+                        "aggregations": [
+                            {
+                                "type": "sum",
+                                "field": field_name,
+                                "name": f"total_{field_name}"
+                            }
+                        ]
+                    },
+                    viz_config={
+                        "format": "number",
+                        "prefix": "$" if field_type == 'currency' else "",
+                        "suffix": "%" if field_type == 'percentage' else ""
+                    },
+                    position={"x": position_x, "y": position_y, "w": 3, "h": 2}
+                )
+                position_x += 3
+                
+                # Create trend chart
+                if position_x >= 12:
+                    position_x = 0
+                    position_y += 2
+                
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='line_chart',
+                    title=f"{field_name} Over Time",
+                    table=self,
+                    query_config={
+                        "aggregations": [
+                            {
+                                "type": "sum",
+                                "field": field_name,
+                                "group_by": "created_at_date"
+                            }
+                        ]
+                    },
+                    viz_config={
+                        "x_axis": "created_at_date",
+                        "y_axis": f"sum_{field_name}",
+                        "show_legend": True
+                    },
+                    position={"x": position_x, "y": position_y, "w": 6, "h": 4}
+                )
+                position_x += 6
+                
+            elif field_type in ['date', 'datetime']:
+                # Create timeline widget
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='line_chart',
+                    title=f"Records by {field_name}",
+                    table=self,
+                    query_config={
+                        "aggregations": [
+                            {
+                                "type": "count",
+                                "field": "id",
+                                "group_by": field_name
+                            }
+                        ]
+                    },
+                    viz_config={
+                        "x_axis": field_name,
+                        "y_axis": "count",
+                        "show_legend": True
+                    },
+                    position={"x": position_x, "y": position_y, "w": 6, "h": 4}
+                )
+                position_x += 6
+                
+            # Reset position for next row
+            if position_x >= 12:
+                position_x = 0
+                position_y += 4
+        
+        # Add a data table widget to see all records
+        Widget.objects.create(
+            dashboard=dashboard,
+            widget_type='table',
+            title=f"All {self.name} Records",
+            table=self,
+            query_config={},
+            viz_config={
+                "page_size": 10,
+                "show_search": True
+            },
+            position={"x": 0, "y": position_y + 2, "w": 12, "h": 6}
+        )
+        
+        return dashboard
+
 
 class Record(models.Model):
     """

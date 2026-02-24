@@ -25,7 +25,41 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        workspace = self.request.user.current_workspace
+        
+        # Debug: Check if current_workspace exists
+        if hasattr(self.request.user, 'current_workspace'):
+            workspace = self.request.user.current_workspace
+            print(f"DEBUG View - current_workspace: {workspace}")
+        else:
+            workspace = None
+            print("DEBUG View - No current_workspace attribute")
+        
+        # If no workspace in request, try to get from session
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            print(f"DEBUG View - Trying session workspace_id: {workspace_id}")
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(
+                        id=workspace_id,
+                        members=self.request.user
+                    )
+                    print(f"DEBUG View - Found workspace from session: {workspace.name}")
+                    # Set it back on request
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    print(f"DEBUG View - Workspace {workspace_id} not found")
+        
+        # If still no workspace, get first available
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
+            print(f"DEBUG View - First available workspace: {workspace}")
+            if workspace:
+                self.request.session['current_workspace_id'] = str(workspace.id)
+                self.request.session.save()
+                self.request.user.current_workspace = workspace
+        
+        context['workspace'] = workspace
         
         if workspace:
             # Get recent tables
@@ -47,10 +81,11 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
             context['recent_activity'] = AuditLog.objects.filter(
                 workspace=workspace
             ).select_related('user').order_by('-timestamp')[:10]
+            
+            print(f"DEBUG View - Stats: {context['stats']}")  # Debug
         
         return context
-
-
+    
 class WorkspaceListView(LoginRequiredMixin, ListView):
     """List all workspaces for the user"""
     model = Workspace
@@ -72,20 +107,23 @@ class WorkspaceCreateView(LoginRequiredMixin, CreateView):
         workspace = form.save(commit=False)
         workspace.owner = self.request.user
         workspace.save()
+        print(f"DEBUG: Workspace created with ID: {workspace.id}")  # Debug
         
         # Add owner as member
-        WorkspaceMembership.objects.create(
+        membership = WorkspaceMembership.objects.create(
             workspace=workspace,
             user=self.request.user,
             role='owner'
         )
+        print(f"DEBUG: Membership created: {membership}")  # Debug
         
         # Set as current workspace
         self.request.session['current_workspace_id'] = str(workspace.id)
+        self.request.session.save()  # Force session save
+        print(f"DEBUG: Session set: {self.request.session['current_workspace_id']}")  # Debug
         
         messages.success(self.request, f'Workspace "{workspace.name}" created successfully!')
         return redirect('dashboard:home')
-
 
 @require_POST
 def switch_workspace(request, pk):
@@ -141,15 +179,26 @@ class TableCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         workspace = self.request.user.current_workspace
         
-        # Check workspace limits
         if not workspace.can_add_table():
-            messages.error(self.request, 'You have reached the maximum number of tables for your workspace.')
+            messages.error(self.request, 'Table limit reached.')
             return redirect('dashboard:tables')
         
+        # Save the table
         form.instance.workspace = workspace
         form.instance.created_by = self.request.user
-        messages.success(self.request, f'Table "{form.instance.name}" created successfully!')
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        
+        # AUTO-GENERATE DASHBOARD! 🎉
+        dashboard = self.object.generate_default_dashboard()
+        
+        messages.success(
+            self.request, 
+            f'Table "{self.object.name}" created! '
+            f'<a href="{reverse("dashboard:dashboard_detail", kwargs={"pk": dashboard.pk})}" '
+            f'class="underline font-medium">View auto-generated dashboard</a>'
+        )
+        
+        return response
 
 
 class TableDetailView(LoginRequiredMixin, DetailView):

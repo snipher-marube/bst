@@ -117,18 +117,34 @@
                     </div>
                 </a>
                 
-                <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}" 
-                   class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
-                    <div class="flex items-center space-x-4">
-                        <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
-                            <i class="fas fa-upload text-2xl text-[#f68712] group-hover:text-white"></i>
+                <!-- Import Data Link - Fixed to handle empty tables -->
+                {% if recent_tables %}
+                    <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}" 
+                       class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
+                                <i class="fas fa-upload text-2xl text-[#f68712] group-hover:text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-[#03466e]">Import Data</h3>
+                                <p class="text-sm text-gray-600">Upload CSV or Excel</p>
+                            </div>
                         </div>
-                        <div>
-                            <h3 class="font-semibold text-[#03466e]">Import Data</h3>
-                            <p class="text-sm text-gray-600">Upload CSV or Excel</p>
+                    </a>
+                {% else %}
+                    <a href="{% url 'dashboard:table_create' %}" 
+                       class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
+                                <i class="fas fa-upload text-2xl text-[#f68712] group-hover:text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-[#03466e]">Import Data</h3>
+                                <p class="text-sm text-gray-600">Create a table to import</p>
+                            </div>
                         </div>
-                    </div>
-                </a>
+                    </a>
+                {% endif %}
             </div>
             
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -218,4 +234,6 @@
         {% endif %}
     </div>
 </div>
+
+
 {% endblock %}

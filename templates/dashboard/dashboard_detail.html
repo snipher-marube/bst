@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_filters %}  
+
+{% block title %}{{ dashboard.name }} - {{ site_settings.site_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <div class="bg-white shadow-sm border-b">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold text-[#03466e]">{{ dashboard.name }}</h1>
+                    <p class="text-gray-600">{{ dashboard.description }}</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810]" id="addWidgetBtn">
+                        <i class="fas fa-plus mr-2"></i>Add Widget
+                    </button>
+                    <button class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" id="saveLayoutBtn">
+                        <i class="fas fa-save mr-2"></i>Save Layout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Dashboard Grid -->
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid-stack" id="dashboard-grid"></div>
+    </div>
+</div>
+
+<!-- Add Widget Modal -->
+<div id="widgetModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
+    <div class="bg-white rounded-xl max-w-lg w-full p-6">
+        <h2 class="text-xl font-bold text-[#03466e] mb-4">Add Widget</h2>
+        <form id="widgetForm">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Widget Type</label>
+                    <select id="widgetType" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                        <option value="line_chart">Line Chart</option>
+                        <option value="bar_chart">Bar Chart</option>
+                        <option value="pie_chart">Pie Chart</option>
+                        <option value="table">Data Table</option>
+                        <option value="metric">Metric Card</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Data Table</label>
+                    <select id="widgetTable" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                        {% for table in tables %}
+                        <option value="{{ table.id }}">{{ table.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                    <input type="text" id="widgetTitle" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                </div>
+            </div>
+        </form>
+        <div class="flex justify-end space-x-3 mt-6">
+            <button class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" onclick="closeModal()">Cancel</button>
+            <button class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810]" onclick="addWidget()">Add</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack-all.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Dashboard data from server
+const dashboardData = {{ dashboard_json|safe }};
+
+// Initialize grid
+let grid = GridStack.init({
+    column: 12,
+    cellHeight: 100,
+    margin: 10,
+    float: true,
+    acceptWidgets: true
+});
+
+// Load existing widgets
+dashboardData.widgets.forEach(widget => {
+    addWidgetToGrid(widget);
+});
+
+function addWidgetToGrid(widget) {
+    const widgetHtml = `
+        <div class="grid-stack-item" 
+             data-id="${widget.id}"
+             gs-x="${widget.position.x}" 
+             gs-y="${widget.position.y}" 
+             gs-w="${widget.position.w}" 
+             gs-h="${widget.position.h}">
+            <div class="grid-stack-item-content bg-white rounded-lg shadow-sm border border-gray-200">
+                <div class="widget-header px-4 py-2 border-b bg-gray-50 flex justify-between items-center cursor-move">
+                    <h3 class="font-medium text-[#03466e]">${widget.title}</h3>
+                    <div>
+                        <button class="text-gray-400 hover:text-red-600 mr-2" onclick="deleteWidget('${widget.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="widget-body p-4 h-full" id="widget-${widget.id}">
+                    <div class="flex justify-center items-center h-full">
+                        <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    grid.addWidget(widgetHtml);
+    loadWidgetData(widget);
+}
+
+function loadWidgetData(widget) {
+    fetch(`/api/widgets/${widget.id}/`)
+        .then(response => response.json())
+        .then(data => {
+            renderWidget(widget.id, data);
+        });
+}
+
+function renderWidget(widgetId, data) {
+    const container = document.getElementById(`widget-${widgetId}`);
+    if (!container) return;
+    
+    // Clear loading spinner
+    container.innerHTML = '';
+    
+    // Create canvas for chart
+    const canvas = document.createElement('canvas');
+    canvas.id = `chart-${widgetId}`;
+    container.appendChild(canvas);
+    
+    // Render appropriate chart type based on widget data
+    new Chart(canvas, {
+        type: data.chart_type || 'line',
+        data: data.chart_data,
+        options: data.chart_options || {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+function addWidget() {
+    const widgetData = {
+        widget_type: document.getElementById('widgetType').value,
+        table_id: document.getElementById('widgetTable').value,
+        title: document.getElementById('widgetTitle').value,
+        position: {x: 0, y: 0, w: 4, h: 4}
+    };
+    
+    fetch(`/api/dashboards/{{ dashboard.id }}/widgets/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify(widgetData)
+    })
+    .then(response => response.json())
+    .then(widget => {
+        closeModal();
+        addWidgetToGrid(widget);
+    });
+}
+
+function deleteWidget(widgetId) {
+    if (confirm('Delete this widget?')) {
+        fetch(`/api/widgets/${widgetId}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        }).then(() => {
+            const item = document.querySelector(`[data-id="${widgetId}"]`);
+            grid.removeWidget(item);
+        });
+    }
+}
+
+function saveLayout() {
+    const widgets = [];
+    grid.engine.nodes.forEach(node => {
+        widgets.push({
+            id: node.el.getAttribute('data-id'),
+            position: {
+                x: node.x,
+                y: node.y,
+                w: node.w,
+                h: node.h
+            }
+        });
+    });
+    
+    fetch(`/api/dashboards/{{ dashboard.id }}/update_layout/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({widgets})
+    }).then(() => {
+        alert('Layout saved!');
+    });
+}
+
+function closeModal() {
+    document.getElementById('widgetModal').classList.add('hidden');
+}
+
+document.getElementById('addWidgetBtn').addEventListener('click', () => {
+    document.getElementById('widgetModal').classList.remove('hidden');
+});
+
+document.getElementById('saveLayoutBtn').addEventListener('click', saveLayout);
+</script>
+{% endblock %}
