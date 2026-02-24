@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Pricing - {{ site_settings.site_name }} Plans{% endblock %}
+
+{% block meta_description %}Choose the right plan for your business. Free plan available. No credit card required. Start tracking your data today.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white py-20">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto text-center">
+            <h1 class="text-4xl md:text-5xl font-bold mb-6">
+                Simple, Transparent Pricing
+            </h1>
+            <p class="text-xl text-white/80">
+                Start free, upgrade as you grow. No hidden fees, no surprises.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing Cards -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {% for plan in plans %}
+            <div class="rounded-xl {% if plan.featured %}bg-[#f68712] text-white transform scale-105 shadow-2xl{% else %}bg-white border border-gray-200 text-gray-900{% endif %} overflow-hidden card-hover">
+                <div class="p-6">
+                    <h2 class="text-xl font-bold mb-2 {% if plan.featured %}text-white{% else %}text-[#03466e]{% endif %}">
+                        {{ plan.name }}
+                    </h2>
+                    <div class="mb-4">
+                        <span class="text-3xl font-bold">{{ plan.price }}</span>
+                        <span class="text-sm {% if plan.featured %}text-white/80{% else %}text-gray-500{% endif %}">/{{ plan.period }}</span>
+                    </div>
+                    <p class="{% if plan.featured %}text-white/90{% else %}text-gray-600{% endif %} mb-6">{{ plan.description }}</p>
+                    
+                    <ul class="space-y-3 mb-6">
+                        {% for feature in plan.features %}
+                        <li class="flex items-start">
+                            <i class="fas fa-check-circle {% if plan.featured %}text-white{% else %}text-[#f68712]{% endif %} mt-1 mr-2"></i>
+                            <span class="text-sm {% if plan.featured %}text-white/90{% else %}text-gray-600{% endif %}">{{ feature }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <a href="{% url 'account_signup' %}?plan={{ plan.name|lower }}" 
+                       class="block w-full py-3 px-4 text-center rounded-lg font-medium transition-all duration-200 {% if plan.featured %}bg-white text-[#f68712] hover:bg-gray-100{% else %}bg-[#03466e] text-white hover:bg-[#023a58]{% endif %}">
+                        {{ plan.button_text }}
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Note -->
+        <p class="text-center text-gray-500 mt-8 text-sm">
+            All plans include core features. Enterprise plans include custom SLAs and dedicated support.
+        </p>
+    </div>
+</section>
+
+<!-- FAQ Section -->
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-12">
+            <h2 class="text-3xl font-bold text-[#03466e] mb-4">
+                Frequently Asked Questions
+            </h2>
+            <p class="text-lg text-gray-600">
+                Got questions about pricing? We've got answers.
+            </p>
+        </div>
+        
+        <div class="max-w-3xl mx-auto space-y-4">
+            {% for faq in faqs %}
+            <details class="bg-white rounded-lg p-4 border border-gray-200">
+                <summary class="font-semibold text-[#03466e] cursor-pointer">{{ faq.question }}</summary>
+                <p class="mt-2 text-gray-600">{{ faq.answer }}</p>
+            </details>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-20 bg-[#03466e] text-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl font-bold mb-4">
+            Not sure which plan is right for you?
+        </h2>
+        <p class="text-xl text-white/80 mb-8">
+            Our team can help you choose the perfect plan for your needs.
+        </p>
+        <a href="{% url 'core:contact' %}" class="inline-flex items-center px-8 py-4 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors duration-200 font-medium text-lg">
+            Contact Sales
+            <i class="fas fa-arrow-right ml-2"></i>
+        </a>
+    </div>
+</section>
+{% endblock %}

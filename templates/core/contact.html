@@ -1,0 +1,304 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Contact {{ site_settings.site_name }} - Get in Touch{% endblock %}
+
+{% block meta_description %}Contact {{ site_settings.site_name }} for sales inquiries, support, or general questions. Our team is ready to help you get started with custom analytics.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white py-20">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto text-center">
+            <h1 class="text-4xl md:text-5xl font-bold mb-6">
+                Get in Touch
+            </h1>
+            <p class="text-xl text-white/80">
+                Have questions about {{ site_settings.site_name }}? We're here to help.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Contact Section -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-3 gap-12">
+            <!-- Contact Information -->
+            <div class="lg:col-span-1">
+                <h2 class="text-2xl font-bold text-[#03466e] mb-6">
+                    Contact Information
+                </h2>
+                <p class="text-gray-600 mb-8">
+                    Choose the most convenient way to reach us. We typically respond within 24 hours.
+                </p>
+                
+                <div class="space-y-6">
+                    <!-- Email -->
+                    <div class="flex items-start">
+                        <div class="w-10 h-10 bg-[#f68712]/10 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                            <i class="fas fa-envelope text-[#f68712]"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e] mb-1">Email</h3>
+                            <p class="text-gray-600">General Inquiries</p>
+                            <a href="mailto:{{ site_settings.support_email }}" class="text-[#f68712] hover:underline">
+                                {{ site_settings.support_email }}
+                            </a>
+                            <p class="text-gray-600 mt-2">Sales</p>
+                            <a href="mailto:{{ site_settings.sales_email }}" class="text-[#f68712] hover:underline">
+                                {{ site_settings.sales_email }}
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Phone -->
+                    {% if site_settings.phone %}
+                    <div class="flex items-start">
+                        <div class="w-10 h-10 bg-[#f68712]/10 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                            <i class="fas fa-phone text-[#f68712]"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e] mb-1">Phone</h3>
+                            <p class="text-gray-600 mb-1">Mon-Fri, 9am-5pm EAT</p>
+                            <a href="tel:{{ site_settings.phone }}" class="text-[#f68712] hover:underline">
+                                {{ site_settings.phone }}
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Office -->
+                    {% if site_settings.address %}
+                    <div class="flex items-start">
+                        <div class="w-10 h-10 bg-[#f68712]/10 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                            <i class="fas fa-map-marker-alt text-[#f68712]"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e] mb-1">Office</h3>
+                            <address class="not-italic text-gray-600">
+                                {{ site_settings.address|linebreaksbr }}
+                            </address>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Social Links -->
+                <div class="mt-8 pt-8 border-t border-gray-200">
+                    <h3 class="font-semibold text-[#03466e] mb-4">Follow Us</h3>
+                    <div class="flex space-x-4">
+                        {% if social_media.twitter %}
+                        <a href="{{ social_media.twitter }}" target="_blank" rel="noopener noreferrer" 
+                           class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600 hover:bg-[#f68712] hover:text-white transition-colors duration-200"
+                           aria-label="Twitter">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        {% endif %}
+                        {% if social_media.linkedin %}
+                        <a href="{{ social_media.linkedin }}" target="_blank" rel="noopener noreferrer"
+                           class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600 hover:bg-[#f68712] hover:text-white transition-colors duration-200"
+                           aria-label="LinkedIn">
+                            <i class="fab fa-linkedin-in"></i>
+                        </a>
+                        {% endif %}
+                        {% if social_media.github %}
+                        <a href="{{ social_media.github }}" target="_blank" rel="noopener noreferrer"
+                           class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600 hover:bg-[#f68712] hover:text-white transition-colors duration-200"
+                           aria-label="GitHub">
+                            <i class="fab fa-github"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Contact Form -->
+            <div class="lg:col-span-2">
+                <div class="bg-gray-50 rounded-2xl p-8 border border-gray-200">
+                    <h2 class="text-2xl font-bold text-[#03466e] mb-6">
+                        Send Us a Message
+                    </h2>
+                    
+                    {% if messages %}
+                    <div class="mb-6">
+                        {% for message in messages %}
+                        <div class="p-4 rounded-lg {% if message.tags == 'success' %}bg-green-100 text-green-800 border border-green-200{% else %}bg-blue-100 text-blue-800 border border-blue-200{% endif %}">
+                            {{ message }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    <form method="post" class="space-y-6" novalidate>
+                        {% csrf_token %}
+                        
+                        <!-- Name -->
+                        <div>
+                            <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                Full Name <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <p class="mt-2 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Email -->
+                        <div>
+                            <label for="{{ form.email.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                Email Address <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.email }}
+                            {% if form.email.errors %}
+                            <p class="mt-2 text-sm text-red-600">{{ form.email.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Company & Phone (2 columns) -->
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="{{ form.company.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Company
+                                </label>
+                                {{ form.company }}
+                            </div>
+                            <div>
+                                <label for="{{ form.phone.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Phone Number
+                                </label>
+                                {{ form.phone }}
+                            </div>
+                        </div>
+                        
+                        <!-- Subject -->
+                        <div>
+                            <label for="{{ form.subject.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                Subject <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.subject }}
+                            {% if form.subject.errors %}
+                            <p class="mt-2 text-sm text-red-600">{{ form.subject.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Message -->
+                        <div>
+                            <label for="{{ form.message.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                                Message <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.message }}
+                            {% if form.message.errors %}
+                            <p class="mt-2 text-sm text-red-600">{{ form.message.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Submit -->
+                        <div>
+                            <button type="submit" 
+                                    class="w-full md:w-auto px-8 py-4 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors duration-200 font-medium text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
+                                Send Message
+                                <i class="fas fa-paper-plane ml-2"></i>
+                            </button>
+                        </div>
+                        
+                        <p class="text-sm text-gray-500">
+                            Fields marked with <span class="text-red-500">*</span> are required.
+                        </p>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ Preview -->
+<section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-12">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Quick Answers</span>
+            <h2 class="text-3xl font-bold text-[#03466e] mb-4">
+                Frequently Asked Questions
+            </h2>
+            <p class="text-lg text-gray-600">
+                Find quick answers to common questions. For more detailed inquiries, use the contact form above.
+            </p>
+        </div>
+        
+        <div class="max-w-3xl mx-auto space-y-4">
+            <details class="bg-white rounded-lg p-4 border border-gray-200">
+                <summary class="font-semibold text-[#03466e] cursor-pointer">How quickly do you respond to inquiries?</summary>
+                <p class="mt-2 text-gray-600">We typically respond to all inquiries within 24 hours during business days. For urgent matters, we recommend calling our support line.</p>
+            </details>
+            
+            <details class="bg-white rounded-lg p-4 border border-gray-200">
+                <summary class="font-semibold text-[#03466e] cursor-pointer">Do you offer demos for enterprise customers?</summary>
+                <p class="mt-2 text-gray-600">Yes! Our sales team would be happy to schedule a personalized demo. Just mention "demo request" in your message and we'll set it up.</p>
+            </details>
+            
+            <details class="bg-white rounded-lg p-4 border border-gray-200">
+                <summary class="font-semibold text-[#03466e] cursor-pointer">What are your support hours?</summary>
+                <p class="mt-2 text-gray-600">Our support team is available Monday through Friday, 9:00 AM to 5:00 PM East Africa Time (EAT). Enterprise customers have access to extended support hours.</p>
+            </details>
+        </div>
+        
+        <div class="text-center mt-8">
+            <a href="{% url 'core:faq' %}" class="text-[#f68712] hover:underline font-medium">
+                View all FAQs
+                <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Map (if you have one) -->
+{% if site_settings.address %}
+<section class="h-96 bg-gray-200 relative">
+    <iframe 
+        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3988.8462962765316!2d36.821946!3d-1.292066!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x182f10d2b7f1d7f1%3A0x3b3d5b5c5b5c5b5c!2sNairobi!5e0!3m2!1sen!2ske!4v1620000000000!5m2!1sen!2ske"
+        width="100%" 
+        height="100%" 
+        style="border:0;" 
+        allowfullscreen="" 
+        loading="lazy"
+        title="{{ site_settings.site_name }} office location"
+        class="absolute inset-0">
+    </iframe>
+</section>
+{% endif %}
+
+<!-- Structured Data -->
+{% block structured_data %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    "name": "Contact {{ site_settings.site_name }}",
+    "description": "Contact {{ site_settings.site_name }} for sales, support, or general inquiries.",
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "url": "{{ request.build_absolute_uri|cut:request.path }}",
+        "logo": "{% if site_settings.logo %}{{ request.build_absolute_uri }}{{ site_settings.logo.url }}{% endif %}",
+        "sameAs": [
+            {% if social_media.twitter %}"{{ social_media.twitter }}"{% if social_media.linkedin or social_media.github %},{% endif %}{% endif %}
+            {% if social_media.linkedin %}"{{ social_media.linkedin }}"{% if social_media.github %},{% endif %}{% endif %}
+            {% if social_media.github %}"{{ social_media.github }}"{% endif %}
+        ]
+    },
+    "mainEntity": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "email": "{{ site_settings.support_email }}",
+        "telephone": "{{ site_settings.phone }}",
+        "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "{{ site_settings.address|linebreaksbr }}",
+            "addressLocality": "Nairobi",
+            "addressCountry": "KE"
+        }
+    }
+}
+</script>
+{% endblock %}
+{% endblock %}

@@ -1,0 +1,82 @@
+{% load static %}
+
+<!-- FAQ Section -->
+<section class="py-20 bg-gray-50" aria-labelledby="faq-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">FAQ</span>
+            <h2 id="faq-heading" class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
+                Frequently Asked Questions
+            </h2>
+            <p class="text-xl text-gray-600">
+                Got questions about our features? We've got answers.
+            </p>
+        </div>
+        
+        <div class="max-w-3xl mx-auto divide-y divide-gray-200">
+            <div class="py-6" x-data="{ open: false }">
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
+                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">
+                        Can I customize dashboards for my specific needs?
+                    </span>
+                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600 leading-relaxed">
+                    Yes! That's exactly what {{ site_settings.site_name }} is built for. You can create custom categories, define your own fields, set up formulas, and build dashboards that match your exact business needs. No coding required.
+                </div>
+            </div>
+            
+            <div class="py-6" x-data="{ open: false }">
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
+                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">
+                        Is there a limit to how many dashboards I can create?
+                    </span>
+                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600 leading-relaxed">
+                    Different plans come with different limits. The Free plan includes 5 dashboards, while paid plans offer more. Enterprise customers can have unlimited dashboards. Check our <a href="{% url 'core:pricing' %}" class="text-[#f68712] hover:underline">pricing page</a> for details.
+                </div>
+            </div>
+            
+            <div class="py-6" x-data="{ open: false }">
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
+                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">
+                        Can I import data from Excel or CSV files?
+                    </span>
+                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600 leading-relaxed">
+                    Absolutely! {{ site_settings.site_name }} supports importing data from Excel, CSV, and Google Sheets. Our smart mapping feature helps you match your columns to your dashboard fields automatically.
+                </div>
+            </div>
+            
+            <div class="py-6" x-data="{ open: false }">
+                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
+                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">
+                        Do you offer custom feature development?
+                    </span>
+                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-gray-600 leading-relaxed">
+                    Yes! For Enterprise customers, we offer custom feature development and integrations. Our team can work with you to build exactly what you need. <a href="{% url 'core:contact' %}" class="text-[#f68712] hover:underline">Contact our sales team</a> to discuss your requirements.
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-12">
+            <p class="text-gray-600 mb-4">Still have questions?</p>
+            <a href="{% url 'core:contact' %}" class="inline-flex items-center px-6 py-3 bg-[#03466e] text-white rounded-lg hover:bg-[#023a58] transition-colors duration-200 font-medium">
+                Contact Support
+                <i class="fas fa-arrow-right ml-2"></i>
+            </a>
+        </div>
+    </div>
+</section>

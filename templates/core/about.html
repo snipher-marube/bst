@@ -1,0 +1,301 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}About {{ site_settings.site_name }} - Our Story & Mission{% endblock %}
+
+{% block meta_description %}Learn about {{ site_settings.site_name }}'s mission to democratize analytics for SMEs. Discover our team, values, and commitment to helping businesses grow with data.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="relative bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white py-20 overflow-hidden">
+    <!-- Background Pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                    <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
+                </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)"/>
+        </svg>
+    </div>
+    
+    <div class="container relative mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto text-center">
+            <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold mb-6">
+                Empowering Businesses with <span class="text-[#f68712]">Data Clarity</span>
+            </h1>
+            <p class="text-xl text-white/80 mb-8">
+                We're on a mission to make powerful analytics accessible to every business, regardless of size or technical expertise.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Stats Section -->
+{% if stats %}
+<section class="py-16 bg-white border-b border-gray-200">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+            {% for stat in stats %}
+            <div class="text-center">
+                <div class="text-3xl md:text-4xl font-bold text-[#03466e] mb-2">
+                    {{ stat.prefix }}<span class="stat-counter" data-value="{{ stat.value }}">0</span>{{ stat.suffix }}
+                </div>
+                <div class="text-sm text-gray-600">{{ stat.label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Our Story -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+                <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Our Story</span>
+                <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-6">
+                    Born from a Simple Observation
+                </h2>
+                <div class="prose prose-lg text-gray-600 space-y-4">
+                    <p>
+                        In 2020, our founder noticed a recurring problem while consulting for small and medium enterprises: 
+                        businesses were drowning in spreadsheets but starving for insights. Excel files were passed around, 
+                        numbers were manually entered, and critical decisions were based on outdated information.
+                    </p>
+                    <p>
+                        We realized that while enterprise companies had teams of data scientists and million-dollar BI tools, 
+                        SMEs were left with either expensive custom development or complex tools that required technical expertise.
+                    </p>
+                    <p>
+                        That's why we built {{ site_settings.site_name }} — a no-code analytics platform that lets anyone 
+                        create custom tracking systems, generate insights, and make data-driven decisions without writing a 
+                        single line of code.
+                    </p>
+                </div>
+            </div>
+            <div class="relative">
+                <div class="absolute inset-0 bg-[#f68712] rounded-3xl blur-3xl opacity-20"></div>
+                <div class="relative bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+                    <blockquote class="text-xl text-gray-700 italic">
+                        "We believe that data insights shouldn't be a luxury reserved for large corporations. 
+                        Every business, from the local farm to the growing e-commerce store, deserves to understand 
+                        their numbers and make better decisions."
+                    </blockquote>
+                    <div class="mt-6 flex items-center">
+                        <div class="w-12 h-12 bg-[#03466e] rounded-full flex items-center justify-center text-white font-bold text-xl">
+                            JD
+                        </div>
+                        <div class="ml-4">
+                            <p class="font-semibold text-[#03466e]">James Mwangi</p>
+                            <p class="text-sm text-gray-600">Founder & CEO</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Our Values -->
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Our Values</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
+                What Drives Us Forward
+            </h2>
+            <p class="text-xl text-gray-600">
+                These principles guide every decision we make and every feature we build.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="bg-white rounded-xl p-8 shadow-sm text-center card-hover">
+                <div class="w-16 h-16 bg-[#f68712]/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <i class="fas fa-users text-3xl text-[#f68712]"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Customer First</h3>
+                <p class="text-gray-600">
+                    We build features our customers actually need, not what's trendy. Your success is our success.
+                </p>
+            </div>
+            
+            <div class="bg-white rounded-xl p-8 shadow-sm text-center card-hover">
+                <div class="w-16 h-16 bg-[#f68712]/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <i class="fas fa-rocket text-3xl text-[#f68712]"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Simple & Powerful</h3>
+                <p class="text-gray-600">
+                    Complexity hidden, power accessible. We believe tools should work for you, not the other way around.
+                </p>
+            </div>
+            
+            <div class="bg-white rounded-xl p-8 shadow-sm text-center card-hover">
+                <div class="w-16 h-16 bg-[#f68712]/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <i class="fas fa-shield-alt text-3xl text-[#f68712]"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Trust & Security</h3>
+                <p class="text-gray-600">
+                    Your data is your business. We treat it with the highest standards of security and privacy.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Team Section -->
+<section class="py-20 bg-white">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Our Team</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
+                Meet the People Behind {{ site_settings.site_name }}
+            </h2>
+            <p class="text-xl text-gray-600">
+                A diverse team of engineers, designers, and data enthusiasts committed to your success.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <!-- Team Member 1 -->
+            <div class="text-center">
+                <div class="relative mb-4 inline-block">
+                    <img src="{% static 'images/team/james.jpg' %}" 
+                         alt="James Mwangi - Founder & CEO" 
+                         class="w-40 h-40 rounded-full object-cover ring-4 ring-[#f68712]/20"
+                         loading="lazy">
+                </div>
+                <h3 class="text-lg font-semibold text-[#03466e]">James Mwangi</h3>
+                <p class="text-[#f68712] text-sm mb-2">Founder & CEO</p>
+                <p class="text-sm text-gray-600">Former data consultant, passionate about democratizing analytics</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="relative mb-4 inline-block">
+                    <img src="{% static 'images/team/sarah.jpg' %}" 
+                         alt="Sarah Wanjiku - Lead Engineer" 
+                         class="w-40 h-40 rounded-full object-cover ring-4 ring-[#f68712]/20"
+                         loading="lazy">
+                </div>
+                <h3 class="text-lg font-semibold text-[#03466e]">Sarah Wanjiku</h3>
+                <p class="text-[#f68712] text-sm mb-2">Lead Engineer</p>
+                <p class="text-sm text-gray-600">Full-stack developer with 8+ years in data platforms</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="relative mb-4 inline-block">
+                    <img src="{% static 'images/team/david.jpg' %}" 
+                         alt="David Omondi - Product Manager" 
+                         class="w-40 h-40 rounded-full object-cover ring-4 ring-[#f68712]/20"
+                         loading="lazy">
+                </div>
+                <h3 class="text-lg font-semibold text-[#03466e]">David Omondi</h3>
+                <p class="text-[#f68712] text-sm mb-2">Product Manager</p>
+                <p class="text-sm text-gray-600">Obsessed with creating intuitive user experiences</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="relative mb-4 inline-block">
+                    <img src="{% static 'images/team/mercy.jpg' %}" 
+                         alt="Mercy Achieng - Customer Success" 
+                         class="w-40 h-40 rounded-full object-cover ring-4 ring-[#f68712]/20"
+                         loading="lazy">
+                </div>
+                <h3 class="text-lg font-semibold text-[#03466e]">Mercy Achieng</h3>
+                <p class="text-[#f68712] text-sm mb-2">Customer Success</p>
+                <p class="text-sm text-gray-600">Ensuring every customer gets maximum value from our platform</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Testimonials -->
+{% if testimonials %}
+<section class="py-20 bg-gray-50">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Testimonials</span>
+            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
+                Trusted by Businesses Like Yours
+            </h2>
+            <p class="text-xl text-gray-600">
+                Don't just take our word for it. Here's what our customers say.
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-8">
+            {% for testimonial in testimonials %}
+            <div class="bg-white rounded-xl p-8 shadow-sm border border-gray-100">
+                <div class="flex items-center mb-4">
+                    {% if testimonial.avatar %}
+                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-12 h-12 rounded-full mr-4">
+                    {% else %}
+                    <div class="w-12 h-12 bg-[#03466e]/10 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-[#03466e] font-semibold">{{ testimonial.name|first }}</span>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <h3 class="font-semibold text-[#03466e]">{{ testimonial.name }}</h3>
+                        <p class="text-sm text-gray-600">{{ testimonial.title }}, {{ testimonial.company }}</p>
+                    </div>
+                </div>
+                <p class="text-gray-700 italic">"{{ testimonial.content }}"</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Call to Action -->
+<section class="py-20 bg-[#f68712]">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">
+            Join Our Journey
+        </h2>
+        <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+            Ready to transform how you see your business data? Start your free trial today.
+        </p>
+        <a href="{% url 'account_signup' %}" 
+           class="inline-flex items-center justify-center px-8 py-4 text-lg font-medium rounded-lg text-[#f68712] bg-white hover:bg-gray-100 transition-all duration-200 shadow-lg hover:shadow-xl">
+            Get Started Free
+            <i class="fas fa-arrow-right ml-2"></i>
+        </a>
+    </div>
+</section>
+
+<!-- Structured Data -->
+{% block structured_data %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "AboutPage",
+    "name": "About {{ site_settings.site_name }}",
+    "description": "Learn about {{ site_settings.site_name }}'s mission to democratize analytics for SMEs.",
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "logo": "{% if site_settings.logo %}{{ request.build_absolute_uri }}{{ site_settings.logo.url }}{% endif %}"
+    },
+    "mainEntity": {
+        "@type": "Organization",
+        "name": "{{ site_settings.site_name }}",
+        "description": "{{ site_settings.site_tagline }}",
+        "foundingDate": "2020",
+        "founder": {
+            "@type": "Person",
+            "name": "James Mwangi"
+        },
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Nairobi",
+            "addressCountry": "KE"
+        }
+    }
+}
+</script>
+{% endblock %}
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Features - {{ site_settings.site_name }} Analytics Platform{% endblock %}
+
+{% block meta_description %}Discover powerful no-code analytics features. Create custom dashboards, track metrics, and gain insights without writing code. Perfect for SMEs and agriculture.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white py-20">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto text-center">
+            <h1 class="text-4xl md:text-5xl font-bold mb-6">
+                Powerful Features, Zero Code
+            </h1>
+            <p class="text-xl text-white/80 mb-8">
+                Everything you need to build custom analytics dashboards. No developers required.
+            </p>
+            
+            <!-- Search/Filter (optional) -->
+            <div class="max-w-md mx-auto">
+                <form method="get" class="relative">
+                    <label for="feature-search" class="sr-only">Search features</label>
+                    <input type="search" 
+                           name="q" 
+                           id="feature-search"
+                           value="{{ request.GET.q }}"
+                           placeholder="Search features..." 
+                           class="w-full px-6 py-4 pr-12 text-gray-900 rounded-full focus:outline-none focus:ring-2 focus:ring-[#f68712]"
+                           aria-label="Search features">
+                    <button type="submit" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#03466e]">
+                        <i class="fas fa-search text-xl"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Grid -->
+<section class="py-20 bg-gray-50" aria-labelledby="features-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 id="features-heading" class="sr-only">All Features</h2>
+        
+        {% if features %}
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {% for feature in features %}
+                    <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 card-hover" 
+                             itemscope itemtype="https://schema.org/Product">
+                        <div class="p-8">
+                            <!-- Icon -->
+                            <div class="feature-icon-wrapper w-16 h-16 rounded-xl flex items-center justify-center mb-6 bg-[#f68712]/10">
+                                <i class="{{ feature.icon }} text-3xl text-[#f68712]" aria-hidden="true"></i>
+                            </div>
+                            
+                            <!-- Title -->
+                            <h3 class="text-xl font-semibold text-[#03466e] mb-3" itemprop="name">
+                                {{ feature.title }}
+                            </h3>
+                            
+                            <!-- Description -->
+                            <p class="text-gray-600 mb-4" itemprop="description">
+                                {{ feature.short_description }}
+                            </p>
+                            
+                            <!-- Benefits Preview -->
+                            {% if feature.benefits %}
+                            <ul class="space-y-2 mb-6" aria-label="Key benefits">
+                                {% for benefit in feature.benefits|slice:":3" %}
+                                <li class="flex items-start text-sm text-gray-600">
+                                    <i class="fas fa-check text-[#f68712] mt-1 mr-2 flex-shrink-0" aria-hidden="true"></i>
+                                    <span>{{ benefit }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            
+                            <!-- Learn More Link -->
+                            <a href="{{ feature.get_absolute_url }}" 
+                               class="inline-flex items-center text-[#f68712] font-medium hover:text-[#e07810] group"
+                               itemprop="url"
+                               aria-label="Learn more about {{ feature.title }}">
+                                Learn more
+                                <i class="fas fa-arrow-right ml-2 transform group-hover:translate-x-1 transition-transform" aria-hidden="true"></i>
+                            </a>
+                        </div>
+                        
+                        <!-- Structured Data -->
+                        <meta itemprop="productID" content="feature-{{ feature.id }}">
+                        <meta itemprop="brand" content="{{ site_settings.site_name }}">
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <!-- No results message -->
+            <div class="text-center py-12">
+                <i class="fas fa-search text-6xl text-gray-300 mb-4" aria-hidden="true"></i>
+                <h3 class="text-xl font-semibold text-gray-900 mb-2">No features found</h3>
+                <p class="text-gray-600">
+                    {% if request.GET.q %}
+                        No features matching "{{ request.GET.q }}". Try a different search term.
+                    {% else %}
+                        No features available at the moment. Please check back later.
+                    {% endif %}
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Feature Categories (Optional - if you have categories) -->
+<section class="py-16 bg-white" aria-labelledby="categories-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 id="categories-heading" class="text-3xl font-bold text-center text-[#03466e] mb-12">
+            Browse by Category
+        </h2>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <a href="?category=analytics" class="group">
+                <div class="bg-gray-50 rounded-lg p-6 text-center hover:bg-[#f68712] transition-colors duration-300 group">
+                    <i class="fas fa-chart-line text-3xl text-[#03466e] group-hover:text-white mb-3" aria-hidden="true"></i>
+                    <h3 class="font-semibold text-gray-900 group-hover:text-white">Analytics</h3>
+                </div>
+            </a>
+            
+            <a href="?category=reporting" class="group">
+                <div class="bg-gray-50 rounded-lg p-6 text-center hover:bg-[#f68712] transition-colors duration-300 group">
+                    <i class="fas fa-file-alt text-3xl text-[#03466e] group-hover:text-white mb-3" aria-hidden="true"></i>
+                    <h3 class="font-semibold text-gray-900 group-hover:text-white">Reporting</h3>
+                </div>
+            </a>
+            
+            <a href="?category=integration" class="group">
+                <div class="bg-gray-50 rounded-lg p-6 text-center hover:bg-[#f68712] transition-colors duration-300 group">
+                    <i class="fas fa-plug text-3xl text-[#03466e] group-hover:text-white mb-3" aria-hidden="true"></i>
+                    <h3 class="font-semibold text-gray-900 group-hover:text-white">Integrations</h3>
+                </div>
+            </a>
+            
+            <a href="?category=automation" class="group">
+                <div class="bg-gray-50 rounded-lg p-6 text-center hover:bg-[#f68712] transition-colors duration-300 group">
+                    <i class="fas fa-robot text-3xl text-[#03466e] group-hover:text-white mb-3" aria-hidden="true"></i>
+                    <h3 class="font-semibold text-gray-900 group-hover:text-white">Automation</h3>
+                </div>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Call to Action -->
+<section class="py-20 bg-[#f68712]" aria-labelledby="cta-heading">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 id="cta-heading" class="text-3xl md:text-4xl font-bold text-white mb-4">
+            Ready to Get Started?
+        </h2>
+        <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+            Join thousands of businesses using {{ site_settings.site_name }} to track what matters.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="{% url 'account_signup' %}" 
+               class="inline-flex items-center justify-center px-8 py-4 text-lg font-medium rounded-lg text-[#03466e] bg-white hover:bg-gray-100 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+               aria-label="Start your free trial">
+                Start Free Trial
+                <i class="fas fa-arrow-right ml-2" aria-hidden="true"></i>
+            </a>
+            <a href="{% url 'core:contact' %}" 
+               class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200"
+               aria-label="Contact sales team">
+                Contact Sales
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ Section (Reusing from home but filtered) -->
+{% include 'includes/feature-faq.html' %}
+
+<!-- Structured Data -->
+{% block structured_data %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "itemListElement": [
+        {% for feature in features %}
+        {
+            "@type": "ListItem",
+            "position": {{ forloop.counter }},
+            "item": {
+                "@type": "Product",
+                "name": "{{ feature.title|escapejs }}",
+                "description": "{{ feature.short_description|escapejs }}",
+                "url": "{{ request.build_absolute_uri }}{{ feature.get_absolute_url }}"
+            }
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ],
+    "numberOfItems": {{ features|length }}
+}
+</script>
+{% endblock %}
+{% endblock %}
