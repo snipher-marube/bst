@@ -24,6 +24,7 @@ urlpatterns = [
     path('', include('apps.core.urls')),
     path("accounts/", include("allauth.urls")),
     path('/newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
+    path('dashboard/', include('apps.dashboards.urls', namespace='dashboard')),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

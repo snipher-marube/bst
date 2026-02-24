@@ -29,7 +29,7 @@
             <!-- Desktop Right Navigation -->
             <div class="hidden md:flex md:items-center md:space-x-3">
                 {% if user.is_authenticated %}
-                    <a href="#" 
+                    <a href="{% url 'dashboard:home' %}" 
                        class="px-4 py-2 text-sm font-medium text-[#03466e] hover:text-[#f68712] transition-colors duration-200 rounded-lg hover:bg-orange-50">
                         <i class="fas fa-chart-pie mr-2"></i>Dashboard
                     </a>

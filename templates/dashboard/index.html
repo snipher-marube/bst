@@ -1,0 +1,221 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - {{ site_settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+    <!-- Welcome Header -->
+    <div class="bg-gradient-to-r from-[#03466e] to-[#025b8c] text-white">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-bold mb-2">
+                        Welcome back, {{ user.get_full_name|default:user.email }}!
+                    </h1>
+                    <p class="text-white/80 text-lg">
+                        {% if workspace %}
+                            Workspace: <span class="font-semibold">{{ workspace.name }}</span>
+                        {% else %}
+                            Let's get started with your first workspace
+                        {% endif %}
+                    </p>
+                </div>
+                
+                {% if not workspace %}
+                <a href="{% url 'dashboard:workspace_create' %}" 
+                   class="px-6 py-3 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors font-medium">
+                    <i class="fas fa-plus mr-2"></i>Create Workspace
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% if workspace %}
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Total Tables</p>
+                            <p class="text-3xl font-bold text-[#03466e]">{{ stats.tables }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-table text-2xl text-blue-600"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Limit: {{ stats.tables_limit }}</p>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Total Records</p>
+                            <p class="text-3xl font-bold text-[#03466e]">{{ stats.records }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-database text-2xl text-green-600"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Limit: {{ stats.records_limit }}</p>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Dashboards</p>
+                            <p class="text-3xl font-bold text-[#03466e]">{{ stats.dashboards|default:0 }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-chart-pie text-2xl text-purple-600"></i>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Team Members</p>
+                            <p class="text-3xl font-bold text-[#03466e]">{{ stats.members }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-users text-2xl text-orange-600"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Limit: {{ stats.members_limit }}</p>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <a href="{% url 'dashboard:table_create' %}" 
+                   class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
+                            <i class="fas fa-plus text-2xl text-[#f68712] group-hover:text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e]">Create New Table</h3>
+                            <p class="text-sm text-gray-600">Start tracking your data</p>
+                        </div>
+                    </div>
+                </a>
+                
+                <a href="{% url 'dashboard:dashboard_create' %}" 
+                   class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
+                            <i class="fas fa-chart-line text-2xl text-[#f68712] group-hover:text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e]">Create Dashboard</h3>
+                            <p class="text-sm text-gray-600">Visualize your data</p>
+                        </div>
+                    </div>
+                </a>
+                
+                <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}" 
+                   class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-[#f68712]/10 rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors">
+                            <i class="fas fa-upload text-2xl text-[#f68712] group-hover:text-white"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-[#03466e]">Import Data</h3>
+                            <p class="text-sm text-gray-600">Upload CSV or Excel</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Recent Tables -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-lg font-semibold text-[#03466e]">Recent Tables</h2>
+                        <a href="{% url 'dashboard:tables' %}" class="text-sm text-[#f68712] hover:underline">View all</a>
+                    </div>
+                    
+                    <div class="divide-y divide-gray-200">
+                        {% for table in recent_tables %}
+                        <div class="px-6 py-4 hover:bg-gray-50">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <i class="fas fa-table text-[#03466e]"></i>
+                                    <div>
+                                        <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="font-medium text-gray-900 hover:text-[#f68712]">
+                                            {{ table.name }}
+                                        </a>
+                                        <p class="text-sm text-gray-500">{{ table.record_count }} records</p>
+                                    </div>
+                                </div>
+                                <span class="text-xs text-gray-400">{{ table.updated_at|timesince }} ago</span>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="px-6 py-12 text-center">
+                            <i class="fas fa-table text-4xl text-gray-300 mb-3"></i>
+                            <p class="text-gray-500">No tables yet</p>
+                            <a href="{% url 'dashboard:table_create' %}" class="text-[#f68712] hover:underline text-sm mt-2 inline-block">
+                                Create your first table →
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Recent Activity -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-[#03466e]">Recent Activity</h2>
+                    </div>
+                    
+                    <div class="divide-y divide-gray-200">
+                        {% for log in recent_activity %}
+                        <div class="px-6 py-3 hover:bg-gray-50">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                                    <i class="fas {% if log.action == 'create' %}fa-plus text-green-600{% elif log.action == 'update' %}fa-edit text-blue-600{% elif log.action == 'delete' %}fa-trash text-red-600{% else %}fa-eye text-gray-600{% endif %} text-sm"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-sm text-gray-900">
+                                        <span class="font-medium">{{ log.user.email|default:'System' }}</span>
+                                        {{ log.action }} {{ log.content_type }}
+                                    </p>
+                                    <p class="text-xs text-gray-500">{{ log.timestamp|timesince }} ago</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="px-6 py-12 text-center">
+                            <i class="fas fa-history text-4xl text-gray-300 mb-3"></i>
+                            <p class="text-gray-500">No activity yet</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+        {% else %}
+            <!-- No Workspace State -->
+            <div class="text-center py-12">
+                <div class="max-w-md mx-auto">
+                    <i class="fas fa-layer-group text-6xl text-gray-300 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-[#03466e] mb-2">Create Your First Workspace</h2>
+                    <p class="text-gray-600 mb-6">
+                        Workspaces are where you and your team can collaborate on data. 
+                        Create one to get started with tracking and visualizing your data.
+                    </p>
+                    <a href="{% url 'dashboard:workspace_create' %}" 
+                       class="inline-flex items-center px-6 py-3 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors font-medium">
+                        <i class="fas fa-plus mr-2"></i>Create Workspace
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

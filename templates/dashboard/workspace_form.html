@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create Workspace - {{ site_settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-12">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-2xl">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-[#03466e] mb-3">Create New Workspace</h1>
+            <p class="text-gray-600">
+                Workspaces are where you and your team can collaborate on data. 
+                Give your workspace a name to get started.
+            </p>
+        </div>
+        
+        <!-- Form Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
+                <h2 class="text-xl font-semibold text-white">Workspace Details</h2>
+                <p class="text-white/80 text-sm">Enter a name for your new workspace</p>
+            </div>
+            
+            <form method="post" class="p-8">
+                {% csrf_token %}
+                
+                <div class="space-y-6">
+                    <div>
+                        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                            Workspace Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" 
+                               name="name" 
+                               id="{{ form.name.id_for_label }}"
+                               value="{% if form.name.value %}{{ form.name.value }}{% endif %}"
+                               placeholder="e.g., My Company, Personal Projects, Marketing Team"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent transition duration-200"
+                               required>
+                        {% if form.name.errors %}
+                        <p class="mt-2 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                        {% endif %}
+                        <p class="mt-2 text-sm text-gray-500">
+                            Choose a descriptive name that reflects the purpose of this workspace.
+                        </p>
+                    </div>
+                    
+                    <!-- Workspace Features Preview -->
+                    <div class="bg-blue-50 rounded-lg p-4 mt-4">
+                        <h3 class="text-sm font-semibold text-[#03466e] mb-3">What you'll get:</h3>
+                        <ul class="space-y-2 text-sm text-gray-600">
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mt-0.5 mr-2"></i>
+                                <span><strong>Free Plan:</strong> 5 tables, 1,000 records per table, 1 team member</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mt-0.5 mr-2"></i>
+                                <span>Create custom data tables with your own schema</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mt-0.5 mr-2"></i>
+                                <span>Build beautiful dashboards with drag-and-drop widgets</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mt-0.5 mr-2"></i>
+                                <span>Import/export data via CSV</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
+                    <a href="{% url 'dashboard:home' %}" 
+                       class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors duration-200 font-medium">
+                        Cancel
+                    </a>
+                    <button type="submit" 
+                            class="px-6 py-2.5 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors duration-200 font-medium flex items-center">
+                        <i class="fas fa-plus mr-2"></i>
+                        Create Workspace
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Help Text -->
+        <div class="mt-6 text-center text-sm text-gray-500">
+            <i class="fas fa-info-circle mr-1"></i>
+            You can always rename your workspace or create additional workspaces later.
+        </div>
+    </div>
+</div>
+{% endblock %}

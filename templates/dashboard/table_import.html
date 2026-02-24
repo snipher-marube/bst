@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Import Data - {{ table.name }} - {{ site_settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-8">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-2xl">
+        <!-- Header -->
+        <div class="mb-6">
+            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
+                <i class="fas fa-chevron-right text-xs"></i>
+                <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
+                <i class="fas fa-chevron-right text-xs"></i>
+                <span class="text-[#03466e] font-medium">Import Data</span>
+            </div>
+            <h1 class="text-2xl font-bold text-[#03466e]">Import Data to {{ table.name }}</h1>
+            <p class="text-gray-600">Upload a CSV file to add multiple records at once</p>
+        </div>
+        
+        <!-- Import Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
+                <h2 class="text-xl font-semibold text-white">CSV Import</h2>
+                <p class="text-white/80 text-sm">Select a CSV file to import</p>
+            </div>
+            
+            <div class="p-8">
+                <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="importForm()">
+                    {% csrf_token %}
+                    
+                    <!-- File Upload Area -->
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#f68712] transition-colors cursor-pointer"
+                         @click="$refs.file.click()"
+                         @dragover.prevent="$el.classList.add('border-[#f68712]', 'bg-orange-50')"
+                         @dragleave.prevent="$el.classList.remove('border-[#f68712]', 'bg-orange-50')"
+                         @drop.prevent="handleFileDrop">
+                        
+                        <input type="file" 
+                               name="file" 
+                               ref="file"
+                               accept=".csv"
+                               class="hidden"
+                               @change="handleFileSelect">
+                        
+                        <div x-show="!fileSelected">
+                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-300 mb-4"></i>
+                            <p class="text-gray-600 mb-2">Drag and drop your CSV file here, or <span class="text-[#f68712] font-medium">browse</span></p>
+                            <p class="text-sm text-gray-500">Supported format: CSV (Comma Separated Values)</p>
+                        </div>
+                        
+                        <div x-show="fileSelected" class="text-left">
+                            <div class="flex items-center justify-between bg-green-50 p-4 rounded-lg">
+                                <div class="flex items-center">
+                                    <i class="fas fa-check-circle text-green-500 text-2xl mr-3"></i>
+                                    <div>
+                                        <p class="font-medium text-green-800" x-text="fileName"></p>
+                                        <p class="text-sm text-green-600" x-text="fileSize"></p>
+                                    </div>
+                                </div>
+                                <button type="button" @click="clearFile" class="text-gray-500 hover:text-red-600">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Schema Preview -->
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-[#03466e] mb-3">Expected Schema:</h3>
+                        <div class="flex flex-wrap gap-2">
+                            {% for field in table.schema %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {{ field.name }}
+                                <span class="ml-1 text-blue-600">({{ field.type }})</span>
+                            </span>
+                            {% endfor %}
+                        </div>
+                        <p class="text-xs text-gray-500 mt-3">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Your CSV should have columns matching these field names. Extra columns will be ignored.
+                        </p>
+                    </div>
+                    
+                    <!-- Import Options -->
+                    <div class="space-y-3">
+                        <label class="flex items-center">
+                            <input type="checkbox" name="skip_first_row" checked class="rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+                            <span class="ml-2 text-sm text-gray-700">First row contains column headers</span>
+                        </label>
+                        
+                        <label class="flex items-center">
+                            <input type="checkbox" name="update_existing" class="rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+                            <span class="ml-2 text-sm text-gray-700">Update existing records if ID matches</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Form Actions -->
+                    <div class="flex justify-end space-x-4 pt-4 border-t">
+                        <a href="{% url 'dashboard:table_detail' pk=table.id %}" 
+                           class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+                            Cancel
+                        </a>
+                        <button type="submit" 
+                                class="px-6 py-2.5 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors font-medium flex items-center"
+                                :disabled="!fileSelected"
+                                :class="{'opacity-50 cursor-not-allowed': !fileSelected}">
+                            <i class="fas fa-upload mr-2"></i>
+                            Start Import
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Instructions -->
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-white rounded-lg p-4 border border-gray-200">
+                <i class="fas fa-file-csv text-[#f68712] text-xl mb-2"></i>
+                <h4 class="font-medium text-[#03466e] mb-1">Step 1: Prepare CSV</h4>
+                <p class="text-xs text-gray-500">Export your data as CSV with column headers matching your field names</p>
+            </div>
+            
+            <div class="bg-white rounded-lg p-4 border border-gray-200">
+                <i class="fas fa-upload text-[#f68712] text-xl mb-2"></i>
+                <h4 class="font-medium text-[#03466e] mb-1">Step 2: Upload File</h4>
+                <p class="text-xs text-gray-500">Drag and drop or select your CSV file to upload</p>
+            </div>
+            
+            <div class="bg-white rounded-lg p-4 border border-gray-200">
+                <i class="fas fa-check-circle text-[#f68712] text-xl mb-2"></i>
+                <h4 class="font-medium text-[#03466e] mb-1">Step 3: Verify & Import</h4>
+                <p class="text-xs text-gray-500">Review and confirm to import your data</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function importForm() {
+    return {
+        fileSelected: false,
+        fileName: '',
+        fileSize: '',
+        
+        handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                this.setFile(file);
+            }
+        },
+        
+        handleFileDrop(event) {
+            event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                this.$refs.file.files = event.dataTransfer.files;
+                this.setFile(file);
+            }
+        },
+        
+        setFile(file) {
+            this.fileSelected = true;
+            this.fileName = file.name;
+            this.fileSize = this.formatFileSize(file.size);
+        },
+        
+        clearFile() {
+            this.fileSelected = false;
+            this.$refs.file.value = '';
+        },
+        
+        formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    }
+}
+</script>
+{% endblock %}

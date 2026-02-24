@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Delete Record - {{ site_settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-12">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-md">
+        <!-- Confirmation Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div class="px-6 py-4 bg-red-50 border-b border-red-100">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-exclamation-triangle text-red-600"></i>
+                    </div>
+                    <h2 class="ml-3 text-lg font-semibold text-red-800">Delete Record</h2>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <div class="text-center mb-6">
+                    <i class="fas fa-database text-5xl text-gray-300 mb-4"></i>
+                    <h3 class="text-xl font-bold text-[#03466e] mb-2">Delete this record?</h3>
+                    <p class="text-gray-600 mb-4">This action cannot be undone.</p>
+                    
+                    <div class="bg-gray-50 rounded-lg p-4 text-left">
+                        <h4 class="text-sm font-medium text-[#03466e] mb-2">Record Data:</h4>
+                        <dl class="space-y-1 text-sm">
+                            {% for key, value in object.data.items %}
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">{{ key }}:</dt>
+                                <dd class="text-gray-900 font-medium">{{ value|default:'-' }}</dd>
+                            </div>
+                            {% endfor %}
+                        </dl>
+                    </div>
+                </div>
+                
+                <form method="post" class="space-y-4">
+                    {% csrf_token %}
+                    
+                    <div class="flex items-center justify-center space-x-4">
+                        <a href="{% url 'dashboard:table_detail' pk=object.table.id %}" 
+                           class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+                            Cancel
+                        </a>
+                        <button type="submit" 
+                                class="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center">
+                            <i class="fas fa-trash mr-2"></i>
+                            Yes, Delete Record
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

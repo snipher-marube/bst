@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if object %}Edit{% else %}Add{% endif %} Record - {{ table.name }} - {{ site_settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-8">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-2xl">
+        <!-- Header -->
+        <div class="mb-6">
+            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
+                <i class="fas fa-chevron-right text-xs"></i>
+                <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
+                <i class="fas fa-chevron-right text-xs"></i>
+                <span class="text-[#03466e] font-medium">{% if object %}Edit{% else %}Add{% endif %} Record</span>
+            </div>
+            <h1 class="text-2xl font-bold text-[#03466e]">
+                {% if object %}Edit Record{% else %}Add New Record{% endif %}
+            </h1>
+            <p class="text-gray-600">{{ table.name }}</p>
+        </div>
+        
+        <!-- Form -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <form method="post" class="space-y-6">
+                {% csrf_token %}
+                
+                {% for field in table.schema %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        {{ field.name }}
+                        {% if field.required %}<span class="text-red-500">*</span>{% endif %}
+                        <span class="text-xs text-gray-500 ml-2">({{ field.type }})</span>
+                    </label>
+                    
+                    {% if field.type == 'text' or field.type == 'email' or field.type == 'url' %}
+                    <input type="{% if field.type == 'email' %}email{% elif field.type == 'url' %}url{% else %}text{% endif %}" 
+                           name="field_{{ field.name }}"
+                           {% if field.required %}required{% endif %}
+                           value="{% if object %}{{ object.data|get_item:field.name }}{% endif %}"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                    
+                    {% elif field.type == 'number' or field.type == 'currency' or field.type == 'percentage' %}
+                    <input type="number" 
+                           name="field_{{ field.name }}"
+                           {% if field.required %}required{% endif %}
+                           step="{% if field.type == 'currency' %}0.01{% else %}any{% endif %}"
+                           value="{% if object %}{{ object.data|get_item:field.name }}{% endif %}"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                    
+                    {% elif field.type == 'date' %}
+                    <input type="date" 
+                           name="field_{{ field.name }}"
+                           {% if field.required %}required{% endif %}
+                           value="{% if object %}{{ object.data|get_item:field.name }}{% endif %}"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                    
+                    {% elif field.type == 'datetime' %}
+                    <input type="datetime-local" 
+                           name="field_{{ field.name }}"
+                           {% if field.required %}required{% endif %}
+                           value="{% if object %}{{ object.data|get_item:field.name }}{% endif %}"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                    
+                    {% elif field.type == 'boolean' %}
+                    <select name="field_{{ field.name }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                        <option value="">Select...</option>
+                        <option value="true" {% if object and object.data|get_item:field.name == 'true' %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if object and object.data|get_item:field.name == 'false' %}selected{% endif %}>No</option>
+                    </select>
+                    
+                    {% else %}
+                    <input type="text" 
+                           name="field_{{ field.name }}"
+                           {% if field.required %}required{% endif %}
+                           value="{% if object %}{{ object.data|get_item:field.name }}{% endif %}"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                    {% endif %}
+                    
+                    {% if field.description %}
+                    <p class="mt-1 text-xs text-gray-500">{{ field.description }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t">
+                    <a href="{% url 'dashboard:table_detail' pk=table.id %}" 
+                       class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                        Cancel
+                    </a>
+                    <button type="submit" 
+                            class="px-6 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors">
+                        {% if object %}Update{% else %}Create{% endif %} Record
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Schema Info -->
+        <div class="mt-4 text-xs text-gray-500 text-center">
+            <i class="fas fa-info-circle mr-1"></i>
+            Fields marked with <span class="text-red-500">*</span> are required
+        </div>
+    </div>
+</div>
+{% endblock %}

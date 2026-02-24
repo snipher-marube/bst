@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Table - {{ site_settings.site_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .schema-field-row {
+        transition: all 0.2s ease;
+    }
+    .schema-field-row:hover {
+        background-color: #f9fafb;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-8">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+        <!-- Header -->
+        <div class="mb-6">
+            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
+                <i class="fas fa-chevron-right text-xs"></i>
+                <span class="text-[#03466e] font-medium">{% if object %}Edit{% else %}Create{% endif %} Table</span>
+            </div>
+            <h1 class="text-2xl font-bold text-[#03466e]">
+                {% if object %}Edit Table: {{ object.name }}{% else %}Create New Table{% endif %}
+            </h1>
+            <p class="text-gray-600">
+                {% if object %}Modify your table structure{% else %}Define the structure of your data table{% endif %}
+            </p>
+        </div>
+        
+        <!-- Form -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
+                <h2 class="text-xl font-semibold text-white">Table Information</h2>
+                <p class="text-white/80 text-sm">Basic details about your table</p>
+            </div>
+            
+            <form method="post" class="p-8" x-data="tableForm()" x-init="initSchema({{ object.schema|default:'[]'|safe }})">
+                {% csrf_token %}
+                
+                <!-- Basic Info -->
+                <div class="space-y-6 mb-8">
+                    <div>
+                        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                            Table Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" 
+                               name="name" 
+                               id="{{ form.name.id_for_label }}"
+                               value="{% if form.name.value %}{{ form.name.value }}{% elif object %}{{ object.name }}{% endif %}"
+                               placeholder="e.g., Sales Data, Customer Information, Inventory"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent"
+                               required>
+                        {% if form.name.errors %}
+                        <p class="mt-2 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    
+                    <div>
+                        <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-2">
+                            Description <span class="text-gray-400 text-xs">(optional)</span>
+                        </label>
+                        <textarea 
+                            name="description" 
+                            id="{{ form.description.id_for_label }}"
+                            rows="3"
+                            placeholder="What is this table for? Add a brief description..."
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent"
+                        >{% if form.description.value %}{{ form.description.value }}{% elif object %}{{ object.description }}{% endif %}</textarea>
+                    </div>
+                </div>
+                
+                <!-- Schema Builder -->
+                <div class="border-t border-gray-200 pt-8">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-[#03466e]">Table Schema (Columns)</h3>
+                        <button type="button" 
+                                @click="addField()"
+                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center">
+                            <i class="fas fa-plus mr-2"></i>Add Field
+                        </button>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-4">
+                        Define the columns for your table. Each field represents a column in your data.
+                    </p>
+                    
+                    <!-- Schema Fields Container -->
+                    <div class="space-y-3" id="schema-fields">
+                        <template x-for="(field, index) in schema" :key="index">
+                            <div class="schema-field-row bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <div class="flex items-start space-x-3">
+                                    <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <!-- Field Name -->
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-700 mb-1">Field Name</label>
+                                            <input type="text" 
+                                                   x-model="field.name"
+                                                   :name="'schema_' + index + '_name'"
+                                                   placeholder="e.g., product_name"
+                                                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent"
+                                                   required>
+                                        </div>
+                                        
+                                        <!-- Field Type -->
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-700 mb-1">Data Type</label>
+                                            <select x-model="field.type" 
+                                                    :name="'schema_' + index + '_type'"
+                                                    class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                                                <option value="text">Text</option>
+                                                <option value="number">Number</option>
+                                                <option value="date">Date</option>
+                                                <option value="datetime">Date & Time</option>
+                                                <option value="boolean">Yes/No</option>
+                                                <option value="email">Email</option>
+                                                <option value="url">URL</option>
+                                                <option value="phone">Phone</option>
+                                                <option value="currency">Currency</option>
+                                                <option value="percentage">Percentage</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <!-- Options -->
+                                        <div class="flex items-center space-x-3 pt-6">
+                                            <label class="flex items-center">
+                                                <input type="checkbox" 
+                                                       x-model="field.required"
+                                                       :name="'schema_' + index + '_required'"
+                                                       class="rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+                                                <span class="ml-2 text-sm text-gray-600">Required</span>
+                                            </label>
+                                            
+                                            <button type="button" 
+                                                    @click="removeField(index)"
+                                                    class="text-red-600 hover:text-red-800 ml-auto"
+                                                    x-show="schema.length > 1">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    
+                    <!-- Hidden input to submit schema JSON -->
+                    <input type="hidden" name="schema" :value="JSON.stringify(schema)">
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
+                    <a href="{% url 'dashboard:tables' %}" 
+                       class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+                        Cancel
+                    </a>
+                    <button type="submit" 
+                            class="px-6 py-2.5 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors font-medium flex items-center">
+                        <i class="fas fa-save mr-2"></i>
+                        {% if object %}Update Table{% else %}Create Table{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Schema Preview -->
+        <div class="mt-6 bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <h4 class="text-sm font-semibold text-[#03466e] mb-2 flex items-center">
+                <i class="fas fa-info-circle mr-2"></i>
+                About Table Schema
+            </h4>
+            <p class="text-sm text-gray-600">
+                The schema defines the structure of your data. Each field becomes a column in your table.
+                You can always add more fields later, but be careful removing fields as it may affect existing data.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+function tableForm() {
+    return {
+        schema: [],
+        
+        initSchema(existingSchema) {
+            if (existingSchema && existingSchema.length > 0) {
+                this.schema = existingSchema;
+            } else {
+                // Add default first field
+                this.schema = [{
+                    name: '',
+                    type: 'text',
+                    required: false
+                }];
+            }
+        },
+        
+        addField() {
+            this.schema.push({
+                name: '',
+                type: 'text',
+                required: false
+            });
+        },
+        
+        removeField(index) {
+            if (this.schema.length > 1) {
+                this.schema.splice(index, 1);
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
