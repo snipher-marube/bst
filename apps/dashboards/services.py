@@ -172,32 +172,57 @@ class DataImportService:
     Handle importing data from various sources
     """
     
-    def import_csv(self, table, file_obj, user, mapping=None):
+    def parse_file(self, file_obj, file_type='csv'):
         """
-        Import CSV data into a table
+        Parse uploaded file into a DataFrame
         """
-        import csv
-        import io
+        try:
+            if file_type == 'csv' or file_obj.name.endswith('.csv'):
+                # Handle potential encoding issues
+                try:
+                    df = pd.read_csv(file_obj)
+                except UnicodeDecodeError:
+                    file_obj.seek(0)
+                    df = pd.read_csv(file_obj, encoding='latin1')
+            elif file_type in ['xlsx', 'xls'] or file_obj.name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file_obj)
+            else:
+                raise ValueError(f"Unsupported file type: {file_type}")
+
+            # Basic cleanup: remove completely empty rows/cols
+            df = df.dropna(how='all').dropna(axis=1, how='all')
+
+            # Replace NaN with None for JSON compatibility
+            df = df.replace({np.nan: None})
+
+            return df
+        except Exception as e:
+            raise ValueError(f"Error parsing file: {str(e)}")
+
+    def import_data(self, table, df, user, mapping=None):
+        """
+        Import data from a DataFrame into a table
+        """
         from django.db import transaction
+        from .models import Record
         
-        # Read CSV
-        decoded_file = file_obj.read().decode('utf-8')
-        io_string = io.StringIO(decoded_file)
-        reader = csv.DictReader(io_string)
-        
-        # Auto-detect schema if not provided
+        # Auto-detect schema if not provided and table has no schema
         if not table.schema and not mapping:
-            schema = self._detect_schema_from_csv(reader.fieldnames, next(reader))
-            table.schema = schema
+            table.schema = self._detect_schema_from_df(df)
             table.save()
         
-        # Import rows
         success_count = 0
         error_count = 0
         errors = []
         
+        # Replace NaN with None for JSON compatibility
+        df = df.replace({np.nan: None})
+
+        # Convert DF to list of dicts
+        records_data = df.to_dict('records')
+
         with transaction.atomic():
-            for row_num, row in enumerate(reader, start=1):
+            for row_num, row in enumerate(records_data, start=1):
                 try:
                     # Apply field mapping if provided
                     if mapping:
@@ -205,6 +230,9 @@ class DataImportService:
                         for target_field, source_field in mapping.items():
                             if source_field in row:
                                 mapped_row[target_field] = row[source_field]
+                            elif source_field in row.values(): # Fallback if key is missing but value exists
+                                # This is a bit risky, better to rely on keys
+                                pass
                     else:
                         mapped_row = row
                     
@@ -223,32 +251,46 @@ class DataImportService:
         return {
             'success': success_count,
             'errors': error_count,
-            'error_details': errors[:10]  # First 10 errors
+            'error_details': errors[:10]
         }
-    
-    def _detect_schema_from_csv(self, headers, first_row):
+
+    def import_csv(self, table, file_obj, user, mapping=None):
         """
-        Automatically detect field types from CSV data
+        Legacy support for import_csv
+        """
+        df = self.parse_file(file_obj, 'csv')
+        return self.import_data(table, df, user, mapping)
+    
+    def _detect_schema_from_df(self, df):
+        """
+        Automatically detect field types from a DataFrame
         """
         schema = []
         
-        for header in headers:
-            value = first_row.get(header, '')
+        for column in df.columns:
+            # Get first non-null value for detection
+            first_val = df[column].dropna().iloc[0] if not df[column].dropna().empty else ""
+
+            # Improved detection logic
+            field_type = 'text'
             
-            # Detect type
-            if value.replace('.', '').replace('-', '').isdigit():
+            if isinstance(first_val, (int, float, np.number)):
                 field_type = 'number'
-            elif self._is_date(value):
-                field_type = 'date'
-            elif value.lower() in ['true', 'false', 'yes', 'no']:
+            elif isinstance(first_val, bool):
                 field_type = 'boolean'
-            elif '@' in value and '.' in value:
-                field_type = 'email'
-            else:
-                field_type = 'text'
+            elif self._is_date(str(first_val)):
+                field_type = 'date'
+            elif isinstance(first_val, str):
+                val_lower = first_val.lower()
+                if '@' in first_val and '.' in first_val:
+                    field_type = 'email'
+                elif val_lower.startswith(('http://', 'https://')):
+                    field_type = 'url'
+                elif val_lower in ['true', 'false', 'yes', 'no']:
+                    field_type = 'boolean'
             
             schema.append({
-                'name': header,
+                'name': str(column),
                 'type': field_type,
                 'required': False
             })

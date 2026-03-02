@@ -10,7 +10,8 @@ A powerful business intelligence and analytics platform built with Django, enabl
 - **Interactive Dashboards**: Build custom dashboards with various widget types
 - **Team Collaboration**: Role-based access control (Owner, Admin, Editor, Viewer)
 - **Real-time Analytics**: Track KPIs and visualize data with charts
-- **Data Import/Export**: Import data from various sources and export in multiple formats
+- **Professional Data Import**: Step-by-step import wizard for CSV and Excel files with auto-schema detection and column mapping.
+- **Data Export**: Export data in multiple formats for external use.
 
 ### Field Types Supported
 - Text, Number, Date, DateTime

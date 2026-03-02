@@ -40,7 +40,7 @@
                         <input type="file" 
                                name="file" 
                                ref="file"
-                               accept=".csv"
+                               accept=".csv,.xlsx,.xls"
                                class="hidden"
                                @change="handleFileSelect">
                         
@@ -96,6 +96,8 @@
                         </label>
                     </div>
                     
+                    <input type="hidden" name="step" value="upload">
+
                     <!-- Form Actions -->
                     <div class="flex justify-end space-x-4 pt-4 border-t">
                         <a href="{% url 'dashboard:table_detail' pk=table.id %}" 
@@ -106,8 +108,7 @@
                                 class="px-6 py-2.5 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors font-medium flex items-center"
                                 :disabled="!fileSelected"
                                 :class="{'opacity-50 cursor-not-allowed': !fileSelected}">
-                            <i class="fas fa-upload mr-2"></i>
-                            Start Import
+                            Next: Preview & Map <i class="fas fa-arrow-right ml-2"></i>
                         </button>
                     </div>
                 </form>
