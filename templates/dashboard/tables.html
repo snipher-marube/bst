@@ -13,10 +13,16 @@
                     <h1 class="text-2xl font-bold text-[#03466e]">Data Tables</h1>
                     <p class="text-gray-600">Manage your data sources</p>
                 </div>
-                <a href="{% url 'dashboard:table_create' %}" 
-                   class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors">
-                    <i class="fas fa-plus mr-2"></i>New Table
-                </a>
+                <div class="flex space-x-3">
+                    <a href="{% url 'dashboard:table_create_import' %}"
+                       class="px-4 py-2 border border-[#f68712] text-[#f68712] rounded-lg hover:bg-orange-50 transition-colors">
+                        <i class="fas fa-file-import mr-2"></i>Create from File
+                    </a>
+                    <a href="{% url 'dashboard:table_create' %}"
+                       class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New Table
+                    </a>
+                </div>
             </div>
         </div>
     </div>

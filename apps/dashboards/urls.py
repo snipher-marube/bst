@@ -15,6 +15,7 @@ urlpatterns = [
     # Table management
     path('tables/', views.TableView.as_view(), name='tables'),
     path('tables/create/', views.TableCreateView.as_view(), name='table_create'),
+    path('tables/create/import/', views.TableCreateFromImportView.as_view(), name='table_create_import'),
     path('tables/<uuid:pk>/', views.TableDetailView.as_view(), name='table_detail'),
     path('tables/<uuid:pk>/edit/', views.TableEditView.as_view(), name='table_edit'),
     path('tables/<uuid:pk>/delete/', views.TableDeleteView.as_view(), name='table_delete'),
