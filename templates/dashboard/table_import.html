@@ -28,15 +28,23 @@
                 <p class="text-white/80 text-sm">Select a CSV or Excel file</p>
             </div>
             
-            <div class="p-8">
-                <form method="post" action="{% if is_new_table %}{% url 'dashboard:table_create_import' %}{% else %}{% url 'dashboard:table_import' pk=table.id %}{% endif %}" enctype="multipart/form-data" class="space-y-6" x-data="importForm()">
+            <div class="p-8 relative">
+                <!-- Loading Overlay -->
+                <div x-show="uploading" class="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center backdrop-blur-sm transition-opacity" style="display: none;">
+                    <div class="w-12 h-12 border-4 border-gray-200 border-t-[#f68712] rounded-full animate-spin mb-4"></div>
+                    <p class="text-[#03466e] font-semibold text-lg">Parsing your file...</p>
+                    <p class="text-gray-500 text-sm">This will just take a moment</p>
+                </div>
+
+                <form method="post" id="upload-form" action="{% if is_new_table %}{% url 'dashboard:table_create_import' %}{% else %}{% url 'dashboard:table_import' pk=table.id %}{% endif %}" enctype="multipart/form-data" class="space-y-6" x-data="importForm()">
                     {% csrf_token %}
                     
                     <!-- File Upload Area -->
-                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#f68712] transition-colors cursor-pointer"
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#f68712] transition-all cursor-pointer group"
+                         :class="{'border-[#f68712] bg-orange-50': dragging}"
                          @click="$refs.file.click()"
-                         @dragover.prevent="$el.classList.add('border-[#f68712]', 'bg-orange-50')"
-                         @dragleave.prevent="$el.classList.remove('border-[#f68712]', 'bg-orange-50')"
+                         @dragover.prevent="dragging = true"
+                         @dragleave.prevent="dragging = false"
                          @drop.prevent="handleFileDrop">
                         
                         <input type="file" 
@@ -148,20 +156,25 @@ function importForm() {
         fileSelected: false,
         fileName: '',
         fileSize: '',
+        dragging: false,
+        uploading: false,
         
         handleFileSelect(event) {
             const file = event.target.files[0];
             if (file) {
                 this.setFile(file);
+                this.autoSubmit();
             }
         },
         
         handleFileDrop(event) {
+            this.dragging = false;
             event.preventDefault();
             const file = event.dataTransfer.files[0];
-            if (file && file.name.endsWith('.csv')) {
+            if (file && (file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
                 this.$refs.file.files = event.dataTransfer.files;
                 this.setFile(file);
+                this.autoSubmit();
             }
         },
         
@@ -169,6 +182,15 @@ function importForm() {
             this.fileSelected = true;
             this.fileName = file.name;
             this.fileSize = this.formatFileSize(file.size);
+        },
+
+        autoSubmit() {
+            if (this.fileSelected) {
+                this.uploading = true;
+                setTimeout(() => {
+                    document.getElementById('upload-form').submit();
+                }, 500);
+            }
         },
         
         clearFile() {

@@ -172,22 +172,22 @@ class DataImportService:
     Handle importing data from various sources
     """
     
-    def parse_file(self, file_obj, file_type='csv'):
+    def parse_file(self, file_obj, file_type=None):
         """
         Parse uploaded file into a DataFrame
         """
         try:
-            if file_type == 'csv' or file_obj.name.endswith('.csv'):
+            if file_type == 'csv' or (file_type is None and file_obj.name.endswith('.csv')):
                 # Handle potential encoding issues
                 try:
                     df = pd.read_csv(file_obj)
                 except UnicodeDecodeError:
                     file_obj.seek(0)
                     df = pd.read_csv(file_obj, encoding='latin1')
-            elif file_type in ['xlsx', 'xls'] or file_obj.name.endswith(('.xlsx', '.xls')):
+            elif file_type in ['xlsx', 'xls', 'excel'] or (file_type is None and file_obj.name.endswith(('.xlsx', '.xls'))):
                 df = pd.read_excel(file_obj)
             else:
-                raise ValueError(f"Unsupported file type: {file_type}")
+                raise ValueError(f"Unsupported file format for: {file_obj.name}")
 
             # Basic cleanup: remove completely empty rows/cols
             df = df.dropna(how='all').dropna(axis=1, how='all')
