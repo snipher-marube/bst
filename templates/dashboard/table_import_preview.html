@@ -14,8 +14,10 @@
                 <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
                     <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
                     <i class="fas fa-chevron-right text-xs"></i>
+                    {% if not is_new_table %}
                     <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
                     <i class="fas fa-chevron-right text-xs"></i>
+                    {% endif %}
                     <span class="text-[#03466e] font-medium">Preview Import</span>
                 </div>
                 <h1 class="text-2xl font-bold text-[#03466e]">Map Fields & Preview Data</h1>

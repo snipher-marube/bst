@@ -221,9 +221,9 @@ class DataImportService:
         # Convert DF to list of dicts
         records_data = df.to_dict('records')
 
-        with transaction.atomic():
-            for row_num, row in enumerate(records_data, start=1):
-                try:
+        for row_num, row in enumerate(records_data, start=1):
+            try:
+                with transaction.atomic():
                     # Apply field mapping if provided
                     if mapping:
                         mapped_row = {}
@@ -241,9 +241,9 @@ class DataImportService:
                     )
                     success_count += 1
                     
-                except Exception as e:
-                    error_count += 1
-                    errors.append(f"Row {row_num}: {str(e)}")
+            except Exception as e:
+                error_count += 1
+                errors.append(f"Row {row_num}: {str(e)}")
         
         return {
             'success': success_count,
@@ -270,7 +270,7 @@ class DataImportService:
 
             # Improved detection logic
             field_type = 'text'
-            
+
             if isinstance(first_val, (int, float, np.number)):
                 field_type = 'number'
             elif isinstance(first_val, bool):
@@ -298,6 +298,84 @@ class DataImportService:
         """Check if string is a date"""
         from django.utils.dateparse import parse_date
         return parse_date(str(value)) is not None
+
+
+class WorkspaceInsightService:
+    """
+    Automatically generate insights and dashboards from workspace tables
+    """
+
+    def generate_workspace_overview(self, workspace, user):
+        """
+        Scan all tables in the workspace and create an insights dashboard
+        """
+        from .models import Dashboard, DataTable, Widget
+
+        # 1. Create or get the "Workspace Overview" dashboard
+        dashboard, created = Dashboard.objects.get_or_create(
+            workspace=workspace,
+            slug='workspace-overview',
+            defaults={
+                'name': 'Workspace Insights Overview',
+                'description': 'Automatically generated insights from all your data tables.',
+                'created_by': user,
+                'layout_config': {"columns": 12, "rowHeight": 100, "compact": True}
+            }
+        )
+
+        if not created:
+            # Clear existing auto-generated widgets to refresh insights
+            dashboard.widgets.all().delete()
+
+        # 2. Analyze all active tables
+        tables = workspace.tables.filter(is_active=True)
+        pos_x, pos_y = 0, 0
+
+        for table in tables:
+            # Skip tables with no data
+            if table.record_count == 0:
+                continue
+
+            # Identify numeric fields for KPIs
+            numeric_fields = [f for f in table.schema if f['type'] in ['number', 'currency', 'percentage']]
+            date_fields = [f for f in table.schema if f['type'] in ['date', 'datetime']]
+
+            # Create top-level metric widgets
+            for field in numeric_fields[:2]: # Limit to top 2 numeric fields per table
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='metric',
+                    title=f"{table.name}: Total {field['name']}",
+                    table=table,
+                    query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
+                    viz_config={"format": "number", "prefix": "$" if field['type'] == 'currency' else ""},
+                    position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
+                )
+                pos_x += 3
+                if pos_x >= 12:
+                    pos_x = 0
+                    pos_y += 2
+
+            # Create trend widgets if date fields exist
+            if date_fields and numeric_fields:
+                date_field = date_fields[0]['name']
+                num_field = numeric_fields[0]['name']
+
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='line_chart',
+                    title=f"{table.name} Trend ({num_field})",
+                    table=table,
+                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": date_field}]},
+                    viz_config={"x_axis": date_field, "y_axis": "sum", "show_legend": True},
+                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
+                )
+                pos_x += 6
+                if pos_x >= 12:
+                    pos_x = 0
+                    pos_y += 4
+
+        return dashboard
 
 
 class AuditService:
