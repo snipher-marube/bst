@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% load dashboard_filters %}
+
+{% block title %}Preview Import - {{ table.name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-8">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="mb-6">
+                <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                    <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
+                    <i class="fas fa-chevron-right text-xs"></i>
+                    <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
+                    <i class="fas fa-chevron-right text-xs"></i>
+                    <span class="text-[#03466e] font-medium">Preview Import</span>
+                </div>
+                <h1 class="text-2xl font-bold text-[#03466e]">Map Fields & Preview Data</h1>
+                <p class="text-gray-600">Review the columns from <strong>{{ filename }}</strong> and map them to field types.</p>
+            </div>
+
+            <form method="post" action="{% url 'dashboard:table_import' pk=table.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="step" value="map">
+                <input type="hidden" name="import_id" value="{{ import_id }}">
+
+                <!-- Mapping Section -->
+                <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mb-8">
+                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-800">Field Mapping</h2>
+                        <p class="text-sm text-gray-500">{% if not table.schema %}This will define your table schema.{% else %}Confirm how columns map to your existing schema.{% endif %}</p>
+                    </div>
+
+                    <div class="p-6 overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr>
+                                    {% if not table.schema %}
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source Column</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Field Type</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sample Value</th>
+                                    {% else %}
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Table Field</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source Column</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sample Value</th>
+                                    {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                {% if not table.schema %}
+                                    {% for col in columns %}
+                                    <tr>
+                                        <td class="px-4 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">{{ col }}</div>
+                                        </td>
+                                        <td class="px-4 py-4 whitespace-nowrap">
+                                            <select name="type_{{ col }}" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-[#f68712] focus:border-[#f68712] sm:text-sm rounded-md">
+                                                {% for type_code, type_name in field_types %}
+                                                    <option value="{{ type_code }}"
+                                                        {% for suggested in suggested_schema %}
+                                                            {% if suggested.name == col and suggested.type == type_code %}selected{% endif %}
+                                                        {% endfor %}
+                                                    >
+                                                        {{ type_name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            {% with preview_data|first as first_row %}
+                                                {{ first_row|get_item:col|default:"-" }}
+                                            {% endwith %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    {% for field in table.schema %}
+                                    <tr>
+                                        <td class="px-4 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">{{ field.name }} ({{ field.type }})</div>
+                                        </td>
+                                        <td class="px-4 py-4 whitespace-nowrap">
+                                            <select name="map_{{ field.name }}" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-[#f68712] focus:border-[#f68712] sm:text-sm rounded-md">
+                                                <option value="">-- Don't Import --</option>
+                                                {% for col in columns %}
+                                                    <option value="{{ col }}" {% if col|lower == field.name|lower %}selected{% endif %}>{{ col }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-data="{ mapping: '{{ field.name|lower }}' }">
+                                            <!-- Simple preview logic for the selected column could go here with Alpine.js if needed -->
+                                            <span class="text-xs text-gray-400">Select column to see sample</span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Preview Section -->
+                <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mb-8">
+                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-800">Data Preview (First 5 Rows)</h2>
+                    </div>
+                    <div class="p-0 overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    {% for col in columns %}
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r">{{ col }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for row in preview_data %}
+                                <tr>
+                                    {% for col in columns %}
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 border-r">{{ row|get_item:col|default:"-" }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex justify-between items-center">
+                    <a href="{% url 'dashboard:table_import' pk=table.id %}" class="text-gray-600 hover:text-gray-900 font-medium">
+                        <i class="fas fa-arrow-left mr-2"></i> Back to Upload
+                    </a>
+                    <button type="submit" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-[#f68712] hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f68712]">
+                        Complete Import <i class="fas fa-check ml-2"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
