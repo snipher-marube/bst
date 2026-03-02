@@ -230,9 +230,6 @@ class DataImportService:
                         for target_field, source_field in mapping.items():
                             if source_field in row:
                                 mapped_row[target_field] = row[source_field]
-                            elif source_field in row.values(): # Fallback if key is missing but value exists
-                                # This is a bit risky, better to rely on keys
-                                pass
                     else:
                         mapped_row = row
                     

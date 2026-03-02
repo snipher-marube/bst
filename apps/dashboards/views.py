@@ -10,7 +10,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, Count
 from django.utils import timezone
 import json
+import uuid
 import pandas as pd
+from django.core.cache import cache
 
 from apps.dashboards.models import (
     Workspace, WorkspaceMembership, DataTable, 
@@ -270,8 +272,103 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
         return redirect(self.success_url)
 
 
-class TableImportView(LoginRequiredMixin, TemplateView):
-    """Import data into table - Multi-step process"""
+class TableImportMixin:
+    """Shared logic for multi-step file imports"""
+
+    def handle_upload_step(self, request, table=None):
+        service = DataImportService()
+        if 'file' not in request.FILES:
+            messages.error(request, 'No file uploaded.')
+            return None
+
+        file_obj = request.FILES['file']
+        try:
+            df = service.parse_file(file_obj)
+            import_id = str(uuid.uuid4())
+            # Use 'split' orientation for better schema preservation
+            serialized_df = df.to_json(orient='split')
+            cache.set(f'import_df_{import_id}', serialized_df, 3600)
+            suggested_schema = service._detect_schema_from_df(df)
+
+            return render(request, 'dashboard/table_import_preview.html', {
+                'table': table,
+                'import_id': import_id,
+                'filename': file_obj.name,
+                'columns': df.columns.tolist(),
+                'preview_data': df.head(5).to_dict('records'),
+                'suggested_schema': suggested_schema,
+                'field_types': DataTable.FIELD_TYPES,
+                'is_new_table': table is None
+            })
+        except Exception as e:
+            messages.error(request, f'Error parsing file: {str(e)}')
+            return None
+
+    def handle_map_step(self, request, table=None):
+        import_id = request.POST.get('import_id')
+        if not import_id:
+            messages.error(request, 'Invalid import request.')
+            return None
+
+        serialized_df = cache.get(f'import_df_{import_id}')
+        if not serialized_df:
+            messages.error(request, 'Import session expired. Please upload the file again.')
+            return None
+
+        df = pd.read_json(serialized_df, orient='split')
+        service = DataImportService()
+
+        # If no table, create a new one first
+        if table is None:
+            workspace = request.user.current_workspace
+            if not workspace.can_add_table():
+                messages.error(request, 'Table limit reached.')
+                return None
+
+            table_name = request.POST.get('table_name', 'Imported Table')
+            table = DataTable.objects.create(
+                workspace=workspace,
+                name=table_name,
+                created_by=request.user
+            )
+
+        # 1. Prepare mapping and update table schema if it was empty
+        mapping = {}
+        if not table.schema:
+            new_schema = []
+            for col in df.columns:
+                field_type = request.POST.get(f'type_{col}', 'text')
+                new_schema.append({
+                    'name': col,
+                    'type': field_type,
+                    'required': False
+                })
+                mapping[col] = col
+            table.schema = new_schema
+            table.save()
+            # Generate default dashboard for new tables
+            table.generate_default_dashboard()
+        else:
+            for field in table.schema:
+                field_name = field['name']
+                source_col = request.POST.get(f'map_{field_name}')
+                if source_col:
+                    mapping[field_name] = source_col
+
+        # 2. Perform import
+        result = service.import_data(
+            table=table,
+            df=df,
+            user=request.user,
+            mapping=mapping
+        )
+
+        cache.delete(f'import_df_{import_id}')
+        return table, result
+
+
+class TableImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
+    """Import data into an existing table"""
     template_name = 'dashboard/table_import.html'
     
     def get_context_data(self, **kwargs):
@@ -294,102 +391,48 @@ class TableImportView(LoginRequiredMixin, TemplateView):
         )
         
         step = request.POST.get('step', 'upload')
-        service = DataImportService()
-        
         if step == 'upload':
-            if 'file' not in request.FILES:
-                messages.error(request, 'No file uploaded.')
-                return redirect('dashboard:table_import', pk=table.id)
-
-            file_obj = request.FILES['file']
-            try:
-                df = service.parse_file(file_obj)
-
-                # Store data in cache temporarily (more robust than session)
-                import uuid
-                from django.core.cache import cache
-
-                import_id = str(uuid.uuid4())
-                # Use JSON for safer serialization
-                serialized_df = df.to_json(orient='records')
-
-                # Cache for 1 hour
-                cache.set(f'import_df_{import_id}', serialized_df, 3600)
-
-                # Get suggested schema
-                suggested_schema = service._detect_schema_from_df(df)
-
-                return render(request, 'dashboard/table_import_preview.html', {
-                    'table': table,
-                    'import_id': import_id,
-                    'filename': file_obj.name,
-                    'columns': df.columns.tolist(),
-                    'preview_data': df.head(5).to_dict('records'),
-                    'suggested_schema': suggested_schema,
-                    'field_types': DataTable.FIELD_TYPES
-                })
-
-            except Exception as e:
-                messages.error(request, f'Error parsing file: {str(e)}')
-                return redirect('dashboard:table_import', pk=table.id)
-
+            response = self.handle_upload_step(request, table)
+            return response or redirect('dashboard:table_import', pk=table.id)
         elif step == 'map':
-            import_id = request.POST.get('import_id')
-            if not import_id:
-                messages.error(request, 'Invalid import request.')
+            result_data = self.handle_map_step(request, table)
+            if not result_data:
                 return redirect('dashboard:table_import', pk=table.id)
 
-            from django.core.cache import cache
-            serialized_df = cache.get(f'import_df_{import_id}')
-
-            if not serialized_df:
-                messages.error(request, 'Import session expired. Please upload the file again.')
-                return redirect('dashboard:table_import', pk=table.id)
-
-            df = pd.read_json(serialized_df)
-
-            # 1. Prepare mapping and update table schema if it was empty
-            mapping = {}
-            if not table.schema:
-                new_schema = []
-                for col in df.columns:
-                    field_type = request.POST.get(f'type_{col}', 'text')
-                    new_schema.append({
-                        'name': col,
-                        'type': field_type,
-                        'required': False
-                    })
-                    mapping[col] = col # Direct mapping for new tables
-                table.schema = new_schema
-                table.save()
-            else:
-                # Existing table: Map source columns to existing fields
-                for field in table.schema:
-                    field_name = field['name']
-                    # Expect form to have mapping for each schema field
-                    source_col = request.POST.get(f'map_{field_name}')
-                    if source_col:
-                        mapping[field_name] = source_col
-
-            # 2. Perform import
-            result = service.import_data(
-                table=table,
-                df=df,
-                user=request.user,
-                mapping=mapping
-            )
-
-            # Clean up cache
-            cache.delete(f'import_df_{import_id}')
-
+            table, result = result_data
             if result['errors'] == 0:
                 messages.success(request, f'Successfully imported {result["success"]} records!')
             else:
                 messages.warning(request, f'Imported {result["success"]} records with {result["errors"]} errors.')
-
             return redirect('dashboard:table_detail', pk=table.id)
 
         return redirect('dashboard:table_import', pk=table.id)
+
+
+class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
+    """Create a brand new table from an imported file"""
+    template_name = 'dashboard/table_import.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_new_table'] = True
+        return context
+
+    def post(self, request, *args, **kwargs):
+        step = request.POST.get('step', 'upload')
+        if step == 'upload':
+            response = self.handle_upload_step(request)
+            return response or redirect('dashboard:table_create_import')
+        elif step == 'map':
+            result_data = self.handle_map_step(request)
+            if not result_data:
+                return redirect('dashboard:table_create_import')
+
+            table, result = result_data
+            messages.success(request, f'Table "{table.name}" created with {result["success"]} records!')
+            return redirect('dashboard:table_detail', pk=table.id)
+
+        return redirect('dashboard:table_create_import')
 
 
 class RecordListView(LoginRequiredMixin, ListView):

@@ -11,23 +11,25 @@
             <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
                 <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
                 <i class="fas fa-chevron-right text-xs"></i>
+                    {% if not is_new_table %}
                 <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
                 <i class="fas fa-chevron-right text-xs"></i>
-                <span class="text-[#03466e] font-medium">Import Data</span>
+                    {% endif %}
+                    <span class="text-[#03466e] font-medium">{% if is_new_table %}Create from File{% else %}Import Data{% endif %}</span>
             </div>
-            <h1 class="text-2xl font-bold text-[#03466e]">Import Data to {{ table.name }}</h1>
-            <p class="text-gray-600">Upload a CSV file to add multiple records at once</p>
+                <h1 class="text-2xl font-bold text-[#03466e]">{% if is_new_table %}Create Table from File{% else %}Import Data to {{ table.name }}{% endif %}</h1>
+                <p class="text-gray-600">Upload a CSV or Excel file to {% if is_new_table %}automatically create a new table{% else %}add multiple records at once{% endif %}</p>
         </div>
         
         <!-- Import Card -->
         <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
             <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
-                <h2 class="text-xl font-semibold text-white">CSV Import</h2>
-                <p class="text-white/80 text-sm">Select a CSV file to import</p>
+                <h2 class="text-xl font-semibold text-white">{% if is_new_table %}File Upload{% else %}Data Import{% endif %}</h2>
+                <p class="text-white/80 text-sm">Select a CSV or Excel file</p>
             </div>
             
             <div class="p-8">
-                <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="importForm()">
+                <form method="post" action="{% if is_new_table %}{% url 'dashboard:table_create_import' %}{% else %}{% url 'dashboard:table_import' pk=table.id %}{% endif %}" enctype="multipart/form-data" class="space-y-6" x-data="importForm()">
                     {% csrf_token %}
                     
                     <!-- File Upload Area -->
@@ -66,7 +68,8 @@
                         </div>
                     </div>
                     
-                    <!-- Schema Preview -->
+                    <!-- Schema Preview (Only for existing tables) -->
+                    {% if not is_new_table and table.schema %}
                     <div class="bg-blue-50 rounded-lg p-4">
                         <h3 class="text-sm font-semibold text-[#03466e] mb-3">Expected Schema:</h3>
                         <div class="flex flex-wrap gap-2">
@@ -79,9 +82,10 @@
                         </div>
                         <p class="text-xs text-gray-500 mt-3">
                             <i class="fas fa-info-circle mr-1"></i>
-                            Your CSV should have columns matching these field names. Extra columns will be ignored.
+                            Your file should have columns matching these field names. Extra columns will be ignored.
                         </p>
                     </div>
+                    {% endif %}
                     
                     <!-- Import Options -->
                     <div class="space-y-3">
@@ -100,7 +104,7 @@
 
                     <!-- Form Actions -->
                     <div class="flex justify-end space-x-4 pt-4 border-t">
-                        <a href="{% url 'dashboard:table_detail' pk=table.id %}" 
+                        <a href="{% if is_new_table %}{% url 'dashboard:tables' %}{% else %}{% url 'dashboard:table_detail' pk=table.id %}{% endif %}"
                            class="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium">
                             Cancel
                         </a>
