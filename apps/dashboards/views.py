@@ -18,7 +18,7 @@ from apps.dashboards.models import (
     Workspace, WorkspaceMembership, DataTable, 
     Record, Dashboard, Widget, AuditLog
 )
-from apps.dashboards.services import DataImportService, AuditService
+from apps.dashboards.services import DataImportService, AuditService, WorkspaceInsightService
 from apps.dashboards.serializers import DataTableSerializer, DashboardSerializer
 
 
@@ -71,6 +71,13 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
                 is_active=True
             ).order_by('-updated_at')[:5]
             
+            # Get workspace overview dashboard if it exists
+            context['insights_dashboard'] = Dashboard.objects.filter(
+                workspace=workspace,
+                slug='workspace-overview',
+                is_active=True
+            ).first()
+
             # Get recent dashboards
             context['recent_dashboards'] = Dashboard.objects.filter(
                 workspace=workspace,
@@ -407,6 +414,22 @@ class TableImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
             return redirect('dashboard:table_detail', pk=table.id)
 
         return redirect('dashboard:table_import', pk=table.id)
+
+
+class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
+    """Automatically generate insights for the current workspace"""
+
+    def post(self, request, *args, **kwargs):
+        workspace = request.user.current_workspace
+        if not workspace:
+            messages.error(request, 'No active workspace found.')
+            return redirect('dashboard:home')
+
+        service = WorkspaceInsightService()
+        dashboard = service.generate_workspace_overview(workspace, request.user)
+
+        messages.success(request, f'Successfully generated insights in "{dashboard.name}"!')
+        return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
 
 
 class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
