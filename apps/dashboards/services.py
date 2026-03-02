@@ -19,25 +19,31 @@ class QueryEngine:
         """
         Execute a widget's query configuration and return formatted data
         """
-        # Generate cache key based on widget config and table
-        cache_key = self._generate_cache_key(widget)
-        
-        # Try to get from cache
-        cached_data = cache.get(cache_key)
-        if cached_data:
-            return cached_data
-        
-        # Execute query
-        data = self._execute_query(
-            table_id=widget.table_id,
-            config=widget.query_config,
-            limit=limit
-        )
-        
-        # Cache result
-        cache.set(cache_key, data, self.cache_timeout)
-        
-        return data
+        try:
+            # Generate cache key based on widget config and table
+            cache_key = self._generate_cache_key(widget)
+
+            # Try to get from cache
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return cached_data
+
+            # Use limit from config if provided
+            query_limit = widget.query_config.get('limit', limit)
+
+            # Execute query
+            data = self._execute_query(
+                table_id=widget.table_id,
+                config=widget.query_config,
+                limit=query_limit
+            )
+
+            # Cache result
+            cache.set(cache_key, data, self.cache_timeout)
+
+            return data
+        except Exception as e:
+            return {"error": str(e)}
     
     def _generate_cache_key(self, widget):
         """Generate unique cache key for widget query"""
@@ -140,6 +146,11 @@ class QueryEngine:
             field = agg.get('field')
             group_by = agg.get('group_by')
             
+            # Handle empty data
+            if df.empty:
+                result[agg.get('name', agg_type)] = 0 if agg_type == 'count' else None
+                continue
+
             if group_by:
                 # Group by operation
                 if agg_type == 'sum':
@@ -324,9 +335,8 @@ class WorkspaceInsightService:
             }
         )
 
-        if not created:
-            # Clear existing auto-generated widgets to refresh insights
-            dashboard.widgets.all().delete()
+        # Always clear to regenerate the best insights
+        dashboard.widgets.all().delete()
 
         # 2. Analyze all active tables
         tables = workspace.tables.filter(is_active=True)
@@ -334,17 +344,28 @@ class WorkspaceInsightService:
 
         for table in tables:
             # Skip tables with no data
-            if table.record_count == 0:
+            if table.records.count() == 0:
                 continue
 
-            # Identify fields for insights
             schema = table.schema or []
             numeric_fields = [f for f in schema if f['type'] in ['number', 'currency', 'percentage']]
             date_fields = [f for f in schema if f['type'] in ['date', 'datetime']]
-            text_fields = [f for f in schema if f['type'] in ['text', 'category']]
 
-            # 1. Metric Cards (KPIs)
-            for field in numeric_fields[:3]:
+            # GUARANTEE: Record Count Metric
+            Widget.objects.create(
+                dashboard=dashboard,
+                widget_type='metric',
+                title=f"Total Records ({table.name})",
+                table=table,
+                query_config={"aggregations": [{"type": "count", "field": "id", "name": "val"}]},
+                viz_config={"format": "number"},
+                position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
+            )
+            pos_x += 3
+            if pos_x >= 12: pos_x = 0; pos_y += 2
+
+            # 1. KPI Metrics for Numeric Fields
+            for field in numeric_fields[:2]:
                 Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='metric',
@@ -355,53 +376,57 @@ class WorkspaceInsightService:
                     position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
                 )
                 pos_x += 3
-                if pos_x >= 12:
-                    pos_x = 0
-                    pos_y += 2
+                if pos_x >= 12: pos_x = 0; pos_y += 2
 
-            # 2. Time Series (Trends)
-            if date_fields and numeric_fields:
+            # 2. Categorical Discovery
+            cat_field = self._sample_and_detect_categorical(table)
+            if cat_field:
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='bar_chart',
+                    title=f"Records by {cat_field} ({table.name})",
+                    table=table,
+                    query_config={"aggregations": [{"type": "count", "field": "id", "group_by": cat_field, "name": "val"}]},
+                    viz_config={"x_axis": cat_field, "y_axis": "val", "show_legend": False},
+                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
+                )
+                pos_x += 6
+                if pos_x >= 12: pos_x = 0; pos_y += 4
+
+            # 3. Temporal Discovery (Trends)
+            if date_fields:
                 date_field = date_fields[0]['name']
-                num_field = numeric_fields[0]['name']
+                # If numeric exists, show trend of first numeric field, otherwise count
+                target_field = numeric_fields[0]['name'] if numeric_fields else "id"
+                agg_type = "sum" if numeric_fields else "count"
 
                 Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='line_chart',
-                    title=f"{num_field} over Time",
+                    title=f"{target_field} over Time ({table.name})",
                     table=table,
-                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": date_field}]},
-                    viz_config={"x_axis": date_field, "y_axis": "sum", "show_legend": True},
+                    query_config={"aggregations": [{"type": agg_type, "field": target_field, "group_by": date_field, "name": "val"}]},
+                    viz_config={"x_axis": date_field, "y_axis": "val", "show_legend": True},
                     position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
                 )
                 pos_x += 6
-                if pos_x >= 12:
-                    pos_x = 0
-                    pos_y += 4
+                if pos_x >= 12: pos_x = 0; pos_y += 4
 
-            # 3. Categorical Insights (Pie/Bar)
-            cat_field = self._sample_and_detect_categorical(table)
+            # 4. Sample Data Table
+            Widget.objects.create(
+                dashboard=dashboard,
+                widget_type='table',
+                title=f"Sample: {table.name}",
+                table=table,
+                query_config={"limit": 10},
+                viz_config={},
+                position={"x": 0, "y": pos_y, "w": 12, "h": 4}
+            )
+            pos_y += 4; pos_x = 0
 
-            if cat_field and numeric_fields:
-                num_field = numeric_fields[0]['name']
-
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='pie_chart',
-                    title=f"{num_field} by {cat_field}",
-                    table=table,
-                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": cat_field, "name": "val"}]},
-                    viz_config={"x_axis": cat_field, "y_axis": "val", "show_legend": True},
-                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
-                )
-                pos_x += 6
-                if pos_x >= 12:
-                    pos_x = 0
-                    pos_y += 4
-
-            # Reset positions for next table to avoid too much verticality if many tables
-            if pos_y > 20:
-                pos_x = 0
-                pos_y = 0
+            # Stop if we have too many widgets
+            if dashboard.widgets.count() > 20:
+                break
 
         return dashboard
 

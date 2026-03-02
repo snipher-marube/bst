@@ -30,8 +30,6 @@ def navigation(request):
     """
     insights_dashboard = None
     if request.user.is_authenticated:
-        # Avoid circular imports or property issues by getting workspace directly
-        from apps.dashboards.models import Workspace
         workspace_id = request.session.get('current_workspace_id')
         if workspace_id:
             insights_dashboard = Dashboard.objects.filter(

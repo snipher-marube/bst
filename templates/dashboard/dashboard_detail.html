@@ -135,19 +135,39 @@ function renderWidget(widget) {
     if (!container) return;
     
     const data = widget.widget_data;
-    if (!data) {
-        container.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm italic">No data available</div>';
+
+    // Check for errors in data
+    if (data && data.error) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-center p-4">
+                <i class="fas fa-exclamation-triangle text-amber-500 mb-2"></i>
+                <p class="text-xs text-gray-600 font-medium line-clamp-2">${data.error}</p>
+            </div>`;
+        return;
+    }
+
+    if (!data || (Array.isArray(data) && data.length === 0) || (typeof data === 'object' && Object.keys(data).length === 0)) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-gray-400">
+                <i class="fas fa-database mb-2 opacity-20 text-3xl"></i>
+                <p class="text-xs italic">No data found</p>
+            </div>`;
         return;
     }
 
     container.innerHTML = '';
 
-    if (widget.widget_type === 'metric') {
-        renderMetricWidget(container, widget, data);
-    } else if (widget.widget_type === 'table') {
-        renderTableWidget(container, widget, data);
-    } else {
-        renderChartWidget(container, widget, data);
+    try {
+        if (widget.widget_type === 'metric') {
+            renderMetricWidget(container, widget, data);
+        } else if (widget.widget_type === 'table') {
+            renderTableWidget(container, widget, data);
+        } else {
+            renderChartWidget(container, widget, data);
+        }
+    } catch (e) {
+        console.error("Rendering error:", e);
+        container.innerHTML = '<p class="text-xs text-red-500 p-4">Failed to render widget</p>';
     }
 }
 
