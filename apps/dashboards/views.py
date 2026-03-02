@@ -9,6 +9,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, Count
 from django.utils import timezone
+from django.core.serializers.json import DjangoJSONEncoder
 import json
 import uuid
 import pandas as pd
@@ -237,7 +238,7 @@ class TableDetailView(LoginRequiredMixin, DetailView):
         context['records'] = paginator.get_page(page_number)
         
         # For API/data export
-        context['records_json'] = json.dumps([r.data for r in records[:100]])
+        context['records_json'] = json.dumps([r.data for r in records[:100]], cls=DjangoJSONEncoder)
         
         return context
 
@@ -636,7 +637,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
         # Serialize dashboard data for frontend
         from apps.dashboards.serializers import DashboardSerializer
         serializer = DashboardSerializer(self.object, context={'request': self.request})
-        context['dashboard_json'] = json.dumps(serializer.data)
+        context['dashboard_json'] = json.dumps(serializer.data, cls=DjangoJSONEncoder)
         
         return context
 

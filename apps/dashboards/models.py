@@ -157,7 +157,8 @@ class DataTable(models.Model):
         # Generate schema hash for quick comparisons
         if self.schema:
             import hashlib
-            schema_str = json.dumps(self.schema, sort_keys=True)
+            from django.core.serializers.json import DjangoJSONEncoder
+            schema_str = json.dumps(self.schema, sort_keys=True, cls=DjangoJSONEncoder)
             self.schema_hash = hashlib.sha256(schema_str.encode()).hexdigest()
         super().save(*args, **kwargs)
     
