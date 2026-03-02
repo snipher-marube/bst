@@ -338,9 +338,10 @@ class WorkspaceInsightService:
                 continue
 
             # Identify fields for insights
-            numeric_fields = [f for f in table.schema if f['type'] in ['number', 'currency', 'percentage']]
-            date_fields = [f for f in table.schema if f['type'] in ['date', 'datetime']]
-            text_fields = [f for f in table.schema if f['type'] in ['text', 'category']]
+            schema = table.schema or []
+            numeric_fields = [f for f in schema if f['type'] in ['number', 'currency', 'percentage']]
+            date_fields = [f for f in schema if f['type'] in ['date', 'datetime']]
+            text_fields = [f for f in schema if f['type'] in ['text', 'category']]
 
             # 1. Metric Cards (KPIs)
             for field in numeric_fields[:3]:
@@ -378,8 +379,9 @@ class WorkspaceInsightService:
                     pos_y += 4
 
             # 3. Categorical Insights (Pie/Bar)
-            if text_fields and numeric_fields:
-                cat_field = text_fields[0]['name']
+            cat_field = self._sample_and_detect_categorical(table)
+
+            if cat_field and numeric_fields:
                 num_field = numeric_fields[0]['name']
 
                 Widget.objects.create(
@@ -387,8 +389,8 @@ class WorkspaceInsightService:
                     widget_type='pie_chart',
                     title=f"{num_field} by {cat_field}",
                     table=table,
-                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": cat_field}]},
-                    viz_config={"x_axis": cat_field, "y_axis": "sum", "show_legend": True},
+                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": cat_field, "name": "val"}]},
+                    viz_config={"x_axis": cat_field, "y_axis": "val", "show_legend": True},
                     position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
                 )
                 pos_x += 6
@@ -402,6 +404,29 @@ class WorkspaceInsightService:
                 pos_y = 0
 
         return dashboard
+
+    def _sample_and_detect_categorical(self, table):
+        """
+        Sample table records to find the best categorical field
+        """
+        from .models import Record
+        records = Record.objects.filter(table=table, is_active=True).values('data')[:100]
+        if not records:
+            return None
+
+        df = pd.DataFrame([r['data'] for r in records])
+
+        # Look for text columns with low cardinality (unique values < 20% of sample)
+        best_col = None
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                unique_count = df[col].nunique()
+                if 1 < unique_count < 15:
+                    # Exclude common non-categorical fields
+                    if col.lower() not in ['id', 'email', 'name', 'first_name', 'last_name', 'phone']:
+                        best_col = col
+                        break
+        return best_col
 
 
 class AuditService:
