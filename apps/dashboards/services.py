@@ -71,7 +71,7 @@ class QueryEngine:
             queryset = self._apply_date_range(queryset, config['date_range'])
         
         # Get the data
-        records = queryset.values('data', 'created_at')[:limit]
+        records = queryset.values('id', 'data', 'created_at')[:limit]
         
         # Convert to pandas DataFrame for analysis
         df = self._records_to_dataframe(records)
@@ -337,19 +337,20 @@ class WorkspaceInsightService:
             if table.record_count == 0:
                 continue
 
-            # Identify numeric fields for KPIs
+            # Identify fields for insights
             numeric_fields = [f for f in table.schema if f['type'] in ['number', 'currency', 'percentage']]
             date_fields = [f for f in table.schema if f['type'] in ['date', 'datetime']]
+            text_fields = [f for f in table.schema if f['type'] in ['text', 'category']]
 
-            # Create top-level metric widgets
-            for field in numeric_fields[:2]: # Limit to top 2 numeric fields per table
+            # 1. Metric Cards (KPIs)
+            for field in numeric_fields[:3]:
                 Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='metric',
-                    title=f"{table.name}: Total {field['name']}",
+                    title=f"Total {field['name']} ({table.name})",
                     table=table,
                     query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
-                    viz_config={"format": "number", "prefix": "$" if field['type'] == 'currency' else ""},
+                    viz_config={"format": "number", "prefix": "$" if field['type'] == 'currency' else "", "suffix": "%" if field['type'] == 'percentage' else ""},
                     position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
                 )
                 pos_x += 3
@@ -357,7 +358,7 @@ class WorkspaceInsightService:
                     pos_x = 0
                     pos_y += 2
 
-            # Create trend widgets if date fields exist
+            # 2. Time Series (Trends)
             if date_fields and numeric_fields:
                 date_field = date_fields[0]['name']
                 num_field = numeric_fields[0]['name']
@@ -365,7 +366,7 @@ class WorkspaceInsightService:
                 Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='line_chart',
-                    title=f"{table.name} Trend ({num_field})",
+                    title=f"{num_field} over Time",
                     table=table,
                     query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": date_field}]},
                     viz_config={"x_axis": date_field, "y_axis": "sum", "show_legend": True},
@@ -375,6 +376,30 @@ class WorkspaceInsightService:
                 if pos_x >= 12:
                     pos_x = 0
                     pos_y += 4
+
+            # 3. Categorical Insights (Pie/Bar)
+            if text_fields and numeric_fields:
+                cat_field = text_fields[0]['name']
+                num_field = numeric_fields[0]['name']
+
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='pie_chart',
+                    title=f"{num_field} by {cat_field}",
+                    table=table,
+                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": cat_field}]},
+                    viz_config={"x_axis": cat_field, "y_axis": "sum", "show_legend": True},
+                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
+                )
+                pos_x += 6
+                if pos_x >= 12:
+                    pos_x = 0
+                    pos_y += 4
+
+            # Reset positions for next table to avoid too much verticality if many tables
+            if pos_y > 20:
+                pos_x = 0
+                pos_y = 0
 
         return dashboard
 

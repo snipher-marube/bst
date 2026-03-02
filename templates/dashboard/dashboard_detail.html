@@ -103,18 +103,21 @@ function addWidgetToGrid(widget) {
              gs-y="${widget.position.y}" 
              gs-w="${widget.position.w}" 
              gs-h="${widget.position.h}">
-            <div class="grid-stack-item-content bg-white rounded-lg shadow-sm border border-gray-200">
-                <div class="widget-header px-4 py-2 border-b bg-gray-50 flex justify-between items-center cursor-move">
-                    <h3 class="font-medium text-[#03466e]">${widget.title}</h3>
-                    <div>
-                        <button class="text-gray-400 hover:text-red-600 mr-2" onclick="deleteWidget('${widget.id}')">
-                            <i class="fas fa-trash"></i>
+            <div class="grid-stack-item-content bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                <div class="widget-header px-4 py-3 border-b bg-gray-50 flex justify-between items-center cursor-move">
+                    <h3 class="font-semibold text-sm text-[#03466e] truncate mr-2">${widget.title}</h3>
+                    <div class="flex items-center space-x-1">
+                        <button class="text-gray-400 hover:text-[#f68712] p-1" onclick="refreshWidget('${widget.id}')" title="Refresh">
+                            <i class="fas fa-sync-alt text-xs"></i>
+                        </button>
+                        <button class="text-gray-400 hover:text-red-600 p-1" onclick="deleteWidget('${widget.id}')" title="Delete">
+                            <i class="fas fa-trash text-xs"></i>
                         </button>
                     </div>
                 </div>
-                <div class="widget-body p-4 h-full" id="widget-${widget.id}">
+                <div class="widget-body p-4 flex-1 flex flex-col min-h-0 overflow-hidden" id="widget-${widget.id}">
                     <div class="flex justify-center items-center h-full">
-                        <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                        <i class="fas fa-circle-notch fa-spin text-2xl text-blue-500"></i>
                     </div>
                 </div>
             </div>
@@ -122,36 +125,115 @@ function addWidgetToGrid(widget) {
     `;
     
     grid.addWidget(widgetHtml);
-    loadWidgetData(widget);
+    renderWidget(widget);
 }
 
-function loadWidgetData(widget) {
-    fetch(`/api/widgets/${widget.id}/`)
-        .then(response => response.json())
-        .then(data => {
-            renderWidget(widget.id, data);
-        });
-}
-
-function renderWidget(widgetId, data) {
-    const container = document.getElementById(`widget-${widgetId}`);
+function renderWidget(widget) {
+    const container = document.getElementById(`widget-${widget.id}`);
     if (!container) return;
     
-    // Clear loading spinner
+    const data = widget.widget_data;
+    if (!data) {
+        container.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm italic">No data available</div>';
+        return;
+    }
+
     container.innerHTML = '';
+
+    if (widget.widget_type === 'metric') {
+        renderMetricWidget(container, widget, data);
+    } else if (widget.widget_type === 'table') {
+        renderTableWidget(container, widget, data);
+    } else {
+        renderChartWidget(container, widget, data);
+    }
+}
+
+function renderMetricWidget(container, widget, data) {
+    const val = data.val !== undefined ? data.val : (Object.values(data)[0] || 0);
+    const prefix = widget.viz_config.prefix || '';
+    const suffix = widget.viz_config.suffix || '';
+
+    let formattedVal = typeof val === 'number' ? val.toLocaleString() : val;
     
-    // Create canvas for chart
+    container.className += " justify-center items-center";
+    container.innerHTML = `
+        <div class="text-center">
+            <p class="text-4xl font-bold text-[#03466e] tracking-tight">${prefix}${formattedVal}${suffix}</p>
+            <p class="text-xs font-medium text-gray-500 uppercase mt-1">Total</p>
+        </div>
+    `;
+}
+
+function renderTableWidget(container, widget, data) {
+    if (!Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<p class="text-gray-400 text-sm">Empty table</p>';
+        return;
+    }
+
+    const cols = Object.keys(data[0]);
+    container.className += " overflow-auto";
+    let html = `<table class="min-w-full divide-y divide-gray-200 text-xs">
+        <thead class="bg-gray-50"><tr>`;
+    cols.forEach(c => html += `<th class="px-2 py-2 text-left font-medium text-gray-500 uppercase">${c}</th>`);
+    html += `</tr></thead><tbody class="divide-y divide-gray-200">`;
+    data.slice(0, 10).forEach(row => {
+        html += `<tr>`;
+        cols.forEach(c => html += `<td class="px-2 py-2 text-gray-900">${row[c] || '-'}</td>`);
+        html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+}
+
+function renderChartWidget(container, widget, data) {
     const canvas = document.createElement('canvas');
-    canvas.id = `chart-${widgetId}`;
     container.appendChild(canvas);
     
-    // Render appropriate chart type based on widget data
+    let labels = [];
+    let values = [];
+
+    const xField = widget.viz_config.x_axis;
+    const yField = widget.viz_config.y_axis;
+
+    if (xField && yField && data[yField]) {
+        // Handle grouped data from QueryEngine
+        labels = Object.keys(data[yField]);
+        values = Object.values(data[yField]);
+    } else if (Array.isArray(data)) {
+        labels = data.map((_, i) => i + 1);
+        values = data.map(d => typeof d === 'object' ? Object.values(d)[0] : d);
+    }
+
+    const typeMap = {
+        'line_chart': 'line',
+        'bar_chart': 'bar',
+        'pie_chart': 'pie'
+    };
+
     new Chart(canvas, {
-        type: data.chart_type || 'line',
-        data: data.chart_data,
-        options: data.chart_options || {
+        type: typeMap[widget.widget_type] || 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: widget.title,
+                data: values,
+                backgroundColor: 'rgba(3, 70, 110, 0.1)',
+                borderColor: '#03466e',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: widget.widget_type === 'line_chart'
+            }]
+        },
+        options: {
             responsive: true,
-            maintainAspectRatio: false
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: widget.viz_config.show_legend || false }
+            },
+            scales: widget.widget_type !== 'pie_chart' ? {
+                y: { beginAtZero: true }
+            } : {}
         }
     });
 }

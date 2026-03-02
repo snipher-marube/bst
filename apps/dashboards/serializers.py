@@ -67,7 +67,7 @@ class DashboardSerializer(serializers.ModelSerializer):
     
     def get_widgets(self, obj):
         widgets = obj.widgets.all()
-        return WidgetSerializer(widgets, many=True).data
+        return WidgetSerializer(widgets, many=True, context=self.context).data
 
 
 class WidgetSerializer(serializers.ModelSerializer):
