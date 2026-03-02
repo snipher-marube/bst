@@ -24,3 +24,7 @@ This document identifies missing or incomplete information in the current projec
 - **Testing**: While the `test` command is provided, there is no information on how to add new tests or what the testing strategy is.
 - **Frontend**: The use of Alpine.js and HTMX is inferred from templates, but there is no explicit documentation on the frontend architecture.
 - **Template Tags**: Custom template tags (like `dashboard_filters`) are not documented.
+
+## 6. Automated Insights Engine
+- **Algorithm**: The logic used by `WorkspaceInsightService` to discover KPIs and categorical insights is not documented.
+- **Widget Configuration**: There are no docs explaining how the `viz_config` maps to Chart.js options or how users can manually customize auto-generated widgets.

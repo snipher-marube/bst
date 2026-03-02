@@ -24,6 +24,12 @@
                     {{ item.title }}
                 </a>
                 {% endfor %}
+                {% if user.is_authenticated and insights_dashboard %}
+                <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
+                   class="px-3 py-2 text-sm font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all">
+                    <i class="fas fa-magic mr-1"></i> Insights
+                </a>
+                {% endif %}
             </div>
             
             <!-- Desktop Right Navigation -->

@@ -36,6 +36,8 @@
     </div>
 </div>
 
+{{ dashboard_json|json_script:"dashboard-data" }}
+
 <!-- Add Widget Modal -->
 <div id="widgetModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
     <div class="bg-white rounded-xl max-w-lg w-full p-6">
@@ -79,7 +81,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 // Dashboard data from server
-const dashboardData = {{ dashboard_json|safe }};
+const dashboardData = JSON.parse(document.getElementById('dashboard-data').textContent);
 
 // Initialize grid
 let grid = GridStack.init({
@@ -155,7 +157,7 @@ function renderMetricWidget(container, widget, data) {
     const suffix = widget.viz_config.suffix || '';
 
     let formattedVal = typeof val === 'number' ? val.toLocaleString() : val;
-    
+
     container.className += " justify-center items-center";
     container.innerHTML = `
         <div class="text-center">
@@ -193,16 +195,25 @@ function renderChartWidget(container, widget, data) {
     let labels = [];
     let values = [];
 
-    const xField = widget.viz_config.x_axis;
-    const yField = widget.viz_config.y_axis;
+    let yField = widget.viz_config.y_axis || 'val';
 
-    if (xField && yField && data[yField]) {
-        // Handle grouped data from QueryEngine
+    // Robust field detection
+    if (!data[yField] && Object.keys(data).length > 0) {
+        yField = Object.keys(data)[0];
+    }
+
+    if (data[yField] && typeof data[yField] === 'object' && !Array.isArray(data[yField])) {
+        // Handle grouped data (e.g., from WorkspaceInsightService)
         labels = Object.keys(data[yField]);
         values = Object.values(data[yField]);
     } else if (Array.isArray(data)) {
-        labels = data.map((_, i) => i + 1);
-        values = data.map(d => typeof d === 'object' ? Object.values(d)[0] : d);
+        // Handle raw record array
+        labels = data.map((d, i) => d[widget.viz_config.x_axis] || i + 1);
+        values = data.map(d => d[yField] || 0);
+    } else if (typeof data === 'object') {
+        // Fallback for single object data
+        labels = Object.keys(data);
+        values = Object.values(data);
     }
 
     const typeMap = {
@@ -211,14 +222,21 @@ function renderChartWidget(container, widget, data) {
         'pie_chart': 'pie'
     };
 
+    const chartType = typeMap[widget.widget_type] || 'line';
+
+    const colors = [
+        '#03466e', '#f68712', '#025b8c', '#e07810', '#0a7ebf',
+        '#ff9f43', '#2e86de', '#ee5253', '#10ac84', '#01a3a4'
+    ];
+
     new Chart(canvas, {
-        type: typeMap[widget.widget_type] || 'line',
+        type: chartType,
         data: {
             labels: labels,
             datasets: [{
                 label: widget.title,
                 data: values,
-                backgroundColor: 'rgba(3, 70, 110, 0.1)',
+                backgroundColor: chartType === 'pie' ? colors : 'rgba(3, 70, 110, 0.1)',
                 borderColor: '#03466e',
                 borderWidth: 2,
                 tension: 0.3,
@@ -229,13 +247,27 @@ function renderChartWidget(container, widget, data) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: widget.viz_config.show_legend || false }
+                legend: {
+                    display: widget.viz_config.show_legend || chartType === 'pie',
+                    position: 'bottom',
+                    labels: { boxWidth: 12, font: { size: 10 } }
+                }
             },
-            scales: widget.widget_type !== 'pie_chart' ? {
-                y: { beginAtZero: true }
+            scales: chartType !== 'pie' ? {
+                y: {
+                    beginAtZero: true,
+                    ticks: { font: { size: 10 } }
+                },
+                x: {
+                    ticks: { font: { size: 10 }, maxRotation: 45, minRotation: 45 }
+                }
             } : {}
         }
     });
+}
+
+function refreshWidget(widgetId) {
+    location.reload(); // Temporary solution until real-time refresh is implemented
 }
 
 function addWidget() {
