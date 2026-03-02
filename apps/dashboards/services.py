@@ -41,12 +41,13 @@ class QueryEngine:
     
     def _generate_cache_key(self, widget):
         """Generate unique cache key for widget query"""
+        from django.core.serializers.json import DjangoJSONEncoder
         key_data = {
             'table_id': str(widget.table_id),
             'query_config': widget.query_config,
             'widget_type': widget.widget_type,
         }
-        key_str = json.dumps(key_data, sort_keys=True)
+        key_str = json.dumps(key_data, sort_keys=True, cls=DjangoJSONEncoder)
         return f"widget_query:{hashlib.md5(key_str.encode()).hexdigest()}"
     
     def _execute_query(self, table_id, config, limit=1000):
