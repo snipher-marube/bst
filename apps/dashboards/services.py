@@ -302,17 +302,11 @@ class DataImportService:
 
 
 class WorkspaceInsightService:
-    """
-    Automatically generate insights and dashboards from workspace tables
-    """
+    """Automatically generate insights and dashboards from workspace tables"""
 
     def generate_workspace_overview(self, workspace, user):
-        """
-        Scan all tables in the workspace and create an insights dashboard
-        """
         from .models import Dashboard, DataTable, Widget
 
-        # 1. Create or get the "Workspace Overview" dashboard
         dashboard, created = Dashboard.objects.get_or_create(
             workspace=workspace,
             slug='workspace-overview',
@@ -325,33 +319,43 @@ class WorkspaceInsightService:
         )
 
         if not created:
-            # Clear existing auto-generated widgets to refresh insights
-            dashboard.widgets.all().delete()
+            dashboard.widgets.all().delete()   # refresh all widgets
 
-        # 2. Analyze all active tables
-        tables = workspace.tables.filter(is_active=True)
+        tables = workspace.tables.filter(is_active=True, record_count__gt=0)
         pos_x, pos_y = 0, 0
 
         for table in tables:
-            # Skip tables with no data
-            if table.record_count == 0:
-                continue
-
-            # Identify fields for insights
             schema = table.schema or []
-            numeric_fields = [f for f in schema if f['type'] in ['number', 'currency', 'percentage']]
-            date_fields = [f for f in schema if f['type'] in ['date', 'datetime']]
-            text_fields = [f for f in schema if f['type'] in ['text', 'category']]
+            
+            # ---- Always show record count ----
+            widget = Widget.objects.create(
+                dashboard=dashboard,
+                widget_type='metric',
+                title=f"Total Records in {table.name}",
+                table=table,
+                query_config={"aggregations": [{"type": "count", "name": "record_count"}]},
+                viz_config={"format": "number", "prefix": "", "suffix": ""},
+                position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
+            )
+            pos_x += 3
+            if pos_x >= 12:
+                pos_x = 0
+                pos_y += 2
 
-            # 1. Metric Cards (KPIs)
-            for field in numeric_fields[:3]:
-                Widget.objects.create(
+            # ---- Numeric field summaries ----
+            numeric_fields = [f for f in schema if f['type'] in ('number','currency','percentage')]
+            for field in numeric_fields[:2]:   # limit to 2 per table
+                widget = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='metric',
                     title=f"Total {field['name']} ({table.name})",
                     table=table,
                     query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
-                    viz_config={"format": "number", "prefix": "$" if field['type'] == 'currency' else "", "suffix": "%" if field['type'] == 'percentage' else ""},
+                    viz_config={
+                        "format": "number",
+                        "prefix": "$" if field['type'] == 'currency' else "",
+                        "suffix": "%" if field['type'] == 'percentage' else ""
+                    },
                     position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
                 )
                 pos_x += 3
@@ -359,18 +363,25 @@ class WorkspaceInsightService:
                     pos_x = 0
                     pos_y += 2
 
-            # 2. Time Series (Trends)
-            if date_fields and numeric_fields:
+            # ---- Time series (counts over time if date field exists) ----
+            date_fields = [f for f in schema if f['type'] in ('date','datetime')]
+            if date_fields:
                 date_field = date_fields[0]['name']
-                num_field = numeric_fields[0]['name']
-
-                Widget.objects.create(
+                # Use record count over time if no numeric field, otherwise sum a numeric field
+                if numeric_fields:
+                    agg = {"type": "sum", "field": numeric_fields[0]['name'], "group_by": date_field, "name": "value"}
+                    y_axis = "value"
+                else:
+                    agg = {"type": "count", "group_by": date_field, "name": "count"}
+                    y_axis = "count"
+                
+                widget = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='line_chart',
-                    title=f"{num_field} over Time",
+                    title=f"Records over Time ({table.name})",
                     table=table,
-                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": date_field}]},
-                    viz_config={"x_axis": date_field, "y_axis": "sum", "show_legend": True},
+                    query_config={"aggregations": [agg]},
+                    viz_config={"x_axis": date_field, "y_axis": y_axis, "show_legend": True},
                     position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
                 )
                 pos_x += 6
@@ -378,19 +389,18 @@ class WorkspaceInsightService:
                     pos_x = 0
                     pos_y += 4
 
-            # 3. Categorical Insights (Pie/Bar)
-            cat_field = self._sample_and_detect_categorical(table)
-
-            if cat_field and numeric_fields:
-                num_field = numeric_fields[0]['name']
-
-                Widget.objects.create(
+            # ---- Categorical breakdown (using count aggregation) ----
+            cat_field = self._detect_categorical_field(table)
+            if cat_field:
+                # Use count aggregation (always works)
+                agg = {"type": "count", "group_by": cat_field, "name": "count"}
+                widget = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='pie_chart',
-                    title=f"{num_field} by {cat_field}",
+                    title=f"Records by {cat_field}",
                     table=table,
-                    query_config={"aggregations": [{"type": "sum", "field": num_field, "group_by": cat_field, "name": "val"}]},
-                    viz_config={"x_axis": cat_field, "y_axis": "val", "show_legend": True},
+                    query_config={"aggregations": [agg]},
+                    viz_config={"x_axis": cat_field, "y_axis": "count", "show_legend": True},
                     position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
                 )
                 pos_x += 6
@@ -398,36 +408,34 @@ class WorkspaceInsightService:
                     pos_x = 0
                     pos_y += 4
 
-            # Reset positions for next table to avoid too much verticality if many tables
-            if pos_y > 20:
-                pos_x = 0
-                pos_y = 0
+            # ---- Data table sample ----
+            widget = Widget.objects.create(
+                dashboard=dashboard,
+                widget_type='table',
+                title=f"Sample from {table.name}",
+                table=table,
+                query_config={"limit": 10},   # we'll add limit support in QueryEngine
+                viz_config={"page_size": 10, "show_search": False},
+                position={"x": 0, "y": pos_y + 2, "w": 12, "h": 6}
+            )
+            pos_y += 8   # reserve space for table
 
         return dashboard
 
-    def _sample_and_detect_categorical(self, table):
-        """
-        Sample table records to find the best categorical field
-        """
+    def _detect_categorical_field(self, table, sample_size=100):
+        """Find a text field with low cardinality (2-10 unique values)"""
         from .models import Record
-        records = Record.objects.filter(table=table, is_active=True).values('data')[:100]
+        records = Record.objects.filter(table=table, is_active=True).values('data')[:sample_size]
         if not records:
             return None
-
+        import pandas as pd
         df = pd.DataFrame([r['data'] for r in records])
-
-        # Look for text columns with low cardinality (unique values < 20% of sample)
-        best_col = None
         for col in df.columns:
             if df[col].dtype == 'object':
-                unique_count = df[col].nunique()
-                if 1 < unique_count < 15:
-                    # Exclude common non-categorical fields
-                    if col.lower() not in ['id', 'email', 'name', 'first_name', 'last_name', 'phone']:
-                        best_col = col
-                        break
-        return best_col
-
+                unique_vals = df[col].nunique()
+                if 2 <= unique_vals <= 10:
+                    return col
+        return None
 
 class AuditService:
     """
