@@ -1,4 +1,7 @@
 from rest_framework import permissions
+import logging
+
+logger = logging.getLogger(__name__)
 
 class HasWorkspaceAccess(permissions.BasePermission):
     """
@@ -8,43 +11,53 @@ class HasWorkspaceAccess(permissions.BasePermission):
     def has_permission(self, request, view):
         # Must be authenticated
         if not request.user or not request.user.is_authenticated:
+            logger.warning("User not authenticated")
             return False
         
-        # Must have a current workspace
-        workspace_id = request.headers.get('X-Workspace-ID') or request.GET.get('workspace')
+        # Try to get workspace from multiple sources
+        workspace_id = (
+            request.headers.get('X-Workspace-ID') or 
+            request.GET.get('workspace') or
+            request.data.get('workspace_id')
+        )
+        
+        # If no workspace_id provided, try to get from user's current workspace
+        if not workspace_id and hasattr(request.user, 'current_workspace') and request.user.current_workspace:
+            workspace_id = str(request.user.current_workspace.id)
+            logger.debug(f"Using current workspace from user: {workspace_id}")
+        
         if not workspace_id:
+            logger.warning("No workspace ID found in request")
             return False
         
         # Check if user is member of workspace
         from .models import Workspace
         try:
             workspace = Workspace.objects.get(id=workspace_id)
-            return workspace.members.filter(id=request.user.id).exists()
+            has_access = workspace.members.filter(id=request.user.id).exists()
+            if not has_access:
+                logger.warning(f"User {request.user.id} not a member of workspace {workspace_id}")
+            return has_access
         except Workspace.DoesNotExist:
+            logger.warning(f"Workspace {workspace_id} does not exist")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking workspace access: {str(e)}")
             return False
     
     def has_object_permission(self, request, view, obj):
         # Object-level permission
-        if hasattr(obj, 'workspace'):
-            return obj.workspace.members.filter(id=request.user.id).exists()
-        return False
-
-
-class HasTableAccess(permissions.BasePermission):
-    """
-    Check if user can access a specific table
-    """
-    
-    def has_object_permission(self, request, view, obj):
-        from .models import DataTable
-        
-        if isinstance(obj, DataTable):
-            return obj.workspace.members.filter(id=request.user.id).exists()
-        
-        if hasattr(obj, 'table'):
-            return obj.table.workspace.members.filter(id=request.user.id).exists()
-        
-        return False
+        try:
+            if hasattr(obj, 'workspace'):
+                return obj.workspace.members.filter(id=request.user.id).exists()
+            elif hasattr(obj, 'dashboard') and hasattr(obj.dashboard, 'workspace'):
+                return obj.dashboard.workspace.members.filter(id=request.user.id).exists()
+            elif hasattr(obj, 'table') and hasattr(obj.table, 'workspace'):
+                return obj.table.workspace.members.filter(id=request.user.id).exists()
+            return False
+        except Exception as e:
+            logger.error(f"Error in object permission: {str(e)}")
+            return False
 
 
 class CanEditData(permissions.BasePermission):
@@ -52,23 +65,61 @@ class CanEditData(permissions.BasePermission):
     Check if user has edit permissions (owner, admin, editor)
     """
     
+    def has_permission(self, request, view):
+        # For create operations, check if user has edit rights in workspace
+        if request.method == 'POST':
+            # Try to get workspace from request
+            workspace_id = (
+                request.headers.get('X-Workspace-ID') or 
+                request.GET.get('workspace') or
+                request.data.get('workspace_id')
+            )
+            
+            if not workspace_id and hasattr(request.user, 'current_workspace') and request.user.current_workspace:
+                workspace_id = str(request.user.current_workspace.id)
+            
+            if workspace_id:
+                from .models import Workspace, WorkspaceMembership
+                try:
+                    membership = WorkspaceMembership.objects.get(
+                        workspace_id=workspace_id,
+                        user=request.user
+                    )
+                    return membership.role in ['owner', 'admin', 'editor']
+                except WorkspaceMembership.DoesNotExist:
+                    return False
+        
+        return True
+    
     def has_object_permission(self, request, view, obj):
         from .models import WorkspaceMembership
         
-        # Get workspace
-        if hasattr(obj, 'workspace'):
-            workspace = obj.workspace
-        elif hasattr(obj, 'table'):
-            workspace = obj.table.workspace
-        else:
-            return False
+        # For safe methods (GET, HEAD, OPTIONS), allow all workspace members
+        if request.method in permissions.SAFE_METHODS:
+            return True
         
-        # Check role
+        # Get workspace from the object
         try:
+            if hasattr(obj, 'workspace'):
+                workspace = obj.workspace
+            elif hasattr(obj, 'dashboard') and hasattr(obj.dashboard, 'workspace'):
+                workspace = obj.dashboard.workspace
+            elif hasattr(obj, 'table') and hasattr(obj.table, 'workspace'):
+                workspace = obj.table.workspace
+            else:
+                logger.warning(f"Cannot determine workspace from object {obj}")
+                return False
+            
+            # Check role
             membership = WorkspaceMembership.objects.get(
                 workspace=workspace,
                 user=request.user
             )
             return membership.role in ['owner', 'admin', 'editor']
+            
         except WorkspaceMembership.DoesNotExist:
+            logger.warning(f"User {request.user.id} not a member of workspace")
+            return False
+        except Exception as e:
+            logger.error(f"Error in edit permission: {str(e)}")
             return False

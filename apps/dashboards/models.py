@@ -7,6 +7,9 @@ from django.core.exceptions import ValidationError
 from django.db.models import JSONField
 from django.utils import timezone
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -28,7 +31,7 @@ class Workspace(models.Model):
     members = models.ManyToManyField(
         User, 
         through='WorkspaceMembership', 
-        through_fields=('workspace', 'user'),  # Specify the fields
+        through_fields=('workspace', 'user'),
         related_name='workspaces'
     )
     
@@ -38,7 +41,7 @@ class Workspace(models.Model):
     is_active = models.BooleanField(default=True)
     
     # Limits based on tier - these will be enforced in business logic
-    max_tables = models.IntegerField(default=5)  # Free tier: 5 tables
+    max_tables = models.IntegerField(default=5)
     max_records_per_table = models.IntegerField(default=1000)
     max_team_members = models.IntegerField(default=1)
     
@@ -72,17 +75,19 @@ class Workspace(models.Model):
             'members': self.members.count(),
             'members_limit': self.max_team_members,
             'storage_bytes': total_storage,
+            'dashboards': self.dashboards.count(),
         }
+
 
 class WorkspaceMembership(models.Model):
     """
     Junction model for workspace members with roles
     """
     ROLE_CHOICES = [
-        ('owner', 'Owner'),  # Full access
-        ('admin', 'Admin'),  # Can manage workspace settings
-        ('editor', 'Editor'),  # Can create/edit dashboards
-        ('viewer', 'Viewer'),  # View only
+        ('owner', 'Owner'),
+        ('admin', 'Admin'),
+        ('editor', 'Editor'),
+        ('viewer', 'Viewer'),
     ]
     
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
@@ -125,7 +130,6 @@ class DataTable(models.Model):
     description = models.TextField(blank=True)
     
     # Schema defines the columns - stored as JSON for flexibility
-    # Example: [{"name": "Product", "type": "text", "required": true}, {"name": "Price", "type": "currency", "required": true}]
     schema = JSONField(default=list)
     
     # Performance optimization: store computed schema hash for quick validation
@@ -140,11 +144,11 @@ class DataTable(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
     
     # Metadata
-    record_count = models.IntegerField(default=0)  # Denormalized for performance
+    record_count = models.IntegerField(default=0)
     last_updated = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = ['workspace', 'name']  # Unique table names per workspace
+        unique_together = ['workspace', 'name']
         indexes = [
             models.Index(fields=['workspace', 'is_active']),
             models.Index(fields=['workspace', 'updated_at']),
@@ -186,8 +190,8 @@ class DataTable(models.Model):
             field = schema_dict[key]
             field_type = field['type']
             
-            if value is not None:
-                if field_type == 'number' or field_type == 'currency' or field_type == 'percentage':
+            if value is not None and value != '':
+                if field_type in ['number', 'currency', 'percentage']:
                     try:
                         float(value)
                     except (TypeError, ValueError):
@@ -219,14 +223,13 @@ class DataTable(models.Model):
     @property
     def estimated_storage_bytes(self):
         """Estimate storage used by this table (for billing)"""
-        avg_record_size = 1024  # Assume 1KB per record average
+        avg_record_size = 1024
         return self.record_count * avg_record_size
 
     def generate_default_dashboard(self):
         """Automatically create a dashboard for this table"""
         from .models import Dashboard, Widget
         
-        # Create a dashboard named after the table
         dashboard = Dashboard.objects.create(
             workspace=self.workspace,
             name=f"{self.name} Dashboard",
@@ -240,7 +243,6 @@ class DataTable(models.Model):
             }
         )
         
-        # Analyze schema to create appropriate widgets
         position_x = 0
         position_y = 0
         
@@ -248,7 +250,6 @@ class DataTable(models.Model):
             field_name = field['name']
             field_type = field['type']
             
-            # Create different widgets based on field type
             if field_type in ['number', 'currency', 'percentage']:
                 # Create summary widget for numeric fields
                 Widget.objects.create(
@@ -261,7 +262,7 @@ class DataTable(models.Model):
                             {
                                 "type": "sum",
                                 "field": field_name,
-                                "name": f"total_{field_name}"
+                                "name": "val"
                             }
                         ]
                     },
@@ -274,11 +275,11 @@ class DataTable(models.Model):
                 )
                 position_x += 3
                 
-                # Create trend chart
                 if position_x >= 12:
                     position_x = 0
                     position_y += 2
                 
+                # Create trend chart
                 Widget.objects.create(
                     dashboard=dashboard,
                     widget_type='line_chart',
@@ -289,13 +290,14 @@ class DataTable(models.Model):
                             {
                                 "type": "sum",
                                 "field": field_name,
-                                "group_by": "created_at_date"
+                                "group_by": "created_at_date",
+                                "name": "val"
                             }
                         ]
                     },
                     viz_config={
                         "x_axis": "created_at_date",
-                        "y_axis": f"sum_{field_name}",
+                        "y_axis": "val",
                         "show_legend": True
                     },
                     position={"x": position_x, "y": position_y, "w": 6, "h": 4}
@@ -314,20 +316,20 @@ class DataTable(models.Model):
                             {
                                 "type": "count",
                                 "field": "id",
-                                "group_by": field_name
+                                "group_by": field_name,
+                                "name": "val"
                             }
                         ]
                     },
                     viz_config={
                         "x_axis": field_name,
-                        "y_axis": "count",
+                        "y_axis": "val",
                         "show_legend": True
                     },
                     position={"x": position_x, "y": position_y, "w": 6, "h": 4}
                 )
                 position_x += 6
                 
-            # Reset position for next row
             if position_x >= 12:
                 position_x = 0
                 position_y += 4
@@ -338,7 +340,7 @@ class DataTable(models.Model):
             widget_type='table',
             title=f"All {self.name} Records",
             table=self,
-            query_config={},
+            query_config={"limit": 10},
             viz_config={
                 "page_size": 10,
                 "show_search": True
@@ -357,7 +359,7 @@ class Record(models.Model):
     table = models.ForeignKey(DataTable, on_delete=models.CASCADE, related_name='records')
     
     # The actual data stored as JSON
-    data = JSONField()
+    data = JSONField(default=dict)
     
     # Metadata
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -378,8 +380,6 @@ class Record(models.Model):
             models.Index(fields=['table', 'updated_at']),
             models.Index(fields=['table', 'created_by']),
         ]
-        # Note: We can't index JSON fields directly in all databases
-        # Consider using PostgreSQL with GIN indexes for JSONB if needed
     
     def __str__(self):
         return f"Record {self.id} in {self.table.name}"
@@ -413,7 +413,6 @@ class Dashboard(models.Model):
     slug = models.SlugField(max_length=120)
     
     # Layout configuration (grid system)
-    # Example: {"columns": 12, "rowHeight": 100, "compact": true}
     layout_config = JSONField(default=dict)
     
     # For public sharing
@@ -468,11 +467,9 @@ class Widget(models.Model):
     table = models.ForeignKey(DataTable, on_delete=models.SET_NULL, null=True, blank=True)
     
     # Query configuration
-    # Example: {"aggregation": "sum", "field": "sales", "group_by": "month", "filters": [...]}
     query_config = JSONField(default=dict)
     
     # Visualization configuration
-    # Example: {"colors": ["#03466e"], "show_legend": true, "x_axis_label": "Month"}
     viz_config = JSONField(default=dict)
     
     # Position in grid (x, y, width, height)
@@ -517,10 +514,10 @@ class AuditLog(models.Model):
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, null=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=20, choices=ACTION_TYPES)
-    content_type = models.CharField(max_length=50)  # Table, Record, Dashboard, etc.
+    content_type = models.CharField(max_length=50)
     object_id = models.UUIDField()
     object_repr = models.CharField(max_length=200)
-    changes = JSONField(default=dict)  # Store before/after values
+    changes = JSONField(default=dict)
     ip_address = models.GenericIPAddressField(null=True)
     user_agent = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)

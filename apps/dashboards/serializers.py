@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from .models import Workspace, DataTable, Record, Dashboard, Widget
 from django.core.exceptions import ValidationError
+import logging
+
+logger = logging.getLogger(__name__)
 
 class WorkspaceSerializer(serializers.ModelSerializer):
     usage_stats = serializers.SerializerMethodField()
@@ -80,7 +83,15 @@ class WidgetSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'widget_data']
     
     def get_widget_data(self, obj):
-        # Only fetch data for GET requests, not for POST/PUT
-        if self.context['request'].method == 'GET':
-            return obj.get_data(limit=100)
-        return None
+        """
+        Fetch data for the widget with proper error handling
+        """
+        try:
+            # Always return data for existing widgets, regardless of request method
+            # This ensures newly created widgets also have data
+            data = obj.get_data(limit=100)
+            logger.debug(f"Widget {obj.id} data fetched successfully: {data}")
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching widget {obj.id} data: {str(e)}", exc_info=True)
+            return {"error": f"Failed to load data: {str(e)}"}
