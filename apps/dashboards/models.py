@@ -8,6 +8,9 @@ from django.db.models import JSONField
 from django.utils import timezone
 from django.conf import settings
 import logging
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from apps.insights.tasks import broadcast_widget_update, notify_table_change
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +403,40 @@ class Record(models.Model):
         # Update table record count
         self.table.record_count = self.table.records.filter(is_active=True).count()
         self.table.save(update_fields=['record_count'])
+        
+        # Trigger real-time updates after save
+        self._trigger_updates('saved')
+
+    def delete(self, *args, **kwargs):
+        # Soft delete
+        self.is_active = False
+        self.deleted_at = timezone.now()
+        self.save()
+        
+        # Trigger updates
+        self._trigger_updates('deleted')
+    
+    def _trigger_updates(self, action):
+        """Trigger real-time updates"""
+        try:
+            # Get all dashboards that use this table
+            from .models import Widget
+            
+            affected_widgets = Widget.objects.filter(
+                table=self.table,
+                dashboard__is_active=True
+            ).values_list('id', 'dashboard_id')
+            
+            # Queue updates for each widget
+            for widget_id, dashboard_id in affected_widgets:
+                broadcast_widget_update.delay(str(widget_id), str(dashboard_id))
+            
+            # Notify workspace
+            notify_table_change.delay(str(self.table.id), action)
+            
+        except Exception as e:
+            logger.error(f"Failed to trigger updates: {str(e)}")
+
 
 
 class Dashboard(models.Model):

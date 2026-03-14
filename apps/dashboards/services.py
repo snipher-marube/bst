@@ -8,255 +8,279 @@ from typing import Dict, List, Any, Optional
 import hashlib
 import logging
 
+from apps.dashboards.models import Record
+
 logger = logging.getLogger(__name__)
+
+# apps/dashboards/services.py (Updated QueryEngine)
 
 class QueryEngine:
     """
-    Execute queries against user data with caching and optimization
+    Enhanced query engine that understands user-defined schemas
     """
     
     def __init__(self):
-        self.cache_timeout = 300  # 5 minutes default cache
-    
-    def execute_widget_query(self, widget, limit=1000):
-        """
-        Execute a widget's query configuration and return formatted data
-        """
-        try:
-            # Generate cache key based on widget config and table
-            cache_key = self._generate_cache_key(widget)
+        self.cache_timeout = 300
 
-            # Try to get from cache
-            cached_data = cache.get(cache_key)
-            if cached_data:
-                logger.debug(f"Cache hit for widget {widget.id}")
-                return cached_data
 
-            # Use limit from config if provided
-            query_limit = widget.query_config.get('limit', limit)
-
-            # Execute query
-            data = self._execute_query(
-                table_id=widget.table_id,
-                config=widget.query_config,
-                limit=query_limit
-            )
-
-            # Cache result
-            cache.set(cache_key, data, self.cache_timeout)
-
-            return data
-        except Exception as e:
-            logger.error(f"Error executing widget query: {str(e)}", exc_info=True)
-            return {"error": str(e)}
-    
     def _generate_cache_key(self, widget):
         """Generate unique cache key for widget query"""
+        import hashlib
         from django.core.serializers.json import DjangoJSONEncoder
+    
+        # Convert UUID to string for serialization
+        table_id = str(widget.table_id) if widget.table_id else 'none'
+    
         key_data = {
-            'table_id': str(widget.table_id),
+            'table_id': table_id,
             'query_config': widget.query_config,
             'widget_type': widget.widget_type,
+            'updated_at': str(widget.updated_at) if hasattr(widget, 'updated_at') else '',
         }
+    
         key_str = json.dumps(key_data, sort_keys=True, cls=DjangoJSONEncoder)
-        return f"widget_query:{hashlib.md5(key_str.encode()).hexdigest()}"
+        cache_key = hashlib.md5(key_str.encode()).hexdigest()
+        return f"widget_query:{cache_key}"
     
-    def _execute_query(self, table_id, config, limit=1000):
-        """
-        Execute the actual query against records
-        """
+    def _execute_table_query(self, widget, limit):
+        """Execute table widget query - return raw records"""
         from .models import Record
-        
-        try:
-            # Start with base queryset
-            queryset = Record.objects.filter(
-                table_id=table_id,
-                is_active=True
-            ).select_related('table')
-            
-            # Apply filters
-            if 'filters' in config:
-                queryset = self._apply_filters(queryset, config['filters'])
-            
-            # Apply time range if specified
-            if 'date_range' in config:
-                queryset = self._apply_date_range(queryset, config['date_range'])
-            
-            # Get the data
-            records = list(queryset.values('id', 'data', 'created_at')[:limit])
-            
-            if not records:
-                logger.debug(f"No records found for table {table_id}")
-                return {"message": "No data available"}
-            
-            # Convert to pandas DataFrame for analysis
-            df = self._records_to_dataframe(records)
-            
-            # Apply aggregations
-            if 'aggregations' in config:
-                result = self._apply_aggregations(df, config['aggregations'])
-            else:
-                # Return raw data
-                result = df.to_dict('records')
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Query execution error: {str(e)}", exc_info=True)
-            return {"error": f"Failed to execute query: {str(e)}"}
     
-    def _apply_filters(self, queryset, filters):
-        """Apply filters to queryset"""
-        for filter_item in filters:
-            field = filter_item.get('field')
-            operator = filter_item.get('operator', 'eq')
-            value = filter_item.get('value')
-            
-            if operator == 'eq':
-                queryset = queryset.filter(**{f"data__{field}": value})
-            elif operator == 'gt':
-                queryset = queryset.filter(**{f"data__{field}__gt": value})
-            elif operator == 'lt':
-                queryset = queryset.filter(**{f"data__{field}__lt": value})
-            elif operator == 'contains':
-                queryset = queryset.filter(**{f"data__{field}__icontains": value})
-            elif operator == 'in':
-                queryset = queryset.filter(**{f"data__{field}__in": value})
-        
-        return queryset
+        config = widget.query_config or {}
     
-    def _apply_date_range(self, queryset, date_range):
-        """Apply date range filter"""
-        field = date_range.get('field', 'created_at')
-        start = date_range.get('start')
-        end = date_range.get('end')
-        
-        if start:
-            queryset = queryset.filter(**{f"{field}__gte": start})
-        if end:
-            queryset = queryset.filter(**{f"{field}__lte": end})
-        
-        return queryset
+        # Base queryset
+        queryset = Record.objects.filter(
+            table=widget.table,
+            is_active=True
+        ).order_by('-created_at')
     
-    def _records_to_dataframe(self, records):
-        """Convert Django queryset to pandas DataFrame"""
-        data_list = []
+        # Apply filters if any
+        if 'filters' in config:
+            queryset = self._apply_filters(queryset, config['filters'])
+    
+        # Get records
+        records = list(queryset.values('data', 'created_at')[:limit])
+    
+        # Format for display
+        result = []
         for record in records:
             row = record['data'].copy() if record['data'] else {}
-            row['_record_id'] = str(record['id'])
-            row['_created_at'] = record['created_at']
-            data_list.append(row)
-    
-        if data_list:
-            df = pd.json_normalize(data_list)
-            # Convert _created_at to datetime
-            if '_created_at' in df.columns:
-                df['_created_at'] = pd.to_datetime(df['_created_at'])
-            return df
-        return pd.DataFrame()
-    
-    def _apply_aggregations(self, df, aggregations):
-        """Apply aggregations to DataFrame"""
-        result = {}
-    
-        for agg in aggregations:
-            agg_type = agg.get('type')
-            field = agg.get('field')
-            group_by = agg.get('group_by')
-            agg_name = agg.get('name', 'val')
-        
-            # Handle empty data
-            if df.empty:
-                if agg_type == 'count':
-                    result[agg_name] = 0
-                else:
-                    result[agg_name] = None
-                continue
-
-            try:
-                if group_by:
-                    # Handle special case for created_at_date
-                    if group_by == 'created_at_date' and '_created_at' in df.columns:
-                        # Extract date from _created_at
-                        df['created_at_date'] = pd.to_datetime(df['_created_at']).dt.date
-                        group_by = 'created_at_date'
-                    # Check if group_by field exists
-                    elif group_by not in df.columns:
-                        # For date fields, try to find any date column
-                        date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower() or col == '_created_at']
-                        if date_cols:
-                            # Use the first date column
-                            date_col = date_cols[0]
-                            if date_col == '_created_at':
-                                df['created_at_date'] = pd.to_datetime(df['_created_at']).dt.date
-                                group_by = 'created_at_date'
-                            else:
-                                group_by = date_col
-                        else:
-                            # If no date field, don't group - return count
-                            if agg_type == 'count':
-                                result[agg_name] = len(df)
-                            elif field in df.columns:
-                                if agg_type == 'sum':
-                                    result[agg_name] = float(df[field].sum())
-                                elif agg_type == 'avg':
-                                    result[agg_name] = float(df[field].mean())
-                            else:
-                                result[agg_name] = len(df)
-                            continue
-                
-                    # Group by operation
-                    if agg_type == 'sum':
-                        if field in df.columns:
-                            grouped = df.groupby(group_by)[field].sum()
-                        else:
-                            grouped = df.groupby(group_by).size()
-                    elif agg_type == 'avg':
-                        if field in df.columns:
-                            grouped = df.groupby(group_by)[field].mean()
-                        else:
-                            grouped = df.groupby(group_by).size()
-                    elif agg_type == 'count':
-                        grouped = df.groupby(group_by).size()
-                    elif agg_type == 'min':
-                        if field in df.columns:
-                            grouped = df.groupby(group_by)[field].min()
-                        else:
-                            grouped = df.groupby(group_by).size()
-                    elif agg_type == 'max':
-                        if field in df.columns:
-                            grouped = df.groupby(group_by)[field].max()
-                        else:
-                            grouped = df.groupby(group_by).size()
-                    else:
-                        grouped = df.groupby(group_by).size()
-                
-                    # Convert to dict with proper handling of non-string keys
-                    # Convert dates to strings for JSON serialization
-                    result[agg_name] = {str(k): float(v) if isinstance(v, (np.integer, np.floating)) else v 
-                                   for k, v in grouped.to_dict().items()}
-                else:
-                    # Simple aggregation
-                    if agg_type == 'sum':
-                        result[agg_name] = float(df[field].sum()) if field in df.columns and not df[field].empty else 0
-                    elif agg_type == 'avg':
-                        result[agg_name] = float(df[field].mean()) if field in df.columns and not df[field].empty else 0
-                    elif agg_type == 'count':
-                        result[agg_name] = len(df)
-                    elif agg_type == 'min':
-                        result[agg_name] = float(df[field].min()) if field in df.columns and not df[field].empty else 0
-                    elif agg_type == 'max':
-                        result[agg_name] = float(df[field].max()) if field in df.columns and not df[field].empty else 0
-                    else:
-                        result[agg_name] = len(df)
-            except Exception as e:
-                print(f"Aggregation error: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                result[agg_name] = {"error": str(e)}
+            row['_created_at'] = record['created_at'].isoformat() if record['created_at'] else None
+            result.append(row)
     
         return result
 
+    def execute_widget_query(self, widget, limit=1000):
+        """Execute widget query with better error handling"""
+        try:
+            # Validate widget has a table
+            if not widget.table:
+                return {"error": "No table selected"}
+            
+            # Generate cache key
+            cache_key = self._generate_cache_key(widget)
+            
+            # Try cache
+            cached = cache.get(cache_key)
+            if cached:
+                return cached
+            
+            # Execute based on widget type
+            if widget.widget_type == 'metric':
+                data = self._execute_metric_query(widget, limit)
+            elif widget.widget_type == 'table':
+                data = self._execute_table_query(widget, limit)
+            elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart']:
+                data = self._execute_chart_query(widget, limit)
+            else:
+                data = {"error": f"Unknown widget type: {widget.widget_type}"}
+            
+            # Cache if successful
+            if data and 'error' not in data:
+                cache.set(cache_key, data, self.cache_timeout)
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Widget query error: {str(e)}", exc_info=True)
+            return {"error": str(e)}
+    
+    def _execute_metric_query(self, widget, limit):
+        """Execute metric widget query"""
+        from .models import Record
+        
+        config = widget.query_config or {}
+        aggregations = config.get('aggregations', [])
+        
+        # Base queryset
+        queryset = Record.objects.filter(
+            table=widget.table,
+            is_active=True
+        )
+        
+        # Apply filters if any
+        if 'filters' in config:
+            queryset = self._apply_filters(queryset, config['filters'])
+        
+        if not aggregations:
+            # Default to count
+            return {'val': queryset.count()}
+        
+        # Handle different aggregation types
+        result = {}
+        for agg in aggregations:
+            agg_type = agg.get('type', 'count')
+            field = agg.get('field')
+            name = agg.get('name', 'val')
+            
+            if agg_type == 'count':
+                result[name] = queryset.count()
+            elif agg_type in ['sum', 'avg', 'min', 'max'] and field:
+                # We need to aggregate JSON field - this is tricky
+                # For now, get all records and compute in Python
+                records = queryset.values_list('data', flat=True)[:10000]  # Limit for performance
+                
+                values = []
+                for record_data in records:
+                    if record_data and field in record_data:
+                        try:
+                            val = float(record_data[field])
+                            values.append(val)
+                        except (ValueError, TypeError):
+                            pass
+                
+                if values:
+                    if agg_type == 'sum':
+                        result[name] = sum(values)
+                    elif agg_type == 'avg':
+                        result[name] = sum(values) / len(values)
+                    elif agg_type == 'min':
+                        result[name] = min(values)
+                    elif agg_type == 'max':
+                        result[name] = max(values)
+                else:
+                    result[name] = 0
+        
+        return result
+    
+    def _execute_chart_query(self, widget, limit):
+        """Execute chart widget query - return properly formatted data for charts"""
+        from .models import Record
+        import pandas as pd
+        from collections import defaultdict
+        from datetime import datetime
+    
+        config = widget.query_config or {}
+        aggregations = config.get('aggregations', [])
+    
+        if not aggregations:
+            return {"error": "No aggregations configured"}
+    
+        # Get records
+        queryset = Record.objects.filter(
+            table=widget.table,
+            is_active=True
+        )
+    
+        if 'filters' in config:
+            queryset = self._apply_filters(queryset, config['filters'])
+    
+        # Get records with their data
+        records = list(queryset.values('data', 'created_at')[:limit])
+    
+        if not records:
+            return {"message": "No data", "val": {}}
+    
+        # Process aggregations
+        result = {}
+        for agg in aggregations:
+            agg_type = agg.get('type', 'count')
+            field = agg.get('field')
+            group_by = agg.get('group_by')
+            name = agg.get('name', 'val')
+        
+            try:
+                if group_by:
+                    # Handle group by - this is for charts
+                    grouped_data = defaultdict(int)
+                
+                    for record in records:
+                        record_data = record['data'] or {}
+                    
+                        # Get group value
+                        if group_by == 'created_at' or group_by == '_created_at':
+                            # Group by date from created_at field
+                            group_value = record['created_at'].date().isoformat()
+                        elif group_by == 'created_at_date':
+                            group_value = record['created_at'].date().isoformat()
+                        elif group_by in record_data:
+                            group_value = str(record_data[group_by])
+                        else:
+                            continue
+                    
+                        # Get value to aggregate
+                        if agg_type == 'count':
+                            value = 1
+                        elif field and field in record_data:
+                            try:
+                                value = float(record_data[field])
+                            except (ValueError, TypeError):
+                                value = 1 if agg_type == 'count' else 0
+                        else:
+                            value = 1 if agg_type == 'count' else 0
+                    
+                        grouped_data[group_value] += value
+                
+                    # Convert to the format expected by frontend
+                    if grouped_data:
+                        # Sort by key (especially important for dates)
+                        sorted_items = sorted(grouped_data.items())
+                        result[name] = {
+                            str(k): float(v) for k, v in sorted_items
+                        }
+                    else:
+                        result[name] = {}
+                else:
+                    # Simple aggregation (for metrics)
+                    if agg_type == 'count':
+                        result[name] = len(records)
+                    elif field:
+                        total = 0
+                        count = 0
+                        for record in records:
+                            record_data = record['data'] or {}
+                            if field in record_data:
+                                try:
+                                    val = float(record_data[field])
+                                    if agg_type == 'sum':
+                                        total += val
+                                    elif agg_type == 'avg':
+                                        total += val
+                                        count += 1
+                                    elif agg_type == 'min':
+                                        if 'min' not in locals() or val < min_val:
+                                            min_val = val
+                                    elif agg_type == 'max':
+                                        if 'max' not in locals() or val > max_val:
+                                            max_val = val
+                                except (ValueError, TypeError):
+                                    pass
+                    
+                        if agg_type == 'sum':
+                            result[name] = total
+                        elif agg_type == 'avg':
+                            result[name] = total / count if count > 0 else 0
+                        elif agg_type == 'min':
+                            result[name] = min_val if 'min_val' in locals() else 0
+                        elif agg_type == 'max':
+                            result[name] = max_val if 'max_val' in locals() else 0
+                
+            except Exception as e:
+                logger.error(f"Aggregation error: {str(e)}")
+                result[name] = {"error": str(e)}
+    
+        return result
+    
 class DataImportService:
     """
     Handle importing data from various sources
@@ -398,244 +422,161 @@ class DataImportService:
 
 class WorkspaceInsightService:
     """
-    Automatically generate insights and dashboards from workspace tables
+    Automatically generate insights from workspace tables
     """
-
+    
     def generate_workspace_overview(self, workspace, user):
-        """
-        Scan all tables in the workspace and create an insights dashboard
-        """
         from .models import Dashboard, DataTable, Widget
-        import logging
-        logger = logging.getLogger(__name__)
+        from apps.insights.generators.sales_insights import SalesInsightGenerator
         
         logger.info(f"Generating insights for workspace {workspace.id}")
-
-        # 1. Create or get the "Workspace Overview" dashboard
+        
+        # Create or get the overview dashboard
         dashboard, created = Dashboard.objects.get_or_create(
             workspace=workspace,
             slug='workspace-overview',
             defaults={
-                'name': 'Workspace Insights Overview',
-                'description': 'Automatically generated insights from all your data tables.',
+                'name': 'Workspace Insights',
+                'description': 'AI-powered insights from all your data',
                 'created_by': user,
-                'layout_config': {"columns": 12, "rowHeight": 100, "compact": True}
+                'layout_config': {
+                    "columns": 12,
+                    "rowHeight": 100,
+                    "compact": True,
+                    "margin": 10
+                }
             }
         )
         
-        logger.info(f"Dashboard {'created' if created else 'exists'}: {dashboard.id}")
-
-        # Always clear to regenerate the best insights
-        dashboard.widgets.all().delete()
-        logger.info("Cleared existing widgets")
-
-        # 2. Analyze all active tables
-        tables = workspace.tables.filter(is_active=True)
-        logger.info(f"Found {tables.count()} tables")
+        if not created:
+            # Clear existing auto-generated widgets
+            dashboard.widgets.filter(title__startswith='[Auto]').delete()
         
+        # Analyze each table
+        tables = workspace.tables.filter(is_active=True, record_count__gt=0)
         pos_x, pos_y = 0, 0
         widget_count = 0
-
+        
         for table in tables:
-            # Skip tables with no data
-            record_count = table.records.filter(is_active=True).count()
-            if record_count == 0:
-                logger.info(f"Skipping table {table.name} - no records")
-                continue
+            logger.info(f"Analyzing table: {table.name}")
             
-            logger.info(f"Processing table {table.name} with {record_count} records")
+            # Get schema-based insights
+            insights = self._generate_table_insights(table)
             
-            schema = table.schema or []
-            numeric_fields = [f for f in schema if f['type'] in ['number', 'currency', 'percentage']]
-            date_fields = [f for f in schema if f['type'] in ['date', 'datetime']]
-            
-            logger.info(f"Table {table.name}: {len(numeric_fields)} numeric fields, {len(date_fields)} date fields")
-
-            # GUARANTEE: Record Count Metric
-            Widget.objects.create(
-                dashboard=dashboard,
-                widget_type='metric',
-                title=f"Total Records ({table.name})",
-                table=table,
-                query_config={
-                    "aggregations": [
-                        {"type": "count", "field": "id", "name": "val"}
-                    ]
-                },
-                viz_config={
-                    "format": "number",
-                    "prefix": "",
-                    "suffix": ""
-                },
-                position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
-            )
-            widget_count += 1
-            pos_x += 3
-            if pos_x >= 12: 
-                pos_x = 0
-                pos_y += 2
-
-            # 1. KPI Metrics for Numeric Fields
-            for field in numeric_fields[:2]:  # Limit to first 2 numeric fields
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='metric',
-                    title=f"Total {field['name']} ({table.name})",
-                    table=table,
-                    query_config={
-                        "aggregations": [
-                            {"type": "sum", "field": field['name'], "name": "val"}
-                        ]
-                    },
-                    viz_config={
-                        "format": "number",
-                        "prefix": "$" if field['type'] == 'currency' else "",
-                        "suffix": "%" if field['type'] == 'percentage' else ""
-                    },
-                    position={"x": pos_x, "y": pos_y, "w": 3, "h": 2}
-                )
-                widget_count += 1
-                pos_x += 3
-                if pos_x >= 12:
+            # Add widgets for each insight
+            for insight in insights:
+                if pos_x + insight.get('width', 3) > 12:
                     pos_x = 0
-                    pos_y += 2
-
-            # 2. Categorical Discovery
-            cat_field = self._sample_and_detect_categorical(table)
-            if cat_field:
-                logger.info(f"Found categorical field: {cat_field}")
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='bar_chart',
-                    title=f"Records by {cat_field} ({table.name})",
-                    table=table,
-                    query_config={
-                        "aggregations": [
-                            {
-                                "type": "count", 
-                                "field": "id", 
-                                "group_by": cat_field, 
-                                "name": "val"
-                            }
-                        ]
-                    },
-                    viz_config={
-                        "x_axis": cat_field,
-                        "y_axis": "val",
-                        "show_legend": False
-                    },
-                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
-                )
-                widget_count += 1
-                pos_x += 6
-                if pos_x >= 12:
-                    pos_x = 0
-                    pos_y += 4
-
-            # 3. Temporal Discovery (Trends)
-            if date_fields:
-                date_field = date_fields[0]['name']
-                # If numeric exists, show trend of first numeric field, otherwise count
-                if numeric_fields:
-                    target_field = numeric_fields[0]['name']
-                    agg_type = "sum"
-                else:
-                    target_field = "id"
-                    agg_type = "count"
-
-                logger.info(f"Creating trend chart: {agg_type} of {target_field} over {date_field}")
+                    pos_y += insight.get('height', 4)
                 
+                widget = Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type=insight['type'],
+                    title=f"[Auto] {insight['title']}",
+                    table=table,
+                    query_config=insight.get('query_config', {}),
+                    viz_config=insight.get('viz_config', {}),
+                    position={
+                        'x': pos_x,
+                        'y': pos_y,
+                        'w': insight.get('width', 3),
+                        'h': insight.get('height', 4)
+                    }
+                )
+                
+                pos_x += insight.get('width', 3)
+                widget_count += 1
+                
+                if widget_count >= 20:
+                    break
+            
+            # Add table sample widget
+            if widget_count < 20:
                 Widget.objects.create(
                     dashboard=dashboard,
-                    widget_type='line_chart',
-                    title=f"{target_field} over Time ({table.name})",
+                    widget_type='table',
+                    title=f"[Auto] {table.name} Sample",
                     table=table,
-                    query_config={
-                        "aggregations": [
-                            {
-                                "type": agg_type, 
-                                "field": target_field, 
-                                "group_by": date_field, 
-                                "name": "val"
-                            }
-                        ]
-                    },
-                    viz_config={
-                        "x_axis": date_field,
-                        "y_axis": "val",
-                        "show_legend": True
-                    },
-                    position={"x": pos_x, "y": pos_y, "w": 6, "h": 4}
+                    query_config={"limit": 10},
+                    viz_config={},
+                    position={"x": 0, "y": pos_y + 4, "w": 12, "h": 4}
                 )
                 widget_count += 1
-                pos_x += 6
-                if pos_x >= 12:
-                    pos_x = 0
-                    pos_y += 4
-
-            # 4. Sample Data Table
-            Widget.objects.create(
-                dashboard=dashboard,
-                widget_type='table',
-                title=f"Sample: {table.name}",
-                table=table,
-                query_config={"limit": 10},
-                viz_config={},
-                position={"x": 0, "y": pos_y, "w": 12, "h": 4}
-            )
-            widget_count += 1
-            pos_y += 4
-            pos_x = 0
-
-            # Stop if we have too many widgets
-            if widget_count > 20:
-                logger.info("Reached maximum widget count (20)")
-                break
+                pos_y += 8
         
-        logger.info(f"Generated {widget_count} widgets for dashboard {dashboard.id}")
+        logger.info(f"Generated {widget_count} widgets")
         return dashboard
-
-    def _sample_and_detect_categorical(self, table):
-        """
-        Sample table records to find the best categorical field
-        """
-        from .models import Record
-        import pandas as pd
+    
+    def _generate_table_insights(self, table):
+        """Generate insights based on table schema"""
+        schema = {f['name']: f['type'] for f in table.schema}
+        insights = []
         
-        records = Record.objects.filter(table=table, is_active=True).values('data')[:100]
-        if not records:
-            return None
-
-        # Extract data and convert to DataFrame
-        data_list = [r['data'] for r in records if r['data']]
-        if not data_list:
-            return None
-            
-        df = pd.DataFrame(data_list)
-
-        # Look for text columns with low cardinality (unique values < 20% of sample)
-        best_col = None
-        for col in df.columns:
-            if df[col].dtype == 'object':
-                unique_count = df[col].nunique()
-                if 1 < unique_count < 15:
-                    # Exclude common non-categorical fields
-                    exclude_list = ['id', 'email', 'name', 'first_name', 'last_name', 'phone', 
-                                  'address', 'url', 'website', 'image', 'photo']
-                    if col.lower() not in exclude_list:
-                        best_col = col
-                        break
+        # Check if it's a sales pipeline
+        if 'Deal Value' in schema and 'Status' in schema:
+            generator = SalesInsightGenerator(table.workspace)
+            sales_insights = generator.analyze_sales_pipeline(table)
+            if sales_insights:
+                return sales_insights
         
-        # Fallback: any column with few unique values
-        if not best_col:
-            for col in df.columns:
-                if df[col].dtype == 'object' and 1 < df[col].nunique() < 20:
-                    best_col = col
-                    break
-                    
-        return best_col
-
-
+        # Generic insights for other tables
+        # Always include record count
+        insights.append({
+            'type': 'metric',
+            'title': 'Total Records',
+            'width': 3,
+            'height': 2,
+            'query_config': {
+                'aggregations': [{'type': 'count', 'name': 'val'}]
+            },
+            'viz_config': {
+                'format': 'number'
+            }
+        })
+        
+        # Add date-based insights if available
+        date_fields = [name for name, type in schema.items() if type in ['date', 'datetime']]
+        if date_fields:
+            insights.append({
+                'type': 'line_chart',
+                'title': f'Records Over Time',
+                'width': 6,
+                'height': 4,
+                'query_config': {
+                    'aggregations': [{
+                        'type': 'count',
+                        'group_by': date_fields[0],
+                        'name': 'val'
+                    }]
+                },
+                'viz_config': {
+                    'x_axis': date_fields[0],
+                    'y_axis': 'val'
+                }
+            })
+        
+        # Add categorical insights
+        text_fields = [name for name, type in schema.items() if type == 'text']
+        for field in text_fields[:2]:  # Limit to 2 categorical fields
+            insights.append({
+                'type': 'bar_chart',
+                'title': f'Records by {field}',
+                'width': 6,
+                'height': 4,
+                'query_config': {
+                    'aggregations': [{
+                        'type': 'count',
+                        'group_by': field,
+                        'name': 'val'
+                    }]
+                },
+                'viz_config': {
+                    'x_axis': field,
+                    'y_axis': 'val'
+                }
+            })
+        
+        return insights
 class AuditService:
     """
     Service for creating audit logs

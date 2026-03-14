@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import debug
 
 app_name = 'dashboard'
 
@@ -41,4 +42,7 @@ urlpatterns = [
     path('activity/', views.ActivityLogView.as_view(), name='activity'),
     path('billing/', views.BillingView.as_view(), name='billing'),
     path('profile/', views.ProfileView.as_view(), name='profile'),
+
+    # Debug endpoint
+    path('debug/dashboard/<uuid:pk>/', debug.debug_dashboard, name='debug_dashboard'),
 ]

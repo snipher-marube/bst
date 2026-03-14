@@ -1,132 +1,344 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load dashboard_filters %}  
 
 {% block title %}{{ dashboard.name }} - {{ site_settings.site_name }}{% endblock %}
 
 {% block extra_head %}
+<!-- Core CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack.min.css">
+<!-- Plotly for charts -->
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
 <style>
-    .hidden {
-        display: none;
+    /* ===== DESIGN SYSTEM VARIABLES ===== */
+    :root {
+        --primary: #03466e;
+        --primary-dark: #023455;
+        --primary-light: #0a5f8a;
+        --accent: #f68712;
+        --accent-dark: #e07810;
+        --accent-light: #ff9f3c;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --error: #ef4444;
+        --gray-50: #f9fafb;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+        --gray-800: #1f2937;
+        --gray-900: #111827;
     }
+
+    /* ===== LAYOUT ===== */
+    .dashboard-container {
+        min-height: 100vh;
+        background: var(--gray-50);
+    }
+
+    /* ===== HEADER ===== */
+    .dashboard-header {
+        background: white;
+        border-bottom: 1px solid var(--gray-200);
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        backdrop-filter: blur(8px);
+        background: rgba(255, 255, 255, 0.95);
+    }
+
+    .dashboard-title {
+        font-size: 1.875rem;
+        font-weight: 700;
+        color: var(--primary);
+        line-height: 1.2;
+    }
+
+    .dashboard-description {
+        color: var(--gray-500);
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+
+    /* ===== REALTIME INDICATOR ===== */
+    .realtime-indicator {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.375rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: var(--success);
+        color: white;
+        transition: all 0.3s ease;
+    }
+
+    .realtime-indicator.connecting {
+        background: var(--gray-500);
+        animation: pulse 2s infinite;
+    }
+
+    .realtime-indicator.disconnected {
+        background: var(--gray-400);
+    }
+
+    .realtime-indicator i {
+        font-size: 0.5rem;
+        margin-right: 0.375rem;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    @keyframes slideIn {
+        from {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        font-weight: 500;
+        transition: all 0.2s;
+        cursor: pointer;
+        border: none;
+        font-size: 0.875rem;
+    }
+
+    .btn i {
+        margin-right: 0.5rem;
+        font-size: 1rem;
+    }
+
+    .btn-primary {
+        background: var(--accent);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--accent-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(246, 135, 18, 0.2);
+    }
+
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .btn-secondary {
+        background: white;
+        color: var(--gray-700);
+        border: 1px solid var(--gray-300);
+    }
+
+    .btn-secondary:hover {
+        background: var(--gray-50);
+        border-color: var(--gray-400);
+    }
+
+    .btn-ai {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .btn-ai:hover {
+        background: linear-gradient(135deg, #5a6fd6 0%, #6a3f9c 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(102, 126, 234, 0.3);
+    }
+
+    /* ===== GRID STACK CUSTOMIZATION ===== */
     .grid-stack {
-        background: #f9fafb;
+        background: transparent;
     }
+
     .grid-stack-item-content {
+        background: white !important;
+        border-radius: 0.75rem !important;
+        border: 1px solid var(--gray-200);
         overflow: hidden !important;
-        transition: box-shadow 0.2s;
+        transition: box-shadow 0.2s, transform 0.2s;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     }
+
     .grid-stack-item-content:hover {
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        transform: translateY(-2px);
     }
+
+    .grid-stack-item.ui-draggable-dragging .grid-stack-item-content {
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        transform: scale(1.02);
+        opacity: 0.9;
+    }
+
+    /* ===== WIDGET STYLES ===== */
+    .widget-header {
+        padding: 0.75rem 1rem;
+        background: white;
+        border-bottom: 1px solid var(--gray-200);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: move;
+        user-select: none;
+    }
+
+    .widget-header h3 {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--primary);
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .widget-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .grid-stack-item-content:hover .widget-actions {
+        opacity: 1;
+    }
+
+    .widget-action-btn {
+        background: transparent;
+        border: none;
+        color: var(--gray-400);
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.75rem;
+    }
+
+    .widget-action-btn:hover {
+        color: var(--accent);
+        background: var(--gray-100);
+    }
+
+    .widget-action-btn.delete:hover {
+        color: var(--error);
+    }
+
     .widget-body {
-        height: calc(100% - 48px);
+        height: calc(100% - 49px);
         overflow: auto;
-        padding: 8px;
+        padding: 1rem;
     }
-    .widget-body .plotly-graph-div {
-        width: 100%;
+
+    /* ===== METRIC WIDGET ===== */
+    .metric-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         height: 100%;
-        min-height: 200px;
+        text-align: center;
     }
+
     .metric-value {
         font-size: 2.5rem;
         font-weight: 700;
-        color: #03466e;
+        color: var(--primary);
         line-height: 1.2;
     }
+
     .metric-label {
         font-size: 0.75rem;
-        color: #6b7280;
+        color: var(--gray-500);
         text-transform: uppercase;
         letter-spacing: 0.05em;
+        margin-top: 0.5rem;
     }
+
+    .metric-trend {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+
+    .metric-trend.up { color: var(--success); }
+    .metric-trend.down { color: var(--error); }
+
+    /* ===== TABLE WIDGET ===== */
+    .table-container {
+        height: 100%;
+        overflow: auto;
+    }
+
     .data-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 0.75rem;
     }
+
     .data-table th {
-        background: #f9fafb;
-        padding: 8px 12px;
+        background: var(--gray-50);
+        padding: 0.5rem 0.75rem;
         text-align: left;
         font-weight: 600;
-        color: #374151;
+        color: var(--gray-700);
         position: sticky;
         top: 0;
         z-index: 10;
-        border-bottom: 2px solid #e5e7eb;
+        border-bottom: 2px solid var(--gray-200);
     }
+
     .data-table td {
-        padding: 8px 12px;
-        border-bottom: 1px solid #e5e7eb;
-        color: #1f2937;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--gray-200);
+        color: var(--gray-800);
     }
+
     .data-table tr:hover {
-        background: #f3f4f6;
+        background: var(--gray-50);
     }
-    .widget-header {
-        cursor: move;
-        user-select: none;
-        background: white;
-        border-bottom: 1px solid #e5e7eb;
+
+    /* ===== CHART WIDGET ===== */
+    .chart-container {
+        width: 100%;
+        height: 100%;
+        min-height: 200px;
     }
-    .widget-header h3 {
-        font-size: 0.875rem;
+
+    .chart-container .plotly-graph-div {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ===== INSIGHT BADGE ===== */
+    .insight-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.625rem;
         font-weight: 600;
-        color: #03466e;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        white-space: nowrap;
     }
-    .debug-panel {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: #1f2937;
-        color: #f3f4f6;
-        padding: 16px;
-        border-radius: 8px;
-        font-size: 12px;
-        max-width: 400px;
-        max-height: 500px;
-        overflow: auto;
-        display: none;
-        z-index: 9999;
-        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
-        border: 1px solid #374151;
-    }
-    .debug-panel.visible {
-        display: block;
-    }
-    .debug-panel pre {
-        background: #111827;
-        padding: 8px;
-        border-radius: 4px;
-        color: #10b981;
-        font-size: 11px;
-        overflow: auto;
-        max-height: 300px;
-    }
-    .error-display {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: #ef4444;
-        text-align: center;
-        padding: 16px;
-    }
-    .no-data-display {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: #9ca3af;
-        text-align: center;
-        padding: 16px;
-    }
+
+    /* ===== MODAL ===== */
     .modal {
         display: none;
         position: fixed;
@@ -138,84 +350,227 @@
         align-items: center;
         justify-content: center;
         z-index: 1000;
+        backdrop-filter: blur(4px);
     }
+
     .modal.visible {
         display: flex;
     }
+
     .modal-content {
         background: white;
-        border-radius: 12px;
+        border-radius: 1rem;
         max-width: 500px;
         width: 90%;
         max-height: 90vh;
         overflow: auto;
+        animation: slideIn 0.3s ease-out;
     }
+
+    .modal-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--gray-200);
+    }
+
+    .modal-header h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--primary);
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    .modal-footer {
+        padding: 1.5rem;
+        border-top: 1px solid var(--gray-200);
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+
+    /* ===== FORM ELEMENTS ===== */
+    .form-group {
+        margin-bottom: 1rem;
+    }
+
+    .form-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--gray-700);
+        margin-bottom: 0.5rem;
+    }
+
+    .form-select, .form-input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--gray-300);
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        transition: all 0.2s;
+    }
+
+    .form-select:focus, .form-input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(246, 135, 18, 0.1);
+    }
+
+    /* ===== LOADING STATES ===== */
     .loading-spinner {
         display: flex;
         align-items: center;
         justify-content: center;
         height: 100%;
-        color: #03466e;
+        color: var(--primary);
+    }
+
+    .loading-spinner i {
+        font-size: 2rem;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* ===== ERROR & EMPTY STATES ===== */
+    .error-display {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--error);
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .error-display i {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .no-data-display {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--gray-400);
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .no-data-display i {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    /* ===== NOTIFICATION ===== */
+    .notification {
+        position: fixed;
+        bottom: 1rem;
+        right: 1rem;
+        background: var(--success);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        z-index: 50;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .notification.error {
+        background: var(--error);
+    }
+
+    .notification.warning {
+        background: var(--warning);
+    }
+
+    /* ===== UTILITIES ===== */
+    .hidden {
+        display: none !important;
+    }
+
+    .container {
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 1rem;
+    }
+
+    @media (min-width: 640px) {
+        .container { padding: 0 1.5rem; }
+    }
+
+    @media (min-width: 1024px) {
+        .container { padding: 0 2rem; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gray-50">
+<div class="dashboard-container">
     <!-- Header -->
-    <div class="bg-white shadow-sm border-b sticky top-0 z-20">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div class="flex flex-wrap justify-between items-center gap-4">
-                <div>
-                    <h1 class="text-2xl font-bold text-[#03466e]">{{ dashboard.name }}</h1>
-                    {% if dashboard.description %}
-                    <p class="text-gray-600 text-sm mt-1">{{ dashboard.description }}</p>
-                    {% endif %}
+    <header class="dashboard-header">
+        <div class="container">
+            <div class="flex flex-wrap justify-between items-center py-4">
+                <div class="flex items-center space-x-4">
+                    <div>
+                        <h1 class="dashboard-title">{{ dashboard.name }}</h1>
+                        {% if dashboard.description %}
+                        <p class="dashboard-description">{{ dashboard.description }}</p>
+                        {% endif %}
+                    </div>
+                    <div id="realtimeIndicator" class="realtime-indicator connecting">
+                        <i class="fas fa-circle"></i>
+                        <span>Connecting...</span>
+                    </div>
                 </div>
+                
                 <div class="flex flex-wrap gap-2">
-                    {% if request.user.is_superuser %}
-                    <button class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors" id="debugToggleBtn">
-                        <i class="fas fa-bug mr-2"></i>Debug
+                    <button class="btn btn-ai" id="aiInsightsBtn">
+                        <i class="fas fa-robot"></i>
+                        AI Insights
                     </button>
-                    {% endif %}
-                    <button class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors" id="addWidgetBtn">
-                        <i class="fas fa-plus mr-2"></i>Add Widget
+                    <button class="btn btn-primary" id="addWidgetBtn">
+                        <i class="fas fa-plus"></i>
+                        Add Widget
                     </button>
-                    <button class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" id="saveLayoutBtn">
-                        <i class="fas fa-save mr-2"></i>Save Layout
+                    <button class="btn btn-secondary" id="saveLayoutBtn">
+                        <i class="fas fa-save"></i>
+                        Save Layout
                     </button>
                 </div>
             </div>
         </div>
-    </div>
+    </header>
     
-    <!-- Dashboard Grid Container -->
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Main Content -->
+    <main class="container py-8">
         <div class="grid-stack" id="dashboard-grid"></div>
-    </div>
+    </main>
 </div>
 
-<!-- Debug Panel -->
-<div id="debugPanel" class="debug-panel">
-    <div class="flex justify-between items-center mb-3">
-        <h3 class="font-bold text-white">🔍 Debug Info</h3>
-        <button onclick="document.getElementById('debugPanel').classList.remove('visible')" class="text-gray-400 hover:text-white">✕</button>
-    </div>
-    <div id="debugContent" class="space-y-2"></div>
-</div>
-
-<!-- Widget Data Script -->
+<!-- Hidden Data -->
 {{ dashboard_json|json_script:"dashboard-data" }}
 
 <!-- Add Widget Modal -->
 <div id="widgetModal" class="modal">
-    <div class="modal-content p-6">
-        <h2 class="text-xl font-bold text-[#03466e] mb-4">Add New Widget</h2>
-        <form id="widgetForm" onsubmit="event.preventDefault(); addWidget();">
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Widget Type</label>
-                    <select id="widgetType" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent" required onchange="updateFieldOptions()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add New Widget</h2>
+        </div>
+        <div class="modal-body">
+            <form id="widgetForm">
+                <div class="form-group">
+                    <label class="form-label">Widget Type</label>
+                    <select id="widgetType" class="form-select" required onchange="DashboardUI.updateFieldOptions()">
                         <option value="metric">Metric Card (Count)</option>
                         <option value="table">Data Table</option>
                         <option value="line_chart">Line Chart (Trend)</option>
@@ -224,931 +579,918 @@
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Data Table</label>
-                    <select id="widgetTable" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent" required onchange="loadTableFields()">
+                <div class="form-group">
+                    <label class="form-label">Data Table</label>
+                    <select id="widgetTable" class="form-select" required onchange="DashboardUI.loadTableFields()">
                         <option value="">Select a table</option>
                         {% for table in tables %}
-                        <option value="{{ table.id }}" data-schema='{{ table.schema|safe }}'>{{ table.name }} ({{ table.record_count }} records)</option>
+                        <option value="{{ table.id }}" data-schema='{{ table.schema|safe }}'>
+                            {{ table.name }} ({{ table.record_count }} records)
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
                 
-                <!-- Dynamic field selection (shown/hidden based on widget type) -->
-                <div id="valueFieldContainer" class="hidden">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Value Field (Numeric)</label>
-                    <select id="valueField" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <!-- Dynamic Fields -->
+                <div id="valueFieldContainer" class="form-group hidden">
+                    <label class="form-label">Value Field (Numeric)</label>
+                    <select id="valueField" class="form-select">
                         <option value="">Count (default)</option>
                     </select>
                 </div>
                 
-                <div id="categoryFieldContainer" class="hidden">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Category/Group By Field</label>
-                    <select id="categoryField" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <div id="categoryFieldContainer" class="form-group hidden">
+                    <label class="form-label">Category/Group By Field</label>
+                    <select id="categoryField" class="form-select">
                         <option value="">None</option>
                     </select>
                 </div>
                 
-                <div id="dateFieldContainer" class="hidden">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Date Field (for trends)</label>
-                    <select id="dateField" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <div id="dateFieldContainer" class="form-group hidden">
+                    <label class="form-label">Date Field (for trends)</label>
+                    <select id="dateField" class="form-select">
                         <option value="created_at">Created At (default)</option>
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                    <input type="text" id="widgetTitle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#f68712] focus:border-transparent" placeholder="Enter widget title" required>
+                <div class="form-group">
+                    <label class="form-label">Title</label>
+                    <input type="text" id="widgetTitle" class="form-input" placeholder="Enter widget title" required>
                 </div>
-            </div>
-            
-            <div class="flex justify-end space-x-3 mt-6">
-                <button type="button" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" onclick="closeModal()">Cancel</button>
-                <button type="submit" class="px-4 py-2 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors">Add Widget</button>
-            </div>
-        </form>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="DashboardUI.closeModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="DashboardUI.addWidget()">Add Widget</button>
+        </div>
     </div>
 </div>
 
-
+<!-- Core Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack-all.js"></script>
+<script src="{% static 'js/websocket.js' %}"></script>
+
+<!-- Dashboard Controller -->
 <script>
-// Add this at the top of your JavaScript section
-function getWorkspaceId() {
-    // Try to get from dashboard data
-    if (dashboardData && dashboardData.workspace) {
-        return dashboardData.workspace;
-    }
-    // Fallback: extract from URL or return null
-    return null;
-}
+(function() {
+    'use strict';
 
-// Global debug flag (set based on user or environment)
-const DEBUG = {% if request.user.is_superuser %}true{% else %}false{% endif %};
-
-// Initialize variables
-let grid = null;
-let dashboardData = null;
-
-// Initialize everything when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, initializing dashboard...');
-    
-    // Parse dashboard data
-    try {
-        const dataElement = document.getElementById('dashboard-data');
-        if (dataElement) {
-            dashboardData = JSON.parse(dataElement.textContent);
-            console.log('Dashboard data loaded:', dashboardData);
+    // =========================================================================
+    // DASHBOARD CORE
+    // =========================================================================
+    class DashboardCore {
+        constructor(dashboardId) {
+            this.dashboardId = dashboardId;
+            this.grid = null;
+            this.widgets = new Map();
+            this.realtime = null;
+            this.data = null;
             
-            if (DEBUG) {
-                console.log('Widgets count:', dashboardData.widgets ? dashboardData.widgets.length : 0);
-            }
-        } else {
-            console.error('Dashboard data element not found');
-            return;
+            this.init();
         }
-    } catch (e) {
-        console.error('Failed to parse dashboard data:', e);
-        return;
-    }
-    
-    // Initialize grid
-    try {
-        grid = GridStack.init({
-            column: 12,
-            cellHeight: 100,
-            margin: 10,
-            float: true,
-            acceptWidgets: true,
-            animate: true,
-            alwaysShowResizeHandle: true,
-            resizable: { handles: 'e, se, s, sw, w' }
-        });
-        console.log('Grid initialized');
-    } catch (e) {
-        console.error('Failed to initialize grid:', e);
-        return;
-    }
-    
-    // Load widgets
-    if (dashboardData.widgets && dashboardData.widgets.length > 0) {
-        console.log(`Loading ${dashboardData.widgets.length} widgets...`);
-        
-        // Small delay to ensure grid is ready
-        setTimeout(() => {
-            dashboardData.widgets.forEach((widget, index) => {
-                try {
-                    addWidgetToGrid(widget);
-                    console.log(`Widget ${index + 1} added:`, widget.title);
-                } catch (e) {
-                    console.error(`Failed to add widget ${index}:`, e);
+
+        async init() {
+            try {
+                await this.loadDashboardData();
+                this.initGrid();
+                this.initRealtime();
+                this.renderWidgets();
+                this.setupEventListeners();
+            } catch (error) {
+                console.error('Failed to initialize dashboard:', error);
+                DashboardUI.showNotification('Failed to load dashboard', 'error');
+            }
+        }
+
+        async loadDashboardData() {
+            const dataEl = document.getElementById('dashboard-data');
+            if (!dataEl) {
+                throw new Error('Dashboard data not found');
+            }
+
+            try {
+                this.data = JSON.parse(dataEl.textContent);
+            } catch (error) {
+                throw new Error('Invalid dashboard data format');
+            }
+        }
+
+        initGrid() {
+            this.grid = GridStack.init({
+                column: 12,
+                cellHeight: 100,
+                margin: 10,
+                float: true,
+                acceptWidgets: true,
+                animate: true,
+                alwaysShowResizeHandle: true,
+                resizable: {
+                    handles: 'e, se, s, sw, w'
                 }
             });
-        }, 100);
-    } else {
-        console.log('No widgets to display');
-        // Show empty state
-        const gridEl = document.getElementById('dashboard-grid');
-        if (gridEl) {
-            gridEl.innerHTML = `
-                <div class="flex flex-col items-center justify-center py-20 text-gray-400">
-                    <i class="fas fa-chart-pie text-6xl mb-4 opacity-30"></i>
-                    <p class="text-lg">No widgets yet</p>
-                    <p class="text-sm mt-2">Click "Add Widget" to get started</p>
+
+            // Debounced layout save
+            this.grid.on('change', this.debounce(() => {
+                this.saveLayout();
+            }, 2000));
+        }
+
+        initRealtime() {
+            this.realtime = new RealtimeDashboard(this.dashboardId, {
+                debug: window.location.hostname === 'localhost',
+                onConnected: () => DashboardUI.updateConnectionStatus(true),
+                onDisconnected: () => DashboardUI.updateConnectionStatus(false),
+                onWidgetUpdate: (widgetId, data) => this.updateWidget(widgetId, data),
+                onDashboardUpdate: (data) => this.handleDashboardUpdate(data)
+            });
+        }
+
+        renderWidgets() {
+            if (!this.data.widgets?.length || !this.grid) return;
+
+            // Clear existing widgets
+            this.grid.removeAll();
+            this.widgets.clear();
+
+            // Render each widget
+            this.data.widgets.forEach(widget => {
+                this.addWidget(widget);
+            });
+        }
+
+        addWidget(widget) {
+            const widgetHtml = DashboardUI.createWidgetHTML(widget);
+            this.grid.addWidget(widgetHtml);
+            this.widgets.set(widget.id, widget);
+
+            // Render content after grid adds it
+            setTimeout(() => {
+                DashboardUI.renderWidgetContent(widget);
+            }, 50);
+        }
+
+        updateWidget(widgetId, newData) {
+            const widget = this.widgets.get(widgetId);
+            if (widget) {
+                widget.widget_data = newData;
+                DashboardUI.renderWidgetContent(widget);
+            }
+        }
+
+        removeWidget(widgetId) {
+            const element = document.querySelector(`[data-id="${widgetId}"]`);
+            if (element && this.grid) {
+                this.grid.removeWidget(element);
+                this.widgets.delete(widgetId);
+            }
+        }
+
+        saveLayout() {
+            const widgets = [];
+            this.grid.engine.nodes.forEach(node => {
+                widgets.push({
+                    id: node.el.getAttribute('data-id'),
+                    position: {
+                        x: node.x,
+                        y: node.y,
+                        w: node.w,
+                        h: node.h
+                    }
+                });
+            });
+
+            if (this.realtime?.isConnected()) {
+                this.realtime.updateLayout({ widgets });
+                DashboardUI.showNotification('Layout saved');
+            } else {
+                // Fallback to API call
+                this.saveLayoutViaAPI(widgets);
+            }
+        }
+
+        async saveLayoutViaAPI(widgets) {
+            try {
+                const response = await fetch(`/api/dashboards/${this.dashboardId}/update_layout/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': DashboardUI.getCSRFToken()
+                    },
+                    body: JSON.stringify({ widgets })
+                });
+
+                if (response.ok) {
+                    DashboardUI.showNotification('Layout saved');
+                } else {
+                    throw new Error('Failed to save layout');
+                }
+            } catch (error) {
+                console.error('Error saving layout:', error);
+                DashboardUI.showNotification('Failed to save layout', 'error');
+            }
+        }
+
+        handleDashboardUpdate(data) {
+            if (data.message) {
+                DashboardUI.showNotification(data.message);
+            }
+        }
+
+        refreshWidget(widgetId) {
+            if (this.realtime?.isConnected()) {
+                this.realtime.refreshWidget(widgetId);
+            } else {
+                window.location.reload();
+            }
+        }
+
+        async deleteWidget(widgetId) {
+            if (!confirm('Delete this widget?')) return;
+
+            try {
+                const response = await fetch(`/api/widgets/${widgetId}/`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': DashboardUI.getCSRFToken()
+                    }
+                });
+
+                if (response.ok) {
+                    this.removeWidget(widgetId);
+                    DashboardUI.showNotification('Widget deleted');
+                } else {
+                    throw new Error('Failed to delete widget');
+                }
+            } catch (error) {
+                console.error('Error deleting widget:', error);
+                DashboardUI.showNotification('Failed to delete widget', 'error');
+            }
+        }
+
+        debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        setupEventListeners() {
+            // Add widget button
+            document.getElementById('addWidgetBtn')?.addEventListener('click', () => {
+                DashboardUI.openModal('widgetModal');
+            });
+
+            // Save layout button
+            document.getElementById('saveLayoutBtn')?.addEventListener('click', () => {
+                this.saveLayout();
+            });
+
+            // AI Insights button
+            document.getElementById('aiInsightsBtn')?.addEventListener('click', () => {
+                if (this.realtime?.isConnected()) {
+                    this.realtime.requestInsights();
+                    DashboardUI.showNotification('Generating AI insights...');
+                }
+            });
+        }
+    }
+
+    // =========================================================================
+    // DASHBOARD UI
+    // =========================================================================
+    const DashboardUI = {
+        // Connection status
+        updateConnectionStatus(connected) {
+            const indicator = document.getElementById('realtimeIndicator');
+            if (!indicator) return;
+
+            if (connected) {
+                indicator.className = 'realtime-indicator';
+                indicator.innerHTML = '<i class="fas fa-circle"></i><span>Live</span>';
+            } else {
+                indicator.className = 'realtime-indicator connecting';
+                indicator.innerHTML = '<i class="fas fa-circle"></i><span>Reconnecting...</span>';
+            }
+        },
+
+        // Modal management
+        openModal(modalId) {
+            document.getElementById(modalId)?.classList.add('visible');
+        },
+
+        closeModal(modalId) {
+            document.getElementById(modalId)?.classList.remove('visible');
+            document.getElementById('widgetForm')?.reset();
+        },
+
+        // Widget creation
+        createWidgetHTML(widget) {
+            const position = widget.position || {};
+            const hasTrend = widget.widget_data?.trend;
+            
+            return `
+                <div class="grid-stack-item" 
+                     data-id="${widget.id}"
+                     gs-x="${position.x || 0}" 
+                     gs-y="${position.y || 0}" 
+                     gs-w="${position.w || 4}" 
+                     gs-h="${position.h || 4}">
+                    <div class="grid-stack-item-content">
+                        <div class="widget-header">
+                            <div class="flex items-center space-x-2">
+                                <h3 title="${widget.title}">${widget.title}</h3>
+                                ${hasTrend ? '<span class="insight-badge">AI</span>' : ''}
+                            </div>
+                            <div class="widget-actions">
+                                <button class="widget-action-btn" onclick="window.dashboard.refreshWidget('${widget.id}')" title="Refresh">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                                <button class="widget-action-btn delete" onclick="window.dashboard.deleteWidget('${widget.id}')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="widget-body" id="widget-${widget.id}">
+                            <div class="loading-spinner">
+                                <i class="fas fa-circle-notch fa-spin"></i>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
-        }
-    }
-    
-    // Set up event listeners
-    setupEventListeners();
-});
+        },
 
-function setupEventListeners() {
-    // Add widget button
-    const addBtn = document.getElementById('addWidgetBtn');
-    if (addBtn) {
-        addBtn.addEventListener('click', () => {
-            document.getElementById('widgetModal').classList.add('visible');
-        });
-    }
-    
-    // Save layout button
-    const saveBtn = document.getElementById('saveLayoutBtn');
-    if (saveBtn) {
-        saveBtn.addEventListener('click', saveLayout);
-    }
-    
-    // Debug toggle
-    const debugBtn = document.getElementById('debugToggleBtn');
-    if (debugBtn) {
-        debugBtn.addEventListener('click', toggleDebug);
-    }
-    
-    // Close modal when clicking outside
-    const modal = document.getElementById('widgetModal');
-    if (modal) {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal();
+        renderWidgetContent(widget) {
+            const container = document.getElementById(`widget-${widget.id}`);
+            if (!container) return;
+
+            const data = widget.widget_data;
+
+            // Handle error states
+            if (!data || data.error) {
+                container.innerHTML = `
+                    <div class="error-display">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>${data?.error || 'No data available'}</p>
+                    </div>
+                `;
+                return;
             }
-        });
-    }
-}
 
-function addWidgetToGrid(widget) {
-    if (!grid) {
-        console.error('Grid not initialized');
-        return;
-    }
-    
-    // Ensure position has default values
-    const position = widget.position || {};
-    const x = position.x || 0;
-    const y = position.y || 0;
-    const w = position.w || 4;
-    const h = position.h || 4;
-    
-    // Create widget HTML
-    const widgetHtml = `
-        <div class="grid-stack-item" 
-             data-id="${widget.id}"
-             gs-x="${x}" 
-             gs-y="${y}" 
-             gs-w="${w}" 
-             gs-h="${h}">
-            <div class="grid-stack-item-content bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-                <div class="widget-header px-4 py-3 flex justify-between items-center">
-                    <h3 class="font-semibold truncate" title="${widget.title}">${widget.title}</h3>
-                    <div class="flex items-center space-x-1 flex-shrink-0">
-                        <button class="text-gray-400 hover:text-[#f68712] p-1" onclick="refreshWidget('${widget.id}')" title="Refresh">
-                            <i class="fas fa-sync-alt text-xs"></i>
-                        </button>
-                        <button class="text-gray-400 hover:text-red-600 p-1" onclick="deleteWidget('${widget.id}')" title="Delete">
-                            <i class="fas fa-trash text-xs"></i>
-                        </button>
+            // Handle empty data
+            if (this.isEmptyData(data)) {
+                container.innerHTML = `
+                    <div class="no-data-display">
+                        <i class="fas fa-database"></i>
+                        <p>No data to display</p>
                     </div>
-                </div>
-                <div class="widget-body flex-1" id="widget-${widget.id}">
-                    <div class="loading-spinner">
-                        <i class="fas fa-circle-notch fa-spin text-2xl"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Add to grid
-    grid.addWidget(widgetHtml);
-    
-    // Render widget content
-    setTimeout(() => {
-        renderWidget(widget);
-    }, 50);
-}
+                `;
+                return;
+            }
 
-function renderWidget(widget) {
-    const container = document.getElementById(`widget-${widget.id}`);
-    if (!container) {
-        console.error(`Container for widget ${widget.id} not found`);
-        return;
-    }
-    
-    const data = widget.widget_data;
-    
-    if (DEBUG) {
-        console.log(`Rendering widget ${widget.id} (${widget.widget_type}):`, data);
-    }
-    
-    // Clear loading spinner
-    container.innerHTML = '';
-    
-    // Handle errors
-    if (data && data.error) {
-        container.innerHTML = `
-            <div class="error-display">
-                <i class="fas fa-exclamation-triangle text-amber-500 text-2xl mb-2"></i>
-                <p class="text-sm text-gray-600">${data.error}</p>
-            </div>
-        `;
-        return;
-    }
-    
-    // Handle empty data
-    if (!data || 
-        (Array.isArray(data) && data.length === 0) || 
-        (typeof data === 'object' && Object.keys(data).length === 0)) {
-        container.innerHTML = `
-            <div class="no-data-display">
-                <i class="fas fa-database text-4xl text-gray-300 mb-2"></i>
-                <p class="text-sm text-gray-500">No data available</p>
-            </div>
-        `;
-        return;
-    }
-    
-    // Render based on type
-    try {
-        switch(widget.widget_type) {
-            case 'metric':
-                renderMetricWidget(container, widget, data);
-                break;
-            case 'table':
-                renderTableWidget(container, widget, data);
-                break;
-            case 'line_chart':
-            case 'bar_chart':
-            case 'pie_chart':
-                renderChartWidget(container, widget, data);
-                break;
-            default:
-                container.innerHTML = `<div class="no-data-display">Unknown widget type: ${widget.widget_type}</div>`;
-        }
-    } catch (e) {
-        console.error('Render error:', e);
-        container.innerHTML = `
-            <div class="error-display">
-                <i class="fas fa-exclamation-circle text-red-500 text-2xl mb-2"></i>
-                <p class="text-sm">Failed to render: ${e.message}</p>
-            </div>
-        `;
-    }
-}
+            // Render based on widget type
+            const renderers = {
+                'metric': () => this.renderMetric(container, widget, data),
+                'table': () => this.renderTable(container, widget, data),
+                'line_chart': () => this.renderChart(container, widget, data, 'scatter'),
+                'bar_chart': () => this.renderChart(container, widget, data, 'bar'),
+                'pie_chart': () => this.renderChart(container, widget, data, 'pie')
+            };
 
-function renderMetricWidget(container, widget, data) {
-    // Extract value
-    let value = data.val;
-    if (value === undefined) {
-        // Try to find first numeric value
-        const numericValues = Object.values(data).filter(v => typeof v === 'number');
-        value = numericValues.length > 0 ? numericValues[0] : 0;
-    }
-    
-    // Format number
-    if (typeof value === 'number') {
-        value = value.toLocaleString();
-    } else if (typeof value === 'object') {
-        // If it's an object (like the grouped data), sum the values
-        value = Object.values(value).reduce((sum, val) => sum + (typeof val === 'number' ? val : 0), 0);
-        value = value.toLocaleString();
-    }
-    
-    const prefix = widget.viz_config?.prefix || '';
-    const suffix = widget.viz_config?.suffix || '';
-    
-    container.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full">
-            <div class="metric-value">${prefix}${value}${suffix}</div>
-            <div class="metric-label">Total</div>
-        </div>
-    `;
-}
-
-function renderTableWidget(container, widget, data) {
-    if (!Array.isArray(data) || data.length === 0) {
-        container.innerHTML = '<div class="no-data-display">No data</div>';
-        return;
-    }
-    
-    // Get columns (exclude internal fields starting with _)
-    const columns = Object.keys(data[0]).filter(key => !key.startsWith('_'));
-    
-    let html = '<div class="overflow-auto h-full"><table class="data-table">';
-    
-    // Header
-    html += '<thead><tr>';
-    columns.forEach(col => {
-        html += `<th>${col}</th>`;
-    });
-    html += '</tr></thead>';
-    
-    // Body
-    html += '<tbody>';
-    data.slice(0, 10).forEach(row => {
-        html += '<tr>';
-        columns.forEach(col => {
-            let value = row[col];
-            if (value === null || value === undefined) value = '-';
-            if (typeof value === 'object') value = JSON.stringify(value);
-            html += `<td>${value}</td>`;
-        });
-        html += '</tr>';
-    });
-    html += '</tbody></table>';
-    
-    if (data.length > 10) {
-        html += `<div class="text-xs text-gray-500 mt-2 px-2">Showing 10 of ${data.length} rows</div>`;
-    }
-    
-    html += '</div>';
-    container.innerHTML = html;
-}
-
-function renderChartWidget(container, widget, data) {
-    console.log('Rendering chart with data:', data);
-    
-    let labels = [];
-    let values = [];
-    
-    // Handle the data format we're getting from the backend
-    if (data && data.val && typeof data.val === 'object') {
-        // This is the format we have: {'val': {'2026-02-25': 1, '2026-03-02': 9}}
-        labels = Object.keys(data.val);
-        values = Object.values(data.val);
-        console.log('Parsed grouped data:', { labels, values });
-    }
-    else if (Array.isArray(data)) {
-        // Array format
-        if (data.length > 0) {
-            // Try to extract labels and values from array
-            const firstItem = data[0];
-            
-            // If it's an array of objects with x and y properties
-            if (firstItem && typeof firstItem === 'object') {
-                if (firstItem.x !== undefined && firstItem.y !== undefined) {
-                    labels = data.map(item => item.x);
-                    values = data.map(item => item.y);
-                } else {
-                    // Try to find a date/number pattern
-                    const possibleDateField = Object.keys(firstItem).find(key => 
-                        key.toLowerCase().includes('date') || key === '_created_at'
-                    );
-                    const possibleValueField = Object.keys(firstItem).find(key => 
-                        typeof firstItem[key] === 'number' || key === 'val'
-                    );
-                    
-                    if (possibleDateField && possibleValueField) {
-                        labels = data.map(item => item[possibleDateField]);
-                        values = data.map(item => item[possibleValueField]);
-                    } else {
-                        // Default to using indices
-                        labels = data.map((_, i) => `Item ${i+1}`);
-                        values = data.map(item => {
-                            const numVal = Object.values(item).find(v => typeof v === 'number');
-                            return numVal || 1;
-                        });
-                    }
+            const renderer = renderers[widget.widget_type];
+            if (renderer) {
+                try {
+                    renderer();
+                } catch (error) {
+                    console.error('Render error:', error);
+                    container.innerHTML = `
+                        <div class="error-display">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <p>Failed to render: ${error.message}</p>
+                        </div>
+                    `;
                 }
             }
+        },
+
+        isEmptyData(data) {
+            if (!data) return true;
+            if (Array.isArray(data)) return data.length === 0;
+            if (typeof data === 'object') {
+                return Object.keys(data).length === 0 || 
+                       (data.val && typeof data.val === 'object' && Object.keys(data.val).length === 0);
+            }
+            return false;
+        },
+
+        renderMetric(container, widget, data) {
+            let value = data.val;
+            if (typeof value === 'object') {
+                value = Object.values(value).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+            }
+
+            const config = widget.viz_config || {};
+            const formatted = this.formatNumber(value, config);
+            
+            const trendClass = data.trend === 'up' ? 'up' : 'down';
+            const trendIcon = data.trend === 'up' ? '📈' : '📉';
+
+            container.innerHTML = `
+                <div class="metric-container">
+                    <div class="metric-value">
+                        ${config.prefix || ''}${formatted}${config.suffix || ''}
+                    </div>
+                    <div class="metric-label">${widget.title}</div>
+                    ${data.trend ? `
+                        <div class="metric-trend ${trendClass}">
+                            ${trendIcon} ${data.trend_percent || 0}%
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        },
+
+        renderTable(container, widget, data) {
+            if (!Array.isArray(data)) {
+                data = [data];
+            }
+
+            const columns = Object.keys(data[0] || {}).filter(key => !key.startsWith('_'));
+            
+            let html = '<div class="table-container"><table class="data-table"><thead><tr>';
+            columns.forEach(col => {
+                html += `<th>${this.escapeHtml(col)}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            data.slice(0, 10).forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    let value = row[col];
+                    if (value === null || value === undefined) value = '-';
+                    if (typeof value === 'object') value = JSON.stringify(value);
+                    html += `<td>${this.escapeHtml(String(value))}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            if (data.length > 10) {
+                html += `<div class="text-xs text-gray-500 px-2 py-1">Showing 10 of ${data.length} rows</div>`;
+            }
+            html += '</div>';
+
+            container.innerHTML = html;
+        },
+
+        renderChart(container, widget, data, chartType) {
+    console.log('Rendering chart:', widget.widget_type, data);
+    
+    // Handle different data formats
+    let labels = [];
+    let values = [];
+
+    // Case 1: Data has 'val' object (from our QueryEngine)
+    if (data.val && typeof data.val === 'object') {
+        labels = Object.keys(data.val);
+        values = Object.values(data.val);
+    }
+    // Case 2: Data is direct object
+    else if (typeof data === 'object' && !Array.isArray(data)) {
+        // Filter out metadata keys
+        const keys = Object.keys(data).filter(k => !k.startsWith('_') && k !== 'error');
+        labels = keys;
+        values = keys.map(k => data[k]);
+    }
+    // Case 3: Data is array (raw records)
+    else if (Array.isArray(data) && data.length > 0) {
+        const firstItem = data[0];
+        if (typeof firstItem === 'object') {
+            // Try to find date field and value field
+            const dateField = Object.keys(firstItem).find(k => 
+                k.toLowerCase().includes('date') || k === '_created_at'
+            ) || Object.keys(firstItem)[0];
+            
+            const valueField = Object.keys(firstItem).find(k => 
+                typeof firstItem[k] === 'number'
+            ) || Object.keys(firstItem)[1];
+            
+            if (dateField && valueField) {
+                labels = data.map(item => item[dateField]);
+                values = data.map(item => item[valueField]);
+            }
         }
     }
-    else if (typeof data === 'object') {
-        // Plain object format
-        labels = Object.keys(data);
-        values = Object.values(data);
+
+    // If we still don't have data, try to extract from widget.widget_data
+    if (labels.length === 0 && widget.widget_data) {
+        const wd = widget.widget_data;
+        if (wd.val && typeof wd.val === 'object') {
+            labels = Object.keys(wd.val);
+            values = Object.values(wd.val);
+        }
     }
-    
-    // If we still don't have data, show error
+
+    console.log('Chart data extracted:', { labels, values });
+
     if (labels.length === 0 || values.length === 0) {
-        console.warn('No plottable data found', data);
         container.innerHTML = `
             <div class="no-data-display">
-                <i class="fas fa-database text-4xl text-gray-300 mb-2"></i>
-                <p class="text-sm text-gray-500">No data available</p>
-                <p class="text-xs text-gray-400 mt-1">Debug: ${JSON.stringify(data).substring(0, 50)}</p>
+                <i class="fas fa-chart-line"></i>
+                <p>No chart data available</p>
+                <small class="text-xs mt-2 opacity-50">Debug: ${JSON.stringify(data).substring(0, 100)}</small>
             </div>
         `;
         return;
     }
-    
-    // Clear container
+
+    // Create chart configuration
+    const trace = this.createChartTrace(chartType, labels, values);
+    const layout = this.createChartLayout(widget, chartType);
+
+    // Clear container and render
     container.innerHTML = '';
-    
-    // Create chart based on widget type
-    try {
-        let trace;
-        
-        switch(widget.widget_type) {
-            case 'pie_chart':
-                trace = {
-                    type: 'pie',
-                    labels: labels,
-                    values: values,
-                    marker: {
-                        colors: ['#03466e', '#f68712', '#025b8c', '#e07810', '#0a7ebf']
-                    }
-                };
-                break;
-                
-            case 'bar_chart':
-                trace = {
-                    type: 'bar',
-                    x: labels,
-                    y: values,
-                    marker: {
-                        color: '#03466e',
-                        opacity: 0.8
-                    }
-                };
-                break;
-                
-            case 'line_chart':
-            default:
-                trace = {
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    x: labels,
-                    y: values,
-                    line: {
-                        color: '#03466e',
-                        width: 2
-                    },
-                    marker: {
-                        color: '#f68712',
-                        size: 8
-                    }
-                };
-                break;
+    const chartDiv = document.createElement('div');
+    chartDiv.style.width = '100%';
+    chartDiv.style.height = '100%';
+    container.appendChild(chartDiv);
+
+    Plotly.newPlot(chartDiv, [trace], layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['sendDataToCloud', 'zoom2d', 'pan2d', 'select2d', 'lasso2d']
+    });
+},
+
+        createChartTrace(type, labels, values) {
+    // Ensure values are numbers
+    const numericValues = values.map(v => {
+        if (typeof v === 'string') return parseFloat(v) || 0;
+        return v || 0;
+    });
+
+    const traces = {
+        'scatter': {
+            type: 'scatter',
+            mode: 'lines+markers',
+            x: labels,
+            y: numericValues,
+            line: { color: '#03466e', width: 3 },
+            marker: { color: '#f68712', size: 8 }
+        },
+        'bar': {
+            type: 'bar',
+            x: labels,
+            y: numericValues,
+            marker: {
+                color: '#03466e',
+                opacity: 0.8
+            }
+        },
+        'pie': {
+            type: 'pie',
+            labels: labels,
+            values: numericValues,
+            marker: {
+                colors: ['#03466e', '#f68712', '#025b8c', '#e07810', '#0a7ebf']
+            }
         }
-        
-        const layout = {
-            title: {
-                text: widget.title,
-                font: { size: 14 }
-            },
-            margin: { t: 30, r: 10, b: 40, l: 40 },
-            autosize: true,
-            showlegend: widget.widget_type === 'pie_chart',
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            xaxis: widget.widget_type !== 'pie_chart' ? { 
-                tickangle: -45,
-                title: widget.viz_config?.x_axis || ''
-            } : {},
-            yaxis: widget.widget_type !== 'pie_chart' ? {
-                title: widget.viz_config?.y_axis || 'Count'
-            } : {}
-        };
-        
-        Plotly.newPlot(container, [trace], layout, {
-            responsive: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['sendDataToCloud', 'zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']
-        });
-        
-        console.log('Chart rendered successfully');
-        
-    } catch (e) {
-        console.error('Plotly error:', e);
-        container.innerHTML = `
-            <div class="error-display">
-                <i class="fas fa-exclamation-circle text-red-500 text-2xl mb-2"></i>
-                <p class="text-sm">Failed to render chart: ${e.message}</p>
-            </div>
-        `;
-    }
-}
+    };
 
-function refreshWidget(widgetId) {
-    location.reload();
-}
+    return traces[type] || traces['scatter'];
+},
+        createChartLayout(widget, type) {
+            const baseLayout = {
+                margin: { t: 30, r: 20, b: 40, l: 50 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                showlegend: type === 'pie'
+            };
 
-// SINGLE addWidget function - the improved version
-function addWidget() {
+            if (type === 'pie') {
+                return {
+                    ...baseLayout,
+                    legend: { orientation: 'h', y: -0.2 }
+                };
+            }
+
+            return {
+                ...baseLayout,
+                xaxis: { 
+                    tickangle: -45,
+                    gridcolor: '#e5e7eb'
+                },
+                yaxis: {
+                    gridcolor: '#e5e7eb'
+                }
+            };
+        },
+
+        formatNumber(num, config = {}) {
+            if (num === null || num === undefined) return '0';
+            
+            if (config.format === 'currency' || config.prefix === '$') {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(num);
+            }
+
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            }
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            
+            return num.toString();
+        },
+
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+
+        getCSRFToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+        },
+
+        showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        },
+
+        // Field management
+        async loadTableFields() {
+            const tableSelect = document.getElementById('widgetTable');
+            const selectedOption = tableSelect.options[tableSelect.selectedIndex];
+            
+            if (!selectedOption?.value) return;
+
+            try {
+                const schemaData = selectedOption.dataset.schema;
+                let schema = [];
+
+                if (schemaData && schemaData !== 'None') {
+                    schema = JSON.parse(schemaData);
+                }
+
+                this.populateFieldDropdowns(schema);
+            } catch (error) {
+                console.error('Error loading table fields:', error);
+            }
+        },
+
+        populateFieldDropdowns(schema) {
+            const valueField = document.getElementById('valueField');
+            const categoryField = document.getElementById('categoryField');
+            const dateField = document.getElementById('dateField');
+
+            // Clear existing options
+            valueField.innerHTML = '<option value="">Count (default)</option>';
+            categoryField.innerHTML = '<option value="">Select a field</option>';
+            dateField.innerHTML = '<option value="_created_at">Created Date (system)</option>';
+
+            // Add fields based on type
+            schema.forEach(field => {
+                const fieldName = field.name;
+                const fieldType = field.type;
+
+                // Numeric fields for value
+                if (['number', 'currency', 'percentage'].includes(fieldType)) {
+                    this.addOption(valueField, fieldName, `${fieldName} (${fieldType})`);
+                }
+
+                // All fields for category
+                this.addOption(categoryField, fieldName, `${fieldName} (${fieldType})`);
+
+                // Date fields for time series
+                if (['date', 'datetime'].includes(fieldType)) {
+                    this.addOption(dateField, fieldName, fieldName);
+                }
+            });
+        },
+
+        addOption(select, value, text) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = text;
+            select.appendChild(option);
+        },
+
+        updateFieldOptions() {
+            const widgetType = document.getElementById('widgetType').value;
+            
+            // Hide all containers
+            document.getElementById('valueFieldContainer').classList.add('hidden');
+            document.getElementById('categoryFieldContainer').classList.add('hidden');
+            document.getElementById('dateFieldContainer').classList.add('hidden');
+            
+            // Show relevant containers
+            const typeConfig = {
+                'metric': ['valueFieldContainer'],
+                'line_chart': ['valueFieldContainer', 'dateFieldContainer'],
+                'bar_chart': ['valueFieldContainer', 'categoryFieldContainer'],
+                'pie_chart': ['valueFieldContainer', 'categoryFieldContainer']
+            };
+
+            (typeConfig[widgetType] || []).forEach(id => {
+                document.getElementById(id)?.classList.remove('hidden');
+            });
+        },
+
+        async addWidget() {
     const widgetType = document.getElementById('widgetType').value;
     const tableId = document.getElementById('widgetTable').value;
     const title = document.getElementById('widgetTitle').value || 'New Widget';
-    
+
     if (!tableId) {
-        alert('Please select a table');
+        this.showNotification('Please select a table', 'error');
         return;
     }
-    
-    // Get selected field values
+
     const valueField = document.getElementById('valueField').value;
     const categoryField = document.getElementById('categoryField').value;
     const dateField = document.getElementById('dateField').value;
-    
-    // Build query_config based on widget type and selected fields
+
+    // Build query config based on widget type
     let queryConfig = {};
-    let vizConfig = {};
     
     switch(widgetType) {
         case 'metric':
-            if (valueField) {
-                queryConfig = {
-                    "aggregations": [
-                        {"type": "sum", "field": valueField, "name": "val"}
-                    ]
-                };
-            } else {
-                queryConfig = {
-                    "aggregations": [
-                        {"type": "count", "field": "id", "name": "val"}
-                    ]
-                };
-            }
-            vizConfig = {
-                "format": "number",
-                "prefix": "",
-                "suffix": ""
-            };
-            break;
-            
-        case 'table':
             queryConfig = {
-                "limit": 10
+                aggregations: [{
+                    type: valueField ? 'sum' : 'count',
+                    field: valueField || undefined,
+                    name: 'val'
+                }]
             };
-            vizConfig = {};
             break;
             
         case 'line_chart':
-            // Use the selected date field or default to '_created_at'
-            const groupByField = dateField || '_created_at';
-            if (valueField) {
-                queryConfig = {
-                    "aggregations": [
-                        {
-                            "type": "sum", 
-                            "field": valueField, 
-                            "group_by": groupByField, 
-                            "name": "val"
-                        }
-                    ]
-                };
-            } else {
-                queryConfig = {
-                    "aggregations": [
-                        {
-                            "type": "count", 
-                            "field": "id", 
-                            "group_by": groupByField, 
-                            "name": "val"
-                        }
-                    ]
-                };
-            }
-            vizConfig = {
-                "x_axis": groupByField,
-                "y_axis": "val",
-                "show_legend": true
+            queryConfig = {
+                aggregations: [{
+                    type: valueField ? 'sum' : 'count',
+                    field: valueField || undefined,
+                    group_by: dateField || '_created_at',
+                    name: 'val'
+                }]
             };
             break;
             
         case 'bar_chart':
         case 'pie_chart':
-            const groupField = categoryField || 'client';
-            if (valueField && categoryField) {
-                queryConfig = {
-                    "aggregations": [
-                        {
-                            "type": "sum", 
-                            "field": valueField, 
-                            "group_by": groupField, 
-                            "name": "val"
-                        }
-                    ]
-                };
-            } else {
-                queryConfig = {
-                    "aggregations": [
-                        {
-                            "type": "count", 
-                            "field": "id", 
-                            "group_by": groupField, 
-                            "name": "val"
-                        }
-                    ]
-                };
-            }
-            vizConfig = {
-                "x_axis": groupField,
-                "y_axis": "val",
-                "show_legend": widgetType === 'pie_chart'
+            // For bar/pie charts, we need a category field
+            const groupField = categoryField || 'product name'; // Default fallback
+            queryConfig = {
+                aggregations: [{
+                    type: valueField ? 'sum' : 'count',
+                    field: valueField || undefined,
+                    group_by: groupField,
+                    name: 'val'
+                }]
             };
             break;
+            
+        case 'table':
+            queryConfig = { limit: 10 };
+            break;
     }
-    
+
+    const vizConfig = {
+        metric: { format: 'number' },
+        line_chart: { x_axis: dateField || '_created_at', y_axis: 'val', show_legend: true },
+        bar_chart: { x_axis: categoryField, y_axis: 'val', show_legend: false },
+        pie_chart: { x_axis: categoryField, y_axis: 'val', show_legend: true },
+        table: {}
+    }[widgetType] || {};
+
     const widgetData = {
         widget_type: widgetType,
         table_id: tableId,
         title: title,
         query_config: queryConfig,
         viz_config: vizConfig,
-        position: {x: 0, y: 0, w: 4, h: 4}
+        position: { x: 0, y: 0, w: widgetType === 'table' ? 12 : 4, h: widgetType === 'table' ? 6 : 4 }
     };
-    
-    console.log('Adding widget with config:', JSON.stringify(widgetData, null, 2));
-    
-    const workspaceId = getWorkspaceId();
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token }}'
-    };
-    
-    if (workspaceId) {
-        headers['X-Workspace-ID'] = workspaceId;
-    }
-    
-    fetch(`/api/dashboards/{{ dashboard.id }}/widgets/`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(widgetData)
-    })
-    .then(async response => {
-        const responseData = await response.json();
-        console.log('Server response:', responseData);
-        
-        if (!response.ok) {
-            throw new Error(responseData.error || responseData.detail || `HTTP ${response.status}`);
-        }
-        return responseData;
-    })
-    .then(widget => {
-        console.log('Widget created successfully:', widget);
-        closeModal();
-        addWidgetToGrid(widget);
-        document.getElementById('widgetForm').reset();
-    })
-    .catch(error => {
-        console.error('Error adding widget:', error);
-        alert('Failed to add widget: ' + error.message);
-    });
-}
 
-function deleteWidget(widgetId) {
-    if (confirm('Delete this widget?')) {
-        fetch(`/api/widgets/${widgetId}/`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                const item = document.querySelector(`[data-id="${widgetId}"]`);
-                if (item && grid) {
-                    grid.removeWidget(item);
-                }
-            } else {
-                throw new Error('Failed to delete');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to delete widget');
-        });
-    }
-}
+    console.log('Creating widget with config:', widgetData);
 
-function saveLayout() {
-    if (!grid) return;
-    
-    const widgets = [];
-    grid.engine.nodes.forEach(node => {
-        widgets.push({
-            id: node.el.getAttribute('data-id'),
-            position: {
-                x: node.x,
-                y: node.y,
-                w: node.w,
-                h: node.h
-            }
-        });
-    });
-    
-    console.log('Saving layout:', widgets);
-    
-    const workspaceId = getWorkspaceId();
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token }}'
-    };
-    
-    if (workspaceId) {
-        headers['X-Workspace-ID'] = workspaceId;
-    }
-    
-    fetch(`/api/dashboards/{{ dashboard.id }}/update_layout/`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({widgets})
-    })
-    .then(async response => {
-        if (!response.ok) {
-            if (response.status === 404) {
-                // API not implemented yet - show user-friendly message
-                alert('Layout save feature is coming soon! Your layout is temporarily saved in your browser.');
-                return;
-            }
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Failed to save layout');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data) {
-            alert('Layout saved successfully!');
-        }
-    })
-    .catch(error => {
-        console.error('Error saving layout:', error);
-        alert('Failed to save layout: ' + error.message);
-    });
-}
-
-function toggleDebug() {
-    const panel = document.getElementById('debugPanel');
-    panel.classList.toggle('visible');
-    
-    if (panel.classList.contains('visible') && dashboardData) {
-        const content = document.getElementById('debugContent');
-        content.innerHTML = `
-            <div><strong>Dashboard:</strong> ${dashboardData.name}</div>
-            <div><strong>Widgets:</strong> ${dashboardData.widgets?.length || 0}</div>
-            <div class="mt-3"><strong>Raw Data:</strong></div>
-            <pre>${JSON.stringify(dashboardData, null, 2)}</pre>
-        `;
-    }
-}
-
-function closeModal() {
-    document.getElementById('widgetModal').classList.remove('visible');
-}
-
-// Function to load table fields when a table is selected
-function loadTableFields() {
-    const tableSelect = document.getElementById('widgetTable');
-    const selectedOption = tableSelect.options[tableSelect.selectedIndex];
-    
-    if (!selectedOption || !selectedOption.value) {
-        return;
-    }
-    
     try {
-        // Get the schema data attribute
-        const schemaData = selectedOption.dataset.schema;
-        console.log('Raw schema data:', schemaData);
-        
-        let schema = [];
-        if (schemaData && schemaData !== 'None' && schemaData !== '') {
-            try {
-                schema = JSON.parse(schemaData);
-            } catch (parseError) {
-                console.error('JSON parse error:', parseError);
-                // If it's a string representation, try to clean it
-                if (typeof schemaData === 'string') {
-                    // Remove any HTML entities or problematic characters
-                    const cleaned = schemaData.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-                    try {
-                        schema = JSON.parse(cleaned);
-                    } catch (e) {
-                        console.error('Failed to parse cleaned schema:', e);
-                        schema = [];
-                    }
-                }
-            }
-        }
-        
-        console.log('Parsed table schema:', schema);
-        
-        // Populate field dropdowns based on schema
-        const valueField = document.getElementById('valueField');
-        const categoryField = document.getElementById('categoryField');
-        const dateField = document.getElementById('dateField');
-        
-        // Clear existing options
-        valueField.innerHTML = '<option value="">Count (default)</option>';
-        categoryField.innerHTML = '<option value="">Select a field</option>';
-        dateField.innerHTML = '<option value="_created_at">Created Date (system)</option>';
-        
-        // Add fields based on type
-        if (Array.isArray(schema) && schema.length > 0) {
-            schema.forEach(field => {
-                const fieldName = field.name;
-                const fieldType = field.type;
-                
-                // Numeric fields for value field
-                if (['number', 'currency', 'percentage'].includes(fieldType)) {
-                    const option = document.createElement('option');
-                    option.value = fieldName;
-                    option.textContent = `${fieldName} (${fieldType})`;
-                    valueField.appendChild(option);
-                }
-                
-                // All fields can be categories (for count-based charts)
-                const catOption = document.createElement('option');
-                catOption.value = fieldName;
-                catOption.textContent = `${fieldName} (${fieldType})`;
-                categoryField.appendChild(catOption);
-                
-                // Date fields for time series
-                if (['date', 'datetime'].includes(fieldType)) {
-                    const dateOption = document.createElement('option');
-                    dateOption.value = fieldName;
-                    dateOption.textContent = fieldName;
-                    dateField.appendChild(dateOption);
-                }
-            });
-        } else {
-            console.log('No schema fields found, using defaults');
-            // Add default options based on your data structure
-            const defaultFields = [
-                { name: 'client', type: 'text' },
-                { name: 'product', type: 'text' },
-                { name: 'quantity', type: 'number' },
-                { name: 'energy', type: 'number' },
-                { name: 'workforce', type: 'number' },
-                { name: 'water consumption', type: 'number' }
-            ];
-            
-            defaultFields.forEach(field => {
-                const fieldName = field.name;
-                const fieldType = field.type;
-                
-                if (['number'].includes(fieldType)) {
-                    const option = document.createElement('option');
-                    option.value = fieldName;
-                    option.textContent = `${fieldName} (${fieldType})`;
-                    valueField.appendChild(option);
-                }
-                
-                const catOption = document.createElement('option');
-                catOption.value = fieldName;
-                catOption.textContent = `${fieldName} (${fieldType})`;
-                categoryField.appendChild(catOption);
-            });
-        }
-        
-    } catch (e) {
-        console.error('Error in loadTableFields:', e);
-    }
-    
-    // Update field visibility based on widget type
-    updateFieldOptions();
-}
+        const response = await fetch(`/api/dashboards/{{ dashboard.id }}/widgets/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': this.getCSRFToken()
+            },
+            body: JSON.stringify(widgetData)
+        });
 
-// Function to show/hide field containers based on widget type
-function updateFieldOptions() {
-    const widgetType = document.getElementById('widgetType').value;
-    
-    // Hide all containers first
-    document.getElementById('valueFieldContainer').classList.add('hidden');
-    document.getElementById('categoryFieldContainer').classList.add('hidden');
-    document.getElementById('dateFieldContainer').classList.add('hidden');
-    
-    // Show relevant containers
-    switch(widgetType) {
-        case 'metric':
-            document.getElementById('valueFieldContainer').classList.remove('hidden');
-            break;
-            
-        case 'table':
-            // Table shows all data, no field selection needed
-            break;
-            
-        case 'line_chart':
-            document.getElementById('valueFieldContainer').classList.remove('hidden');
-            document.getElementById('dateFieldContainer').classList.remove('hidden');
-            break;
-            
-        case 'bar_chart':
-        case 'pie_chart':
-            document.getElementById('valueFieldContainer').classList.remove('hidden');
-            document.getElementById('categoryFieldContainer').classList.remove('hidden');
-            break;
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create widget');
+        }
+
+        const widget = await response.json();
+        this.closeModal('widgetModal');
+        
+        // Add widget to dashboard
+        if (window.dashboard) {
+            window.dashboard.addWidget(widget);
+        }
+        
+        document.getElementById('widgetForm').reset();
+        this.showNotification('Widget created successfully');
+        
+    } catch (error) {
+        console.error('Error adding widget:', error);
+        this.showNotification(error.message, 'error');
     }
-}
+},
+        buildQueryConfig(type, valueField, categoryField, dateField) {
+            const configs = {
+                'metric': {
+                    aggregations: valueField ? 
+                        [{ type: 'sum', field: valueField, name: 'val' }] :
+                        [{ type: 'count', name: 'val' }]
+                },
+                'table': { limit: 10 },
+                'line_chart': {
+                    aggregations: [{
+                        type: valueField ? 'sum' : 'count',
+                        field: valueField || undefined,
+                        group_by: dateField || '_created_at',
+                        name: 'val'
+                    }]
+                },
+                'bar_chart': {
+                    aggregations: [{
+                        type: valueField ? 'sum' : 'count',
+                        field: valueField || undefined,
+                        group_by: categoryField,
+                        name: 'val'
+                    }]
+                },
+                'pie_chart': {
+                    aggregations: [{
+                        type: valueField ? 'sum' : 'count',
+                        field: valueField || undefined,
+                        group_by: categoryField,
+                        name: 'val'
+                    }]
+                }
+            };
+
+            return configs[type] || {};
+        },
+
+        buildVizConfig(type, categoryField, dateField) {
+            const base = {
+                line_chart: { x_axis: dateField || '_created_at', y_axis: 'val', show_legend: true },
+                bar_chart: { x_axis: categoryField, y_axis: 'val', show_legend: false },
+                pie_chart: { x_axis: categoryField, y_axis: 'val', show_legend: true }
+            };
+
+            return base[type] || {};
+        }
+    };
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        // Get dashboard ID from the page
+        const dashboardId = '{{ dashboard.id }}';
+        
+        // Initialize dashboard
+        window.dashboard = new DashboardCore(dashboardId);
+        
+        // Make UI methods globally available
+        window.DashboardUI = DashboardUI;
+        
+        // Setup modal close on outside click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    DashboardUI.closeModal(modal.id);
+                }
+            });
+        });
+    });
+})();
 </script>
 {% endblock %}

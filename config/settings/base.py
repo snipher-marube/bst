@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'channels',
+    'daphne',
     'django.contrib.staticfiles',
     'django.contrib.sites',
     'django.contrib.humanize',
@@ -64,6 +66,7 @@ INSTALLED_APPS = [
     'apps.templates_app',
     'apps.workspaces',
     'apps.newsletter',
+    'apps.insights',
 
 
 ]
@@ -102,6 +105,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# ASGI configuration
+ASGI_APPLICATION = 'config.asgi.application'
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -298,4 +304,18 @@ REST_FRAMEWORK = {
         'anon': '100/day',
         'user': '1000/hour'
     }
+}
+
+# Channel layers (using Redis)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],  # Redis default
+            # For production with password:
+            # "hosts": [('redis-host', 6379, {
+            #    'password': 'your-redis-password'
+            # })],
+        },
+    },
 }

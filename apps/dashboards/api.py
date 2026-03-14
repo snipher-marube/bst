@@ -141,44 +141,106 @@ class DashboardLayoutAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
     
     def post(self, request, dashboard_id):
-        """Update widget positions/layout"""
+        """Add a new widget to a dashboard"""
         try:
+            print("\n" + "="*50)
+            print("DEBUG: Creating new widget")
+            print(f"Dashboard ID: {dashboard_id}")
+            print(f"User: {request.user.email}")
+            print(f"Request data: {request.data}")
+        
+            # Get the dashboard using current workspace from user
             workspace = request.user.current_workspace
             if not workspace:
+                print("ERROR: No active workspace found")
                 return Response(
                     {'error': 'No active workspace found'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
+        
+            print(f"Workspace: {workspace.name} (ID: {workspace.id})")
+        
             dashboard = get_object_or_404(
                 Dashboard, 
                 id=dashboard_id, 
                 workspace=workspace,
                 is_active=True
             )
+            print(f"Dashboard found: {dashboard.name}")
+        
+            # Get the table if specified
+            table_id = request.data.get('table_id')
+            table = None
+            if table_id:
+                table = get_object_or_404(
+                    DataTable,
+                    id=table_id,
+                    workspace=workspace,
+                    is_active=True
+                )
+                print(f"Table found: {table.name} with {table.record_count} records")
+        
+            # Prepare query_config based on widget type
+            widget_type = request.data.get('widget_type', 'metric')
+            query_config = request.data.get('query_config', {})
+        
+            # Fix empty group_by for pie/bar charts
+            if widget_type in ['pie_chart', 'bar_chart']:
+                aggregations = query_config.get('aggregations', [])
+                for agg in aggregations:
+                    if not agg.get('group_by'):
+                        # If no group_by, use a default text field from schema
+                        if table and table.schema:
+                            # Find first text field to group by
+                            text_fields = [f['name'] for f in table.schema if f['type'] == 'text']
+                            if text_fields:
+                                agg['group_by'] = text_fields[0]
+                                print(f"Auto-set group_by to: {text_fields[0]}")
+        
+            # Create widget data
+            widget_data = {
+                'dashboard': dashboard.id,
+                'widget_type': widget_type,
+                'title': request.data.get('title', 'New Widget'),
+                'table': table.id if table else None,
+                'query_config': query_config,
+                'viz_config': request.data.get('viz_config', {}),
+                'position': request.data.get('position', {'x': 0, 'y': 0, 'w': 4, 'h': 4})
+            }
+        
+            print(f"Widget data to create: {widget_data}")
+        
+            # Create widget
+            serializer = WidgetSerializer(data=widget_data, context={'request': request})
+            if serializer.is_valid():
+                widget = serializer.save()
+                print(f"Widget created with ID: {widget.id}")
             
-            widgets_data = request.data.get('widgets', [])
+                # Test the widget data immediately
+                test_data = widget.get_data(limit=10)
+                print(f"Test data from new widget: {test_data}")
             
-            with transaction.atomic():
-                for widget_data in widgets_data:
-                    widget_id = widget_data.get('id')
-                    position = widget_data.get('position', {})
-                    
-                    if widget_id and position:
-                        Widget.objects.filter(
-                            id=widget_id,
-                            dashboard=dashboard
-                        ).update(position=position)
+                # Get the serialized widget with data
+                response_serializer = WidgetSerializer(widget, context={'request': request})
+                response_data = response_serializer.data
+                print(f"Response data widget_data: {response_data.get('widget_data')}")
             
-            logger.info(f"Layout updated for dashboard {dashboard_id} by {request.user.email}")
-            return Response({'status': 'success'}, status=status.HTTP_200_OK)
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            else:
+                print(f"Widget validation failed: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            logger.error(f"Error updating layout: {str(e)}", exc_info=True)
+            print(f"ERROR creating widget: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return Response(
-                {'error': f'Failed to update layout: {str(e)}'},
+                {'error': f'Failed to create widget: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+     
+   
+
 class WidgetDataAPIView(APIView):
     """
     API endpoint for refreshing widget data
