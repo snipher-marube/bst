@@ -600,12 +600,6 @@
   .h-full {
     height: 100%;
   }
-  .max-h-40 {
-    max-height: calc(var(--spacing) * 40);
-  }
-  .min-h-0 {
-    min-height: calc(var(--spacing) * 0);
-  }
   .min-h-screen {
     min-height: 100vh;
   }
@@ -767,9 +761,6 @@
   }
   .animate-spin {
     animation: var(--animate-spin);
-  }
-  .cursor-move {
-    cursor: move;
   }
   .cursor-not-allowed {
     cursor: not-allowed;
@@ -1108,9 +1099,6 @@
   }
   .bg-\[\#f68712\]\/10 {
     background-color: color-mix(in oklab, #f68712 10%, transparent);
-  }
-  .bg-black {
-    background-color: var(--color-black);
   }
   .bg-black\/50 {
     background-color: color-mix(in srgb, #000 50%, transparent);
@@ -1488,9 +1476,6 @@
   }
   .text-blue-400 {
     color: var(--color-blue-400);
-  }
-  .text-blue-500 {
-    color: var(--color-blue-500);
   }
   .text-blue-600 {
     color: var(--color-blue-600);
