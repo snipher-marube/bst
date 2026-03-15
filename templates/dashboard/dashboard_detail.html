@@ -791,8 +791,17 @@
         }
 
         handleDashboardUpdate(data) {
-            if (data.message) {
+            if (data && data.message) {
                 DashboardUI.showNotification(data.message);
+            }
+            // If the server sent dashboard state with widgets, render them.
+            // This acts as a fallback when the initial page-load serialization
+            // fails to include persisted widgets.
+            if (data && Array.isArray(data.widgets) && data.widgets.length > 0) {
+                if (!this.data.widgets?.length) {
+                    this.data.widgets = data.widgets;
+                    this.renderWidgets();
+                }
             }
         }
 

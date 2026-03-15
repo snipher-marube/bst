@@ -1,6 +1,7 @@
 import json
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from django.db import connection
 from django.core.cache import cache
 from django.utils import timezone
@@ -41,7 +42,46 @@ class QueryEngine:
         key_str = json.dumps(key_data, sort_keys=True, cls=DjangoJSONEncoder)
         cache_key = hashlib.md5(key_str.encode()).hexdigest()
         return f"widget_query:{cache_key}"
-    
+
+    def _apply_filters(self, queryset, filters):
+        """Apply query filters to a Record queryset based on filter config list.
+
+        Each filter entry should have:
+          - field: the JSON data field name to filter on
+          - operator: 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contains', 'startswith'
+          - value: the value to compare against
+        """
+        for f in filters or []:
+            field = f.get('field')
+            operator = f.get('operator', 'eq')
+            value = f.get('value')
+
+            if not field:
+                continue
+
+            json_path = f'data__{field}'
+
+            if operator == 'eq':
+                queryset = queryset.filter(**{json_path: value})
+            elif operator == 'ne':
+                queryset = queryset.exclude(**{json_path: value})
+            elif operator == 'gt':
+                queryset = queryset.filter(**{f'{json_path}__gt': value})
+            elif operator == 'gte':
+                queryset = queryset.filter(**{f'{json_path}__gte': value})
+            elif operator == 'lt':
+                queryset = queryset.filter(**{f'{json_path}__lt': value})
+            elif operator == 'lte':
+                queryset = queryset.filter(**{f'{json_path}__lte': value})
+            elif operator == 'contains':
+                queryset = queryset.filter(**{f'{json_path}__icontains': value})
+            elif operator == 'startswith':
+                queryset = queryset.filter(**{f'{json_path}__istartswith': value})
+            else:
+                logger.warning(f"Unknown filter operator: {operator}")
+
+        return queryset
+
     def _execute_table_query(self, widget, limit):
         """Execute table widget query - return raw records"""
         from .models import Record
@@ -166,9 +206,7 @@ class QueryEngine:
     def _execute_chart_query(self, widget, limit):
         """Execute chart widget query - return properly formatted data for charts"""
         from .models import Record
-        import pandas as pd
         from collections import defaultdict
-        from datetime import datetime
     
         config = widget.query_config or {}
         aggregations = config.get('aggregations', [])
@@ -207,12 +245,12 @@ class QueryEngine:
                     for record in records:
                         record_data = record['data'] or {}
                     
-                        # Get group value
-                        if group_by == 'created_at' or group_by == '_created_at':
-                            # Group by date from created_at field
-                            group_value = record['created_at'].date().isoformat()
-                        elif group_by == 'created_at_date':
-                            group_value = record['created_at'].date().isoformat()
+                        # Group by date extracted from timestamp fields
+                        if group_by in ('created_at', '_created_at', 'created_at_date'):
+                            created_at = record['created_at']
+                            group_value = created_at.date().isoformat() if created_at else None
+                            if group_value is None:
+                                continue
                         elif group_by in record_data:
                             group_value = str(record_data[group_by])
                         else:
@@ -247,6 +285,8 @@ class QueryEngine:
                     elif field:
                         total = 0
                         count = 0
+                        min_val = None
+                        max_val = None
                         for record in records:
                             record_data = record['data'] or {}
                             if field in record_data:
@@ -258,10 +298,10 @@ class QueryEngine:
                                         total += val
                                         count += 1
                                     elif agg_type == 'min':
-                                        if 'min' not in locals() or val < min_val:
+                                        if min_val is None or val < min_val:
                                             min_val = val
                                     elif agg_type == 'max':
-                                        if 'max' not in locals() or val > max_val:
+                                        if max_val is None or val > max_val:
                                             max_val = val
                                 except (ValueError, TypeError):
                                     pass
@@ -269,11 +309,11 @@ class QueryEngine:
                         if agg_type == 'sum':
                             result[name] = total
                         elif agg_type == 'avg':
-                            result[name] = total / count if count > 0 else 0
+                            result[name] = total / count if count > 0 else None
                         elif agg_type == 'min':
-                            result[name] = min_val if 'min_val' in locals() else 0
+                            result[name] = min_val  # None when no numeric values exist
                         elif agg_type == 'max':
-                            result[name] = max_val if 'max_val' in locals() else 0
+                            result[name] = max_val  # None when no numeric values exist
                 
             except Exception as e:
                 logger.error(f"Aggregation error: {str(e)}")

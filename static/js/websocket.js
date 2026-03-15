@@ -10,6 +10,7 @@ class RealtimeDashboard {
         this.pingInterval = null;
         this.messageHandlers = new Map();
         this.debug = options.debug || false;
+        this.options = options;
         
         this.init();
     }
@@ -31,6 +32,9 @@ class RealtimeDashboard {
             this.reconnectAttempts = 0;
             this.updateConnectionStatus(true);
             this.trigger('connected');
+            if (this.options.onConnected) {
+                this.options.onConnected();
+            }
         };
         
         this.ws.onmessage = (event) => {
@@ -46,6 +50,9 @@ class RealtimeDashboard {
             this.log('WebSocket disconnected', event.code, event.reason);
             this.updateConnectionStatus(false);
             this.trigger('disconnected', { code: event.code });
+            if (this.options.onDisconnected) {
+                this.options.onDisconnected();
+            }
             this.reconnect();
         };
         
@@ -95,6 +102,16 @@ class RealtimeDashboard {
         this.on('widget_update', (data) => {
             this.log('Widget updated:', data.widget_id);
             this.updateWidget(data.widget_id, data.data);
+            if (this.options.onWidgetUpdate) {
+                this.options.onWidgetUpdate(data.widget_id, data.data);
+            }
+        });
+        
+        this.on('dashboard_update', (data) => {
+            this.log('Dashboard state received');
+            if (this.options.onDashboardUpdate) {
+                this.options.onDashboardUpdate(data.data);
+            }
         });
         
         this.on('layout_update', (data) => {
@@ -264,6 +281,10 @@ class RealtimeDashboard {
         }, 3000);
     }
     
+    isConnected() {
+        return this.ws && this.ws.readyState === WebSocket.OPEN;
+    }
+
     trigger(event, data) {
         const customEvent = new CustomEvent(`dashboard:${event}`, {
             detail: data

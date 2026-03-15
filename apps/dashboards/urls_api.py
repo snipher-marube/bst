@@ -29,4 +29,9 @@ urlpatterns = [
     path('dashboards/', 
          api.DashboardListAPIView.as_view(), 
          name='api-dashboards'),
+
+    # Single dashboard detail (including widgets)
+    path('dashboards/<uuid:dashboard_id>/',
+         api.DashboardDetailAPIView.as_view(),
+         name='api-dashboard-detail'),
 ]

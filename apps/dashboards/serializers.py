@@ -69,8 +69,12 @@ class DashboardSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'workspace', 'public_uuid', 'created_at', 'updated_at']
     
     def get_widgets(self, obj):
-        widgets = obj.widgets.all()
-        return WidgetSerializer(widgets, many=True, context=self.context).data
+        try:
+            widgets = obj.widgets.all()
+            return WidgetSerializer(widgets, many=True, context=self.context).data
+        except Exception as e:
+            logger.error(f"Error serializing widgets for dashboard {obj.id}: {e}", exc_info=True)
+            return []
 
 
 class WidgetSerializer(serializers.ModelSerializer):

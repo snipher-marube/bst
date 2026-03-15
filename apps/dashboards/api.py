@@ -307,3 +307,30 @@ class DashboardListAPIView(APIView):
                 {'error': f'Failed to list dashboards: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class DashboardDetailAPIView(APIView):
+    """
+    API endpoint for retrieving a single dashboard with its widgets
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, dashboard_id):
+        """Get a single dashboard including all its widgets"""
+        try:
+            workspace = request.user.current_workspace
+            dashboard = get_object_or_404(
+                Dashboard,
+                id=dashboard_id,
+                workspace=workspace,
+                is_active=True,
+            )
+            serializer = DashboardSerializer(dashboard, context={'request': request})
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error fetching dashboard {dashboard_id}: {str(e)}", exc_info=True)
+            return Response(
+                {'error': f'Failed to fetch dashboard: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
