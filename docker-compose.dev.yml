@@ -1,0 +1,83 @@
+# docker-compose.dev.yml
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: analyticsmeta
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics_network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - analytics_network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - analytics_network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: celery -A config worker -l info --uid=nobody --gid=nogroup
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+    depends_on:
+      - web
+      - redis
+      - postgres
+    networks:
+      - analytics_network
+
+volumes:
+  postgres_data:
+
+networks:
+  analytics_network:
+    driver: bridge
