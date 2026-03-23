@@ -141,10 +141,10 @@ SITE_NAME=AnalyticsMeta
 
 ```bash
 # Build and start all services
-docker-compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 
 # Or run in detached mode (background)
-docker-compose -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 This will start:
@@ -159,13 +159,13 @@ In a new terminal, run:
 
 ```bash
 # Run migrations
-docker-compose -f docker-compose.dev.yml exec web python manage.py migrate
+docker compose -f docker-compose.dev.yml exec web python manage.py migrate
 
 # Create a superuser (admin account)
-docker-compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
+docker compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
 
 # Collect static files
-docker-compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput
+docker compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput
 ```
 
 #### 5. Access the Application
@@ -180,66 +180,66 @@ Open your browser and navigate to:
 #### Container Management
 ```bash
 # Start all services
-docker-compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up -d
 
 # Stop all services
-docker-compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.dev.yml down
 
 # Stop and remove volumes (deletes database data)
-docker-compose -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.dev.yml down -v
 
 # Rebuild after changes
-docker-compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 
 # View running containers
-docker-compose -f docker-compose.dev.yml ps
+docker compose -f docker-compose.dev.yml ps
 
 # View logs
-docker-compose -f docker-compose.dev.yml logs -f
+docker compose -f docker-compose.dev.yml logs -f
 
 # View specific service logs
-docker-compose -f docker-compose.dev.yml logs -f web
-docker-compose -f docker-compose.dev.yml logs -f postgres
-docker-compose -f docker-compose.dev.yml logs -f redis
+docker compose -f docker-compose.dev.yml logs -f web
+docker compose -f docker-compose.dev.yml logs -f postgres
+docker compose -f docker-compose.dev.yml logs -f redis
 ```
 
 #### Running Management Commands
 ```bash
 # Django shell
-docker-compose -f docker-compose.dev.yml exec web python manage.py shell
+docker compose -f docker-compose.dev.yml exec web python manage.py shell
 
 # Django shell_plus (if django-extensions is installed)
-docker-compose -f docker-compose.dev.yml exec web python manage.py shell_plus
+docker compose -f docker-compose.dev.yml exec web python manage.py shell_plus
 
 # Check migrations status
-docker-compose -f docker-compose.dev.yml exec web python manage.py showmigrations
+docker compose -f docker-compose.dev.yml exec web python manage.py showmigrations
 
 # Create new app
-docker-compose -f docker-compose.dev.yml exec web python manage.py startapp app_name
+docker compose -f docker-compose.dev.yml exec web python manage.py startapp app_name
 
 # Run tests
-docker-compose -f docker-compose.dev.yml exec web python manage.py test
+docker compose -f docker-compose.dev.yml exec web python manage.py test
 ```
 
 #### Database Operations
 ```bash
 # Access PostgreSQL directly
-docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -d analyticsmeta
+docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d analyticsmeta
 
 # Backup database
-docker-compose -f docker-compose.dev.yml exec postgres pg_dump -U postgres analyticsmeta > backup.sql
+docker compose -f docker-compose.dev.yml exec postgres pg_dump -U postgres analyticsmeta > backup.sql
 
 # Restore database
-cat backup.sql | docker-compose -f docker-compose.dev.yml exec -T postgres psql -U postgres analyticsmeta
+cat backup.sql | docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres analyticsmeta
 ```
 
 #### Redis Commands
 ```bash
 # Access Redis CLI
-docker-compose -f docker-compose.dev.yml exec redis redis-cli
+docker compose -f docker-compose.dev.yml exec redis redis-cli
 
 # Monitor Redis keys
-docker-compose -f docker-compose.dev.yml exec redis redis-cli MONITOR
+docker compose -f docker-compose.dev.yml exec redis redis-cli MONITOR
 ```
 
 ### Docker Architecture
