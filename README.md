@@ -1,4 +1,3 @@
-```markdown
 # AnalyticsMeta
 
 A powerful business intelligence and analytics platform built with Django, enabling teams to create custom data tables, build interactive dashboards, and gain insights from their data.
