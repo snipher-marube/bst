@@ -1,11 +1,17 @@
 # Dockerfile.dev
 FROM python:3.14-slim-bookworm
 
+# Build argument for environment
+ARG ENVIRONMENT=development
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     curl \
+    postgresql-client \
+    redis-tools \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -25,12 +31,34 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install project in editable mode
 RUN uv pip install -e .
 
+# Install development tools only in development
+RUN if [ "$ENVIRONMENT" = "development" ]; then \
+    uv pip install ipython django-extensions psutil debugpy; \
+    fi
+
 # Copy the rest of the code
 COPY . .
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/logs /app/staticfiles /app/static/media && \
+    chmod -R 777 /app/logs /app/staticfiles /app/static/media
+
+# Create non-root user for production only
+# In development, we'll run as root for easier debugging
+RUN if [ "$ENVIRONMENT" = "production" ]; then \
+    adduser --disabled-password --gecos '' appuser && \
+    chown -R appuser:appuser /app; \
+    fi
 
 # Set default settings
 ENV DJANGO_SETTINGS_MODULE=config.settings.development
 
 EXPOSE 8000
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/health/ || exit 1
+
+# Only switch user in production, keep root in development for better debugging
+# In development, we'll handle user switching via docker-compose if needed
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
