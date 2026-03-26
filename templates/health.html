@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Check - AnalyticsMeta</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .title {
+            font-size: 2.5rem;
+            color: white;
+            margin-bottom: 10px;
+        }
+        
+        .timestamp {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+        }
+        
+        .status-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .service-name {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .status-healthy {
+            background: #10b981;
+            color: white;
+        }
+        
+        .status-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .status-unhealthy {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .status-unknown {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .status-details {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .error-message {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        
+        .system-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .system-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .system-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .info-label {
+            font-weight: 500;
+            color: #666;
+        }
+        
+        .info-value {
+            color: #333;
+            font-family: monospace;
+        }
+        
+        .overall-status {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .overall-badge {
+            display: inline-block;
+            padding: 10px 30px;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 500;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        @media (max-width: 768px) {
+            .title {
+                font-size: 1.8rem;
+            }
+            
+            .system-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">🔍 Health Check</h1>
+            <p class="timestamp">Checked at: {{ timestamp|default:"Not available" }}</p>
+        </div>
+        
+        <div class="overall-status">
+            <div class="overall-badge status-{{ overall_status }}">
+                🚦 System Status: {{ overall_status|upper }}
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-header">
+                <span class="service-name">📊 Database</span>
+                <span class="status-badge status-{{ database_status }}">
+                    {{ database_status|upper }}
+                </span>
+            </div>
+            {% if database_error %}
+                <div class="error-message">
+                    <strong>Error:</strong> {{ database_error }}
+                </div>
+            {% else %}
+                <div class="status-details">✓ Database connection is healthy</div>
+            {% endif %}
+        </div>
+        
+        <div class="status-card">
+            <div class="status-header">
+                <span class="service-name">⚡ Redis / Cache</span>
+                <span class="status-badge status-{{ cache_status }}">
+                    {{ cache_status|upper }}
+                </span>
+            </div>
+            {% if cache_error %}
+                <div class="error-message">
+                    <strong>Error:</strong> {{ cache_error }}
+                </div>
+            {% else %}
+                <div class="status-details">✓ Cache is working properly</div>
+            {% endif %}
+        </div>
+        
+        <div class="status-card">
+            <div class="status-header">
+                <span class="service-name">🔴 Redis Direct Connection</span>
+                <span class="status-badge status-{{ redis_status }}">
+                    {{ redis_status|upper }}
+                </span>
+            </div>
+            {% if redis_error %}
+                <div class="error-message">
+                    <strong>Error:</strong> {{ redis_error }}
+                </div>
+            {% else %}
+                <div class="status-details">
+                    ✓ Connected to Redis at: {{ redis_url|default:"localhost:6379" }}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div class="status-card">
+            <div class="status-header">
+                <span class="service-name">🐍 Celery</span>
+                <span class="status-badge status-{{ celery_status }}">
+                    {{ celery_status|upper }}
+                </span>
+            </div>
+            {% if celery_error %}
+                <div class="error-message">
+                    <strong>Error:</strong> {{ celery_error }}
+                </div>
+            {% endif %}
+            {% if celery_workers %}
+                <div class="status-details">
+                    ✓ Active workers: {{ celery_workers }}
+                </div>
+            {% endif %}
+            {% if celery_message %}
+                <div class="status-details">
+                    ⚠ {{ celery_message }}
+                </div>
+            {% endif %}
+        </div>
+        
+        <h3 style="color: white; margin: 20px 0 15px 0;">🖥️ System Information</h3>
+        <div class="system-grid">
+            <div class="system-card">
+                <h3>Python Environment</h3>
+                <div class="info-row">
+                    <span class="info-label">Python Version:</span>
+                    <span class="info-value">{{ system_info.python_version|default:"N/A" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Django Version:</span>
+                    <span class="info-value">{{ system_info.django_version|default:"N/A" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Environment:</span>
+                    <span class="info-value">{{ system_info.environment|default:"N/A" }}</span>
+                </div>
+            </div>
+            
+            <div class="system-card">
+                <h3>Platform</h3>
+                <div class="info-row">
+                    <span class="info-label">Operating System:</span>
+                    <span class="info-value">{{ system_info.platform|default:"N/A" }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Django Settings:</span>
+                    <span class="info-value">{{ system_info.environment|default:"N/A" }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <button class="refresh-btn" onclick="window.location.reload()">
+        🔄 Refresh Health Check
+    </button>
+    
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(function() {
+            window.location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

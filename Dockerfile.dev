@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     redis-tools \
     vim \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -28,20 +29,36 @@ RUN uv venv /opt/venv
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install project in editable mode
+# Install project in editable mode with all dependencies
 RUN uv pip install -e .
 
 # Install development tools only in development
 RUN if [ "$ENVIRONMENT" = "development" ]; then \
-    uv pip install ipython django-extensions psutil debugpy; \
+    uv pip install ipython django-extensions psutil debugpy django-redis; \
     fi
 
 # Copy the rest of the code
 COPY . .
 
 # Create necessary directories with proper permissions
-RUN mkdir -p /app/logs /app/staticfiles /app/static/media && \
+RUN mkdir -p /app/logs /app/staticfiles /app/static/media /app/staticfiles/admin && \
     chmod -R 777 /app/logs /app/staticfiles /app/static/media
+
+# Create a script to wait for services
+RUN echo '#!/bin/bash\n\
+echo "Waiting for postgres..."\n\
+while ! nc -z postgres 5432; do\n\
+  sleep 1\n\
+done\n\
+echo "PostgreSQL started"\n\
+\n\
+echo "Waiting for redis..."\n\
+while ! nc -z redis 6379; do\n\
+  sleep 1\n\
+done\n\
+echo "Redis started"\n\
+\n\
+exec "$@"\n' > /app/wait-for-services.sh && chmod +x /app/wait-for-services.sh
 
 # Create non-root user for production only
 # In development, we'll run as root for easier debugging
@@ -58,6 +75,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health/ || exit 1
+
+# Use wait script as entrypoint
+ENTRYPOINT ["/app/wait-for-services.sh"]
 
 # Only switch user in production, keep root in development for better debugging
 # In development, we'll handle user switching via docker-compose if needed

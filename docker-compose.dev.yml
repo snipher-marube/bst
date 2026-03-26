@@ -1,4 +1,3 @@
-# docker-compose.dev.yml
 services:
   postgres:
     image: postgres:18-alpine
@@ -22,6 +21,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6380:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -29,6 +29,8 @@ services:
       retries: 5
     networks:
       - analytics_network
+    volumes:
+      - redis_data:/data
 
   web:
     build:
@@ -43,10 +45,26 @@ services:
       - DEBUG=1
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SECRET_KEY=dev-secret-key
       - DJANGO_SETTINGS_MODULE=config.settings.development
+      - PG_DATABASE_NAME_DEV=analyticsmeta
+      - PG_DATABASE_USER_DEV=postgres
+      - PG_DATABASE_PASSWORD_DEV=postgres
+      - PG_DATABASE_HOST_DEV=postgres
+      - PG_DATABASE_PORT_DEV=5432
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID:-}
+      - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET:-}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER:-}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
+      - SUPPORT_EMAIL=${SUPPORT_EMAIL:-support@businessight.com}
+      - SALES_EMAIL=${SALES_EMAIL:-sales@businessight.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,29 +72,78 @@ services:
         condition: service_healthy
     networks:
       - analytics_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/readiness/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    command: celery -A config worker -l info --uid=nobody --gid=nogroup
+    command: celery -A config worker -l info --concurrency=4 --max-tasks-per-child=1000
     volumes:
       - .:/app
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DJANGO_SETTINGS_MODULE=config.settings.development
+      - PG_DATABASE_NAME_DEV=analyticsmeta
+      - PG_DATABASE_USER_DEV=postgres
+      - PG_DATABASE_PASSWORD_DEV=postgres
+      - PG_DATABASE_HOST_DEV=postgres
+      - PG_DATABASE_PORT_DEV=5432
+      - SECRET_KEY=dev-secret-key
     depends_on:
-      - web
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - analytics_network
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: celery -A config beat -l info
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - SECRET_KEY=dev-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     networks:
       - analytics_network
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   analytics_network:

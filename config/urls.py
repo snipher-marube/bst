@@ -20,16 +20,6 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
-try:
-    from apps.core.views import health_check
-except ImportError:
-    # Fallback health check if view doesn't exist
-    from django.http import JsonResponse
-    from django.views.decorators.csrf import csrf_exempt
-    
-    @csrf_exempt
-    def health_check(request):
-        return JsonResponse({"status": "healthy", "message": "Server is running"})
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -41,22 +31,7 @@ urlpatterns = [
     path('api/', include('apps.dashboards.urls_api')),
 ]
 
-# Debug Toolbar URLs (only in development and not in management commands)
-if settings.DEBUG:
-    # Check if we're not running a management command
-    IS_MANAGEMENT_COMMAND = len(sys.argv) > 1 and sys.argv[1] in [
-        'celery', 'migrate', 'makemigrations', 'shell', 'shell_plus', 'test'
-    ]
-    
-    if not IS_MANAGEMENT_COMMAND:
-        try:
-            import debug_toolbar
-            urlpatterns = [
-                path('__debug__/', include(debug_toolbar.urls)),
-            ] + urlpatterns
-            print("🔧 Debug toolbar URLs added")
-        except ImportError:
-            pass
+
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

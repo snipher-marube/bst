@@ -18,4 +18,10 @@ urlpatterns = [
     
     # SEO
     path('sitemap.xml/', views.sitemap_view, name='sitemap'),
+
+     # Health check endpoints
+    path('health/', views.health_check_html, name='health_html'),
+    path('health/json/', views.health_check, name='health_json'),
+    path('health/liveness/', views.liveness_probe, name='liveness'),
+    path('health/readiness/', views.readiness_probe, name='readiness'),
 ]

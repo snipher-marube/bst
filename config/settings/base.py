@@ -12,9 +12,10 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from decouple import config
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().resolve().parent.parent
 
 
 # Quick-start development settings - unsuitable for production
@@ -67,8 +68,6 @@ INSTALLED_APPS = [
     'apps.workspaces',
     'apps.newsletter',
     'apps.insights',
-
-
 ]
 
 MIDDLEWARE = [
@@ -262,22 +261,45 @@ SITE_URL = config('SITE_URL', default='http://localhost:8000')
 NEWSLETTER_CONFIRM_REDIRECT = '/'  # Where to redirect after confirmation
 DISPOSABLE_EMAIL_DOMAINS = ['tempmail.com', 'throwaway.com']  # Optional
 
-# Rate limiting (requires django-ratelimit)
-RATELIMIT_ENABLE = True
-RATELIMIT_USE_CACHE = 'default'
+# Redis Configuration - Use environment variables for flexibility
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
+REDIS_DB = int(os.environ.get('REDIS_DB', 0))
 
 # Cache settings (for tracking pixels)
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'LOCATION': REDIS_URL,
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'CONNECTION_POOL_CLASS': 'redis.BlockingConnectionPool',
+            'CONNECTION_POOL_CLASS_KWARGS': {
+                'max_connections': 50,
+                'timeout': 20,
+            },
+            'MAX_CONNECTIONS': 1000,
+            'PICKLE_VERSION': -1,
+        },
+        'KEY_PREFIX': 'analyticsmeta',
+        'TIMEOUT': 300,  # 5 minutes default timeout
     }
 }
 
+# Add a second cache for session storage if needed
+CACHES['sessions'] = {
+    'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+    'LOCATION': f'{REDIS_URL}/1',
+    'OPTIONS': {
+        'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+    },
+    'KEY_PREFIX': 'sessions',
+}
 
-# Add Celery configuration
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+# Celery Configuration
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -285,6 +307,28 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'visibility_timeout': 3600,
+    'socket_connect_timeout': 10,
+    'socket_timeout': 10,
+}
+
+# Channel layers (using Redis)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [(REDIS_HOST, REDIS_PORT)],
+            "capacity": 1500,  # Default capacity
+            "expiry": 10,  # Default expiry
+        },
+    },
+}
+
+# Rate limiting (requires django-ratelimit)
+RATELIMIT_ENABLE = True
+RATELIMIT_USE_CACHE = 'default'
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
@@ -306,16 +350,6 @@ REST_FRAMEWORK = {
     }
 }
 
-# Channel layers (using Redis)
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],  # Redis default
-            # For production with password:
-            # "hosts": [('redis-host', 6379, {
-            #    'password': 'your-redis-password'
-            # })],
-        },
-    },
-}
+# Session configuration - use Redis for sessions in production
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'sessions'
