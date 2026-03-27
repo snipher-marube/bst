@@ -16,12 +16,15 @@ services:
       retries: 5
     networks:
       - analytics_network
+    mem_limit: 512m
+    cpus: '0.5'
+    command: postgres -c shared_buffers=128MB -c effective_cache_size=256MB -c work_mem=4MB
 
   redis:
     image: redis:7-alpine
     ports:
       - "6380:6379"
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-} --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -31,6 +34,8 @@ services:
       - analytics_network
     volumes:
       - redis_data:/data
+    mem_limit: 256m
+    cpus: '0.5'
 
   web:
     build:
@@ -38,7 +43,7 @@ services:
       dockerfile: Dockerfile.dev
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/app
+      - .:/app:cached
     ports:
       - "8000:8000"
     environment:
@@ -78,14 +83,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    mem_limit: 512m
+    cpus: '0.5'
 
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    command: celery -A config worker -l info --concurrency=4 --max-tasks-per-child=1000
+    command: celery -A config worker -l info --concurrency=1 --max-tasks-per-child=1000
     volumes:
-      - .:/app
+      - .:/app:cached
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
       - REDIS_URL=redis://redis:6379/0
@@ -114,6 +121,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    mem_limit: 512m
+    cpus: '0.5'
 
   celery-beat:
     build:
@@ -121,7 +130,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A config beat -l info
     volumes:
-      - .:/app
+      - .:/app:cached
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
       - REDIS_URL=redis://redis:6379/0
@@ -140,6 +149,8 @@ services:
         condition: service_healthy
     networks:
       - analytics_network
+    mem_limit: 256m
+    cpus: '0.5'
 
 volumes:
   postgres_data:

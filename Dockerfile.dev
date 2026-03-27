@@ -1,18 +1,14 @@
-# Dockerfile.dev
 FROM python:3.14-slim-bookworm
 
-# Build argument for environment
 ARG ENVIRONMENT=development
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install only required system dependencies (no vim, no netcat)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
     postgresql-client \
     redis-tools \
-    vim \
-    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -44,24 +40,7 @@ COPY . .
 RUN mkdir -p /app/logs /app/staticfiles /app/static/media /app/staticfiles/admin && \
     chmod -R 777 /app/logs /app/staticfiles /app/static/media
 
-# Create a script to wait for services
-RUN echo '#!/bin/bash\n\
-echo "Waiting for postgres..."\n\
-while ! nc -z postgres 5432; do\n\
-  sleep 1\n\
-done\n\
-echo "PostgreSQL started"\n\
-\n\
-echo "Waiting for redis..."\n\
-while ! nc -z redis 6379; do\n\
-  sleep 1\n\
-done\n\
-echo "Redis started"\n\
-\n\
-exec "$@"\n' > /app/wait-for-services.sh && chmod +x /app/wait-for-services.sh
-
 # Create non-root user for production only
-# In development, we'll run as root for easier debugging
 RUN if [ "$ENVIRONMENT" = "production" ]; then \
     adduser --disabled-password --gecos '' appuser && \
     chown -R appuser:appuser /app; \
@@ -72,13 +51,9 @@ ENV DJANGO_SETTINGS_MODULE=config.settings.development
 
 EXPOSE 8000
 
-# Health check
+# Health check (remains)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health/ || exit 1
 
-# Use wait script as entrypoint
-ENTRYPOINT ["/app/wait-for-services.sh"]
-
-# Only switch user in production, keep root in development for better debugging
-# In development, we'll handle user switching via docker-compose if needed
+# No wait script – rely on docker-compose health checks
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
