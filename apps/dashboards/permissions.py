@@ -1,5 +1,6 @@
 from rest_framework import permissions
 import logging
+from apps.workspaces.models import Workspace, WorkspaceMembership
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,6 @@ class CanEditData(permissions.BasePermission):
                 workspace_id = str(request.user.current_workspace.id)
             
             if workspace_id:
-                from .models import Workspace, WorkspaceMembership
                 try:
                     membership = WorkspaceMembership.objects.get(
                         workspace_id=workspace_id,
@@ -92,7 +92,6 @@ class CanEditData(permissions.BasePermission):
         return True
     
     def has_object_permission(self, request, view, obj):
-        from .models import WorkspaceMembership
         
         # For safe methods (GET, HEAD, OPTIONS), allow all workspace members
         if request.method in permissions.SAFE_METHODS:
