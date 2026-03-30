@@ -15,12 +15,11 @@ import uuid
 import pandas as pd
 from django.core.cache import cache
 
-from apps.dashboards.models import (
-    Workspace, WorkspaceMembership, DataTable, 
-    Record, Dashboard, Widget, AuditLog
+from apps.dashboards.models import ( DataTable, 
+    Record, Dashboard,  AuditLog
 )
-from apps.dashboards.services import DataImportService, AuditService, WorkspaceInsightService
-from apps.dashboards.serializers import DataTableSerializer, DashboardSerializer
+from apps.dashboards.services import DataImportService, WorkspaceInsightService
+from apps.workspaces.models import Workspace, WorkspaceMembership
 
 
 class DashboardHomeView(LoginRequiredMixin, TemplateView):

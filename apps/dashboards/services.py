@@ -12,8 +12,6 @@ from apps.dashboards.models import Record
 
 logger = logging.getLogger(__name__)
 
-# apps/dashboards/services.py (Updated QueryEngine)
-
 class QueryEngine:
     """
     Enhanced query engine that understands user-defined schemas
