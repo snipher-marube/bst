@@ -4,11 +4,9 @@ from decouple import config
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='analyticsmeta.com').split(',')
 
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-CSRF_TRUSTED_ORIGINS = []
+CSRF_TRUSTED_ORIGINS = [f'https://{h}' for h in ALLOWED_HOSTS]
 
 
 # Database
@@ -38,6 +36,20 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
 # Domain settings
-DOMAIN = "https://www.sokofarm.com"
-SITE_URL = DOMAIN  
+DOMAIN = config('SITE_URL', default='https://analyticsmeta.com')
+SITE_URL = DOMAIN
+
+# Stripe
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
+
+# Static / media
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+MEDIA_URL = '/media/'
+STATIC_ROOT = BASE_DIR / '../staticfiles'
+MEDIA_ROOT = BASE_DIR / '../static/media'
+
+# Email use real SMTP in production (override from base.py which uses console in dev)
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 

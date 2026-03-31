@@ -122,3 +122,29 @@ class CanEditData(permissions.BasePermission):
         except Exception as e:
             logger.error(f"Error in edit permission: {str(e)}")
             return False
+
+
+class CanManageWorkspace(permissions.BasePermission):
+    """
+    Restrict to workspace owner or admin.
+    """
+
+    def has_permission(self, request, view):
+        workspace_id = (
+            request.headers.get('X-Workspace-ID') or
+            request.GET.get('workspace') or
+            request.data.get('workspace_id') or
+            (str(request.user.current_workspace.id)
+             if hasattr(request.user, 'current_workspace') and request.user.current_workspace
+             else None)
+        )
+        if not workspace_id:
+            return False
+        try:
+            membership = WorkspaceMembership.objects.get(
+                workspace_id=workspace_id,
+                user=request.user
+            )
+            return membership.role in ['owner', 'admin']
+        except WorkspaceMembership.DoesNotExist:
+            return False

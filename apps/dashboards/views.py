@@ -15,11 +15,15 @@ import uuid
 import pandas as pd
 from django.core.cache import cache
 
-from apps.dashboards.models import ( DataTable, 
-    Record, Dashboard,  AuditLog
+import logging
+
+from apps.dashboards.models import ( DataTable,
+    Record, Dashboard, AuditLog
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
+
+logger = logging.getLogger(__name__)
 
 
 class DashboardHomeView(LoginRequiredMixin, TemplateView):
@@ -29,34 +33,24 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Debug: Check if current_workspace exists
-        if hasattr(self.request.user, 'current_workspace'):
-            workspace = self.request.user.current_workspace
-            print(f"DEBUG View - current_workspace: {workspace}")
-        else:
-            workspace = None
-            print("DEBUG View - No current_workspace attribute")
-        
+        workspace = getattr(self.request.user, 'current_workspace', None)
+
         # If no workspace in request, try to get from session
         if not workspace:
             workspace_id = self.request.session.get('current_workspace_id')
-            print(f"DEBUG View - Trying session workspace_id: {workspace_id}")
             if workspace_id:
                 try:
                     workspace = Workspace.objects.get(
                         id=workspace_id,
                         members=self.request.user
                     )
-                    print(f"DEBUG View - Found workspace from session: {workspace.name}")
-                    # Set it back on request
                     self.request.user.current_workspace = workspace
                 except Workspace.DoesNotExist:
-                    print(f"DEBUG View - Workspace {workspace_id} not found")
-        
+                    logger.warning(f"Workspace {workspace_id} not found in session")
+
         # If still no workspace, get first available
         if not workspace:
             workspace = Workspace.objects.filter(members=self.request.user).first()
-            print(f"DEBUG View - First available workspace: {workspace}")
             if workspace:
                 self.request.session['current_workspace_id'] = str(workspace.id)
                 self.request.session.save()
@@ -86,13 +80,11 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
             
             # Get usage statistics
             context['stats'] = workspace.get_usage_stats()
-            
+
             # Get recent activity
             context['recent_activity'] = AuditLog.objects.filter(
                 workspace=workspace
             ).select_related('user').order_by('-timestamp')[:10]
-            
-            print(f"DEBUG View - Stats: {context['stats']}")  # Debug
         
         return context
     
@@ -117,20 +109,17 @@ class WorkspaceCreateView(LoginRequiredMixin, CreateView):
         workspace = form.save(commit=False)
         workspace.owner = self.request.user
         workspace.save()
-        print(f"DEBUG: Workspace created with ID: {workspace.id}")  # Debug
-        
+
         # Add owner as member
-        membership = WorkspaceMembership.objects.create(
+        WorkspaceMembership.objects.create(
             workspace=workspace,
             user=self.request.user,
             role='owner'
         )
-        print(f"DEBUG: Membership created: {membership}")  # Debug
-        
+
         # Set as current workspace
         self.request.session['current_workspace_id'] = str(workspace.id)
-        self.request.session.save()  # Force session save
-        print(f"DEBUG: Session set: {self.request.session['current_workspace_id']}")  # Debug
+        self.request.session.save()
         
         messages.success(self.request, f'Workspace "{workspace.name}" created successfully!')
         return redirect('dashboard:home')
@@ -527,56 +516,70 @@ class RecordCreateView(LoginRequiredMixin, TemplateView):
             return redirect('dashboard:record_create', table_id=table.id)
 
 
-class RecordEditView(LoginRequiredMixin, UpdateView):
+class RecordEditView(LoginRequiredMixin, TemplateView):
     """Edit an existing record"""
-    model = Record
     template_name = 'dashboard/record_form.html'
-    fields = ['data']
-    
-    def get_queryset(self):
-        return Record.objects.filter(
-            table_id=self.kwargs.get('table_id'),
+
+    def get_record(self, **kwargs):
+        return get_object_or_404(
+            Record,
+            id=kwargs.get('record_id'),
+            table_id=kwargs.get('table_id'),
             is_active=True
         )
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['table'] = self.object.table
+        record = self.get_record(**self.kwargs)
+        context['record'] = record
+        context['table'] = record.table
+        context['editing'] = True
         return context
-    
-    def get_success_url(self):
-        return reverse('dashboard:table_detail', kwargs={'pk': self.object.table.id})
-    
-    def form_valid(self, form):
-        form.instance.updated_by = self.request.user
-        messages.success(self.request, 'Record updated successfully!')
-        return super().form_valid(form)
+
+    def post(self, request, *args, **kwargs):
+        record = self.get_record(**kwargs)
+        data = {}
+        for key, value in request.POST.items():
+            if key.startswith('field_'):
+                field_name = key.replace('field_', '')
+                data[field_name] = value
+        try:
+            record.data = data
+            record.updated_by = request.user
+            record.save()
+            messages.success(request, 'Record updated successfully!')
+        except Exception as e:
+            messages.error(request, f'Error updating record: {str(e)}')
+        return redirect('dashboard:table_detail', pk=record.table.id)
 
 
-class RecordDeleteView(LoginRequiredMixin, DeleteView):
-    """Delete a record"""
-    model = Record
+class RecordDeleteView(LoginRequiredMixin, TemplateView):
+    """Delete a record (soft delete)"""
     template_name = 'dashboard/record_confirm_delete.html'
-    
-    def get_queryset(self):
-        return Record.objects.filter(
-            table_id=self.kwargs.get('table_id'),
+
+    def get_record(self, **kwargs):
+        return get_object_or_404(
+            Record,
+            id=kwargs.get('record_id'),
+            table_id=kwargs.get('table_id'),
             is_active=True
         )
-    
-    def get_success_url(self):
-        return reverse('dashboard:table_detail', kwargs={'pk': self.object.table.id})
-    
-    def delete(self, request, *args, **kwargs):
-        record = self.get_object()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['record'] = self.get_record(**self.kwargs)
+        return context
+
+    def post(self, request, *args, **kwargs):
+        record = self.get_record(**kwargs)
+        table_id = record.table.id
         record.is_active = False
         record.deleted_at = timezone.now()
         record.save()
         messages.success(request, 'Record deleted successfully!')
-        return redirect(self.get_success_url())
+        return redirect('dashboard:table_detail', pk=table_id)
 
 
-# In views.py - Update DashboardDetailView
 class DashboardDetailView(LoginRequiredMixin, DetailView):
     """View and interact with a dashboard"""
     model = Dashboard
@@ -634,10 +637,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             }
             dashboard_data['widgets'].append(widget_data)
         
-        # Debug: Log positions
-        print(f"DEBUG: Dashboard {self.object.id} has {len(dashboard_data['widgets'])} widgets")
-        for w in dashboard_data['widgets']:
-            print(f"  Widget {w['title']}: position={w['position']}")
+        logger.debug(f"Dashboard {self.object.id} has {len(dashboard_data['widgets'])} widgets")
         
         context['dashboard_json'] = json.dumps(dashboard_data, cls=DjangoJSONEncoder)
         
@@ -646,10 +646,9 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
     def _get_widget_data(self, widget):
         """Get widget data with error handling"""
         try:
-            data = widget.get_data(limit=100)
-            return data
+            return widget.get_data(limit=100)
         except Exception as e:
-            print(f"Error getting data for widget {widget.id}: {e}")
+            logger.error(f"Error getting data for widget {widget.id}: {e}")
             return {"error": str(e)}
          
 class DashboardEditView(LoginRequiredMixin, UpdateView):
@@ -704,12 +703,25 @@ class TeamMembersView(LoginRequiredMixin, ListView):
     model = WorkspaceMembership
     template_name = 'dashboard/members.html'
     context_object_name = 'memberships'
-    
+
     def get_queryset(self):
         workspace = self.request.user.current_workspace
         return WorkspaceMembership.objects.filter(
             workspace=workspace
         ).select_related('user')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        if workspace:
+            from apps.workspaces.models import WorkspaceInvitation
+            context['pending_invitations'] = WorkspaceInvitation.objects.filter(
+                workspace=workspace,
+                is_accepted=False,
+                is_revoked=False,
+            )
+            context['workspace'] = workspace
+        return context
 
 
 class ActivityLogView(LoginRequiredMixin, ListView):
@@ -729,13 +741,31 @@ class ActivityLogView(LoginRequiredMixin, ListView):
 class BillingView(LoginRequiredMixin, TemplateView):
     """Billing and subscription management"""
     template_name = 'dashboard/billing.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['workspace'] = self.request.user.current_workspace
+        workspace = self.request.user.current_workspace
+        context['workspace'] = workspace
+        if workspace:
+            try:
+                from apps.subscriptions.models import Plan, Subscription, PLAN_LIMITS
+                context['plans'] = Plan.objects.filter(is_active=True).order_by('price_monthly')
+                context['subscription'] = Subscription.objects.filter(workspace=workspace).first()
+                context['plan_limits'] = PLAN_LIMITS
+            except Exception:
+                pass
         return context
 
 
 class ProfileView(LoginRequiredMixin, TemplateView):
     """User profile settings"""
     template_name = 'dashboard/profile.html'
+
+
+class TableExportView(LoginRequiredMixin, TemplateView):
+    """Proxy to the exports app – supports ?format=csv|json|excel"""
+    template_name = None  # no template; returns file download
+
+    def get(self, request, *args, **kwargs):
+        from apps.exports.views import export_table
+        return export_table(request, kwargs['table_id'])

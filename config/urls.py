@@ -25,10 +25,15 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('apps.core.urls')),
     path("accounts/", include("allauth.urls")),
-    path('/newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
+    path('newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
     path('dashboard/', include('apps.dashboards.urls', namespace='dashboard')),
-    # Dashboard API URLs
+    path('subscriptions/', include('apps.subscriptions.urls', namespace='subscriptions')),
+    path('workspaces/', include('apps.workspaces.urls', namespace='workspaces')),
+    path('exports/', include('apps.exports.urls', namespace='exports')),
+    # Dashboard API URLs (legacy)
     path('api/', include('apps.dashboards.urls_api')),
+    # REST API v1
+    path('api/v1/', include('apps.dashboards.urls_api_v1')),
 ]
 
 

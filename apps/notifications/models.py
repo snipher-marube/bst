@@ -1,3 +1,61 @@
+import uuid
 from django.db import models
+from django.contrib.auth import get_user_model
+from django.db.models import JSONField
+from apps.workspaces.models import Workspace
 
-# Create your models here.
+User = get_user_model()
+
+
+class Notification(models.Model):
+    """
+    In-app notification for a user, scoped to a workspace.
+    """
+    NOTIF_TYPES = [
+        ('info', 'Info'),
+        ('success', 'Success'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+        ('invite', 'Team Invite'),
+        ('import', 'Import Complete'),
+        ('insight', 'New Insight'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, null=True, blank=True)
+
+    notif_type = models.CharField(max_length=20, choices=NOTIF_TYPES, default='info')
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    action_url = models.CharField(max_length=500, blank=True)
+
+    # Extra data (e.g. import_job_id, insight_id)
+    metadata = JSONField(default=dict, blank=True)
+
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.notif_type}] {self.title} → {self.user.email}"
+
+    @classmethod
+    def notify(cls, user, title, message, notif_type='info', workspace=None,
+               action_url='', metadata=None):
+        """Convenience factory to create a notification."""
+        return cls.objects.create(
+            user=user,
+            workspace=workspace,
+            notif_type=notif_type,
+            title=title,
+            message=message,
+            action_url=action_url,
+            metadata=metadata or {},
+        )

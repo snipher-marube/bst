@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Activity Log – {{ request.user.current_workspace.name }}{% endblock %}
+
+{% block content %}
+<style>
+  :root{--primary:#03466e;--accent:#f68712;}
+  .timeline-dot {
+    width:36px; height:36px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:.75rem; flex-shrink:0;
+  }
+  .action-create  { background:#d1fae5; color:#065f46; }
+  .action-update  { background:#dbeafe; color:#1e40af; }
+  .action-delete  { background:#fee2e2; color:#991b1b; }
+  .action-export  { background:#fef3c7; color:#92400e; }
+  .action-share   { background:#ede9fe; color:#5b21b6; }
+  .action-view    { background:#f3f4f6; color:#374151; }
+  .filter-btn { padding:.375rem .875rem; border-radius:9999px; font-size:.8125rem; font-weight:500; border:1px solid #e2e8f0; cursor:pointer; transition:all .15s; }
+  .filter-btn.active,.filter-btn:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+</style>
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
+  <div class="max-w-4xl mx-auto">
+    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
+      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
+      <i class="fas fa-chevron-right text-xs"></i>
+      <span class="text-white">Activity Log</span>
+    </nav>
+    <h1 class="text-2xl font-bold">Activity Log</h1>
+    <p style="color:rgba(255,255,255,.8)" class="mt-1 text-sm">Every action taken in this workspace</p>
+  </div>
+</div>
+
+<div class="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+
+  <!-- Filters -->
+  <div class="flex flex-wrap gap-2 mb-6" x-data="{ active: 'all' }">
+    {% for action in 'all,create,update,delete,export,share' %}
+    <button class="filter-btn {% if forloop.first %}active{% endif %}"
+      :class="active === '{{ action }}' ? 'active' : ''"
+      @click="active = '{{ action }}'; filterLogs('{{ action }}')"
+      onclick="filterLogs('{{ action }}',this)">
+      {{ action|capfirst }}
+    </button>
+    {% endfor %}
+  </div>
+
+  {% if logs %}
+  <div class="space-y-0" id="timeline">
+    {% for log in logs %}
+    <div class="log-entry flex gap-4 pb-6 relative action-{{ log.action }}-entry">
+      <!-- Connecting line -->
+      {% if not forloop.last %}
+      <div class="absolute left-[17px] top-9 bottom-0 w-0.5 bg-gray-100"></div>
+      {% endif %}
+
+      <!-- Icon dot -->
+      <div class="timeline-dot action-{{ log.action }} z-10 flex-shrink-0">
+        {% if log.action == 'create' %}<i class="fas fa-plus"></i>
+        {% elif log.action == 'update' %}<i class="fas fa-pen"></i>
+        {% elif log.action == 'delete' %}<i class="fas fa-trash"></i>
+        {% elif log.action == 'export' %}<i class="fas fa-download"></i>
+        {% elif log.action == 'share' %}<i class="fas fa-share-alt"></i>
+        {% else %}<i class="fas fa-eye"></i>{% endif %}
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1">
+          <div>
+            <p class="text-sm text-gray-900">
+              <span class="font-semibold">
+                {{ log.user.get_full_name|default:log.user.email|default:"System" }}
+              </span>
+              <span class="text-gray-500"> {{ log.action }}d </span>
+              <span class="text-gray-700 font-medium">{{ log.content_type }}</span>
+              {% if log.object_repr %}
+              <span class="text-gray-500"> "{{ log.object_repr|truncatechars:50 }}"</span>
+              {% endif %}
+            </p>
+            {% if log.changes %}
+            <div class="mt-1 text-xs text-gray-400 space-x-2">
+              {% for key, val in log.changes.items %}
+              <span class="bg-gray-100 px-1.5 py-0.5 rounded">{{ key }}: {{ val|truncatechars:30 }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            {% if log.ip_address %}
+            <span class="hidden sm:inline text-xs text-gray-300">{{ log.ip_address }}</span>
+            {% endif %}
+            <span class="text-xs text-gray-400 whitespace-nowrap" title="{{ log.timestamp }}">
+              {{ log.timestamp|timesince }} ago
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if is_paginated %}
+  <div class="flex items-center justify-center gap-2 mt-8">
+    {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}"
+      class="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition flex items-center gap-1">
+      <i class="fas fa-chevron-left text-xs"></i> Previous
+    </a>
+    {% endif %}
+    <span class="text-sm text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}"
+      class="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition flex items-center gap-1">
+      Next <i class="fas fa-chevron-right text-xs"></i>
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="text-center py-20 text-gray-400">
+    <i class="fas fa-history text-5xl mb-4"></i>
+    <h3 class="text-lg font-semibold text-gray-600 mb-2">No activity yet</h3>
+    <p class="text-sm">Actions will appear here as your team creates tables, imports data, and builds dashboards.</p>
+    <a href="{% url 'dashboard:home' %}" class="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition" style="background:var(--primary)">
+      <i class="fas fa-arrow-left"></i> Back to Dashboard
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+function filterLogs(action, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.log-entry').forEach(entry => {
+    if (action === 'all' || entry.classList.contains('action-' + action + '-entry')) {
+      entry.style.display = '';
+    } else {
+      entry.style.display = 'none';
+    }
+  });
+}
+</script>
+{% endblock %}

@@ -40,6 +40,26 @@ class QueryEngine:
         cache_key = hashlib.md5(key_str.encode()).hexdigest()
         return f"widget_query:{cache_key}"
     
+    def _apply_filters(self, queryset, filters):
+        """Apply filters to a queryset (filters on JSON data field)"""
+        for f in filters:
+            field = f.get('field')
+            operator = f.get('operator', 'eq')
+            value = f.get('value')
+            if not field or value is None:
+                continue
+            if operator == 'eq':
+                queryset = queryset.filter(**{f'data__{field}': value})
+            elif operator == 'neq':
+                queryset = queryset.exclude(**{f'data__{field}': value})
+            elif operator == 'contains':
+                queryset = queryset.filter(**{f'data__{field}__icontains': value})
+            elif operator == 'gt':
+                queryset = queryset.filter(**{f'data__{field}__gt': value})
+            elif operator == 'lt':
+                queryset = queryset.filter(**{f'data__{field}__lt': value})
+        return queryset
+
     def _execute_table_query(self, widget, limit):
         """Execute table widget query - return raw records"""
         from .models import Record

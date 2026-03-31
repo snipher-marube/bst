@@ -1,6 +1,8 @@
 import uuid
+import secrets
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 import logging
 
 
@@ -100,4 +102,64 @@ class WorkspaceMembership(models.Model):
     
     def __str__(self):
         return f"{self.user.email} - {self.workspace.name} ({self.role})"
+
+
+class WorkspaceInvitation(models.Model):
+    """
+    Email-based invitation to join a workspace.
+    """
+    ROLE_CHOICES = WorkspaceMembership.ROLE_CHOICES
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='invitations')
+    email = models.EmailField()
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='viewer')
+    token = models.CharField(max_length=64, unique=True, blank=True)
+
+    invited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='sent_invitations')
+    invited_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    is_accepted = models.BooleanField(default=False)
+    is_revoked = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ['workspace', 'email']
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['email', 'is_accepted']),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(48)
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timezone.timedelta(days=7)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Invite {self.email} → {self.workspace.name} ({self.role})"
+
+    @property
+    def is_expired(self):
+        return self.expires_at and timezone.now() > self.expires_at
+
+    def accept(self, user):
+        """Create a WorkspaceMembership for the accepting user."""
+        if self.is_expired or self.is_revoked or self.is_accepted:
+            return False
+        WorkspaceMembership.objects.get_or_create(
+            workspace=self.workspace,
+            user=user,
+            defaults={
+                'role': self.role,
+                'invited_by': self.invited_by,
+                'joined_at': timezone.now(),
+            }
+        )
+        self.is_accepted = True
+        self.accepted_at = timezone.now()
+        self.save(update_fields=['is_accepted', 'accepted_at'])
+        return True
 

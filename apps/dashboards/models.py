@@ -365,7 +365,8 @@ class Dashboard(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     is_active = models.BooleanField(default=True)
-    
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         unique_together = ['workspace', 'slug']
         indexes = [
@@ -487,3 +488,52 @@ class AuditLog(models.Model):
     
     def __str__(self):
         return f"{self.action} {self.content_type} at {self.timestamp}"
+
+
+class ImportJob(models.Model):
+    """
+    Track asynchronous CSV/Excel import jobs
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='import_jobs')
+    table = models.ForeignKey(DataTable, on_delete=models.CASCADE, null=True, blank=True, related_name='import_jobs')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    file_name = models.CharField(max_length=255)
+    file_path = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    success_rows = models.IntegerField(default=0)
+    error_rows = models.IntegerField(default=0)
+
+    error_log = JSONField(default=list)
+    celery_task_id = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['workspace', 'status']),
+            models.Index(fields=['table', 'status']),
+        ]
+
+    def __str__(self):
+        return f"ImportJob {self.file_name} ({self.status})"
+
+    @property
+    def progress_pct(self):
+        if self.total_rows == 0:
+            return 0
+        return int((self.processed_rows / self.total_rows) * 100)

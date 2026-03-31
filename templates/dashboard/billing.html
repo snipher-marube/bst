@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Billing & Plans – {{ workspace.name }}{% endblock %}
+
+{% block content %}
+<style>
+  :root{--primary:#03466e;--accent:#f68712;--success:#10b981;}
+  .plan-card { transition:transform .2s,box-shadow .2s; }
+  .plan-card:hover { transform:translateY(-4px); box-shadow:0 20px 40px rgba(0,0,0,.1); }
+  .plan-card.current { border-color:var(--primary)!important; }
+  .plan-card.popular { border-color:var(--accent)!important; }
+  .progress-bar { height:8px; border-radius:4px; background:#e5e7eb; overflow:hidden; }
+  .progress-fill { height:100%; border-radius:4px; transition:width .4s; }
+  .check-item { display:flex; align-items:flex-start; gap:.625rem; }
+  .check-item i { color:var(--success); margin-top:.1rem; flex-shrink:0; }
+</style>
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
+  <div class="max-w-6xl mx-auto">
+    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
+      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
+      <i class="fas fa-chevron-right text-xs"></i>
+      <span class="text-white">Billing & Plans</span>
+    </nav>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">Billing & Plans</h1>
+        <p style="color:rgba(255,255,255,.8)" class="mt-1">Manage your subscription and usage</p>
+      </div>
+      {% if workspace %}
+      <div class="bg-white/10 rounded-xl px-4 py-2 text-center">
+        <p class="text-xs text-white/70">Current plan</p>
+        <p class="font-bold text-white text-lg capitalize">{{ workspace.tier }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+
+  {% for m in messages %}
+  <div class="rounded-xl px-4 py-3 flex items-center gap-3 {% if m.tags == 'success' %}bg-green-50 border border-green-200 text-green-800{% else %}bg-blue-50 border border-blue-200 text-blue-800{% endif %}">
+    <i class="fas fa-check-circle"></i><span>{{ m }}</span>
+  </div>
+  {% endfor %}
+
+  <!-- Current plan + usage -->
+  {% if workspace %}
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2">
+      <i class="fas fa-chart-bar text-[#03466e]"></i> Current Usage
+    </h2>
+    {% with stats=workspace.get_usage_stats %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Tables -->
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="text-gray-600 font-medium">Tables</span>
+          <span class="text-gray-900 font-semibold">{{ stats.tables }} / {{ stats.tables_limit }}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:{% widthratio stats.tables stats.tables_limit 100 %}%; background:{% if stats.tables == stats.tables_limit %}#ef4444{% elif stats.tables >= stats.tables_limit|floatformat:0|add:-1 %}#f59e0b{% else %}var(--primary){% endif %}"></div></div>
+      </div>
+
+      <!-- Records -->
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="text-gray-600 font-medium">Records (total)</span>
+          <span class="text-gray-900 font-semibold">{{ stats.records }}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:{% if stats.records_limit > 0 %}{% widthratio stats.records stats.records_limit 100 %}{% else %}0{% endif %}%; background:var(--primary)"></div></div>
+      </div>
+
+      <!-- Members -->
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="text-gray-600 font-medium">Team Members</span>
+          <span class="text-gray-900 font-semibold">{{ stats.members }} / {{ stats.members_limit }}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:{% widthratio stats.members stats.members_limit 100 %}%; background:var(--primary)"></div></div>
+      </div>
+    </div>
+    {% endwith %}
+  </div>
+  {% endif %}
+
+  <!-- Plan cards -->
+  <div>
+    <h2 class="text-xl font-bold text-gray-900 mb-2">Choose a Plan</h2>
+    <p class="text-gray-500 text-sm mb-6">Upgrade or downgrade at any time. All changes apply immediately.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+
+      <!-- FREE -->
+      <div class="plan-card bg-white rounded-2xl border-2 p-6 flex flex-col
+        {% if workspace.tier == 'free' %}current{% else %}border-gray-200{% endif %}">
+        {% if workspace.tier == 'free' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
+        <div class="mb-4">
+          <h3 class="text-lg font-bold text-gray-900">Free</h3>
+          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$0</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+        </div>
+        <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>5 tables</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>1,000 records per table</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>1 team member</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Auto-generated dashboards</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>CSV / Excel import</span></li>
+        </ul>
+        {% if workspace and workspace.tier != 'free' %}
+        <a href="{% url 'subscriptions:upgrade' workspace.id 'free' %}"
+          class="block text-center py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-semibold hover:border-gray-400 transition">
+          Downgrade
+        </a>
+        {% else %}
+        <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
+        {% endif %}
+      </div>
+
+      <!-- STARTER -->
+      <div class="plan-card bg-white rounded-2xl border-2 p-6 flex flex-col
+        {% if workspace.tier == 'starter' %}current{% else %}border-gray-200{% endif %}">
+        {% if workspace.tier == 'starter' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
+        <div class="mb-4">
+          <h3 class="text-lg font-bold text-gray-900">Starter</h3>
+          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$19</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+        </div>
+        <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>20 tables</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>10,000 records per table</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>5 team members</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>All Free features</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Real-time collaboration</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>AI insights</span></li>
+        </ul>
+        {% if workspace %}
+        <a href="{% url 'subscriptions:upgrade' workspace.id 'starter' %}"
+          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+          style="background:var(--primary)">
+          {% if workspace.tier == 'starter' %}Current{% else %}Upgrade to Starter{% endif %}
+        </a>
+        {% endif %}
+      </div>
+
+      <!-- PROFESSIONAL -->
+      <div class="plan-card popular bg-white rounded-2xl border-2 p-6 flex flex-col relative
+        {% if workspace.tier == 'professional' %}current{% else %}border-gray-200{% endif %}">
+        <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#f68712] text-white text-xs font-bold px-3 py-1 rounded-full">Most Popular</div>
+        {% if workspace.tier == 'professional' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3 mt-2">Current Plan</div>{% else %}<div class="mt-2"></div>{% endif %}
+        <div class="mb-4">
+          <h3 class="text-lg font-bold text-gray-900">Professional</h3>
+          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$49</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+        </div>
+        <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>100 tables</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>100,000 records per table</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>20 team members</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>All Starter features</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Priority support</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Advanced widgets & gauges</span></li>
+        </ul>
+        {% if workspace %}
+        <a href="{% url 'subscriptions:upgrade' workspace.id 'professional' %}"
+          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+          style="background:var(--accent)">
+          {% if workspace.tier == 'professional' %}Current{% else %}Upgrade to Pro{% endif %}
+        </a>
+        {% endif %}
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="plan-card bg-white rounded-2xl border-2 p-6 flex flex-col
+        {% if workspace.tier == 'enterprise' %}current{% else %}border-gray-200{% endif %}">
+        {% if workspace.tier == 'enterprise' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
+        <div class="mb-4">
+          <h3 class="text-lg font-bold text-gray-900">Enterprise</h3>
+          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$99</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+        </div>
+        <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Unlimited tables</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Unlimited records</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Unlimited members</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>All Pro features</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>SSO / SAML</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Dedicated success manager</span></li>
+          <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>SLA guarantee</span></li>
+        </ul>
+        {% if workspace %}
+        <a href="{% url 'subscriptions:upgrade' workspace.id 'enterprise' %}"
+          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+          style="background:var(--primary)">
+          {% if workspace.tier == 'enterprise' %}Current{% else %}Upgrade to Enterprise{% endif %}
+        </a>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Invoice history stub -->
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100">
+      <h2 class="font-semibold text-gray-900"><i class="fas fa-file-invoice mr-2 text-[#03466e]"></i>Invoice History</h2>
+    </div>
+    <div class="px-6 py-12 text-center text-gray-400">
+      <i class="fas fa-receipt text-4xl mb-3"></i>
+      <p class="text-sm font-medium text-gray-600">No invoices yet</p>
+      <p class="text-xs mt-1">Invoices will appear here once you subscribe to a paid plan.</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

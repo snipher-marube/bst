@@ -41,6 +41,9 @@ urlpatterns = [
     path('billing/', views.BillingView.as_view(), name='billing'),
     path('profile/', views.ProfileView.as_view(), name='profile'),
 
+    # Export (delegates to exports app)
+    path('tables/<uuid:table_id>/export/', views.TableExportView.as_view(), name='table_export'),
+
     # Debug endpoint
     path('debug/dashboard/<uuid:pk>/', debug.debug_dashboard, name='debug_dashboard'),
 

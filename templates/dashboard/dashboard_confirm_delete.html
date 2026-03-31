@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Delete Dashboard – {{ dashboard.name }}{% endblock %}
+
+{% block content %}
+<style>:root{--primary:#03466e;--error:#ef4444;}</style>
+
+<div style="background:linear-gradient(135deg,#7f1d1d,#991b1b);padding:2rem 1.5rem;color:#fff;">
+  <div class="max-w-xl mx-auto">
+    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
+      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
+      <i class="fas fa-chevron-right text-xs"></i>
+      <a href="{% url 'dashboard:dashboard_detail' dashboard.pk %}" class="hover:text-white">{{ dashboard.name }}</a>
+      <i class="fas fa-chevron-right text-xs"></i>
+      <span class="text-white">Delete</span>
+    </nav>
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+        <i class="fas fa-trash text-white text-xl"></i>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold">Delete Dashboard</h1>
+        <p style="color:rgba(255,255,255,.8)" class="text-sm mt-0.5">This action cannot be undone</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-xl mx-auto px-4 sm:px-6 py-8">
+  <div class="bg-white rounded-2xl shadow-sm border border-red-100 p-6">
+
+    <!-- Warning box -->
+    <div class="flex gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+      <i class="fas fa-exclamation-triangle text-amber-500 mt-0.5"></i>
+      <div class="text-sm text-amber-800">
+        <p class="font-semibold mb-1">Are you absolutely sure?</p>
+        <p>You are about to permanently delete the dashboard <strong>"{{ dashboard.name }}"</strong> and all its contents.</p>
+      </div>
+    </div>
+
+    <!-- What will be deleted -->
+    <div class="rounded-xl border border-gray-100 divide-y divide-gray-100 mb-6">
+      <div class="px-4 py-3 flex items-center gap-3 text-sm">
+        <i class="fas fa-th-large text-red-400 w-4"></i>
+        <span class="text-gray-700">
+          <strong>{{ dashboard.widgets.count }}</strong> widget{{ dashboard.widgets.count|pluralize }} will be removed
+        </span>
+      </div>
+      <div class="px-4 py-3 flex items-center gap-3 text-sm">
+        <i class="fas fa-chart-bar text-red-400 w-4"></i>
+        <span class="text-gray-700">All charts and metric cards will be permanently deleted</span>
+      </div>
+      <div class="px-4 py-3 flex items-center gap-3 text-sm text-gray-500">
+        <i class="fas fa-database text-green-500 w-4"></i>
+        <span>Underlying table data will <strong>not</strong> be affected</span>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="flex items-center gap-3">
+        <button type="submit"
+          class="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition"
+          style="background:var(--error)">
+          <i class="fas fa-trash mr-2"></i>Yes, Delete Dashboard
+        </button>
+        <a href="{% url 'dashboard:dashboard_detail' dashboard.pk %}"
+          class="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

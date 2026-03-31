@@ -146,6 +146,8 @@ STATIC_URL = 'static/'
 
 SITE_ID = 1
 
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Default Django auth
@@ -180,8 +182,8 @@ ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = True  # Log out user after password change
 
 # Login/Logout redirects
 LOGIN_URL = "account_login"
-LOGIN_REDIRECT_URL = "core:home"  # Redirect after login
-LOGOUT_REDIRECT_URL = "core:home"  # Redirect after logout
+LOGIN_REDIRECT_URL = "/dashboard/analytics/"  # Redirect after login to dashboard
+LOGOUT_REDIRECT_URL = "/"  # Redirect after logout to home
 ACCOUNT_LOGOUT_ON_GET = True  # Logout via GET request
 
 # Advanced features
@@ -340,3 +342,57 @@ REST_FRAMEWORK = {
 # Session configuration - use Redis for sessions in production
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],
+            'class': 'django.utils.log.AdminEmailHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
