@@ -1,7 +1,8 @@
-{% extends 'base.html' %}
+{% extends 'dashboard/base_dashboard.html' %}
 {% load static %}
 
-{% block title %}{{ dashboard.name }} - {{ site_settings.site_name }}{% endblock %}
+{% block title %}{{ dashboard.name }} – Dashboard{% endblock %}
+{% block page_heading %}{{ dashboard.name }}{% endblock %}
 
 {% block extra_head %}
 <!-- Core CSS -->
@@ -417,7 +418,7 @@
 </style>
 {% endblock %}
 
-{% block content %}
+{% block main_content %}
 <div class="dashboard-container">
     <header class="dashboard-header">
         <div class="container">

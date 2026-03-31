@@ -1,7 +1,7 @@
-{% extends "base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 {% block title %}Billing & Plans – {{ workspace.name }}{% endblock %}
 
-{% block content %}
+{% block main_content %}
 <style>
   :root{--primary:#03466e;--accent:#f68712;--success:#10b981;}
   .plan-card { transition:transform .2s,box-shadow .2s; }
@@ -14,28 +14,7 @@
   .check-item i { color:var(--success); margin-top:.1rem; flex-shrink:0; }
 </style>
 
-<!-- Header -->
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-6xl mx-auto">
-    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
-      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <span class="text-white">Billing & Plans</span>
-    </nav>
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold">Billing & Plans</h1>
-        <p style="color:rgba(255,255,255,.8)" class="mt-1">Manage your subscription and usage</p>
-      </div>
-      {% if workspace %}
-      <div class="bg-white/10 rounded-xl px-4 py-2 text-center">
-        <p class="text-xs text-white/70">Current plan</p>
-        <p class="font-bold text-white text-lg capitalize">{{ workspace.tier }}</p>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-</div>
+{% block page_heading %}Billing & Plans{% endblock %}
 
 <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
 

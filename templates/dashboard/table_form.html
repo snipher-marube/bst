@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'dashboard/base_dashboard.html' %}
 {% load static %}
 
 {% block title %}{% if object %}Edit{% else %}Create{% endif %} Table - {{ site_settings.site_name }}{% endblock %}
@@ -14,29 +14,16 @@
 </style>
 {% endblock %}
 
-{% block content %}
-<div class="min-h-screen bg-gray-50 py-8">
+{% block page_heading %}{% if object %}Edit Table{% else %}Create Table{% endblock %}
+
+{% block main_content %}
+<div class="bg-[#f8fafc] py-8">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-        <!-- Header -->
-        <div class="mb-6">
-            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-                <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
-                <i class="fas fa-chevron-right text-xs"></i>
-                <span class="text-[#03466e] font-medium">{% if object %}Edit{% else %}Create{% endif %} Table</span>
-            </div>
-            <h1 class="text-2xl font-bold text-[#03466e]">
-                {% if object %}Edit Table: {{ object.name }}{% else %}Create New Table{% endif %}
-            </h1>
-            <p class="text-gray-600">
-                {% if object %}Modify your table structure{% else %}Define the structure of your data table{% endif %}
-            </p>
-        </div>
-        
         <!-- Form -->
-        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-            <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
-                <h2 class="text-xl font-semibold text-white">Table Information</h2>
-                <p class="text-white/80 text-sm">Basic details about your table</p>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-8 py-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-[#03466e]">{% if object %}Edit Table: {{ object.name }}{% else %}New Table{% endif %}</h2>
+                <p class="text-sm text-gray-500 mt-0.5">{% if object %}Modify your table structure{% else %}Define the schema for your data table{% endif %}</p>
             </div>
             
             <form method="post" class="p-8" x-data="tableForm()" x-init="initSchema({{ object.schema|default:'[]'|safe }})">

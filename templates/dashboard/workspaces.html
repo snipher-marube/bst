@@ -1,9 +1,17 @@
-{% extends "base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 {% block title %}Your Workspaces{% endblock %}
+{% block page_heading %}Workspaces{% endblock %}
 
-{% block content %}
+{% block topbar_actions %}
+<a href="{% url 'dashboard:workspace_create' %}"
+   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+   style="background:#f68712">
+  <i class="fas fa-plus text-xs"></i> New Workspace
+</a>
+{% endblock %}
+
+{% block main_content %}
 <style>
-  :root{--primary:#03466e;--accent:#f68712;}
   .ws-card { transition:transform .2s,box-shadow .2s; cursor:default; }
   .ws-card:hover { transform:translateY(-3px); box-shadow:0 12px 30px rgba(0,0,0,.09); }
   .tier-badge {
@@ -16,21 +24,7 @@
   .tier-enterprise   { background:#f3e8ff; color:#7c3aed; }
 </style>
 
-<!-- Header -->
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold">Your Workspaces</h1>
-      <p style="color:rgba(255,255,255,.8)" class="mt-1 text-sm">Switch context or create a new workspace</p>
-    </div>
-    <a href="{% url 'dashboard:workspace_create' %}"
-      class="flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-sm font-semibold transition border border-white/20">
-      <i class="fas fa-plus"></i> New Workspace
-    </a>
-  </div>
-</div>
-
-<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-6">
 
   {% for m in messages %}
   <div class="rounded-xl px-4 py-3 flex items-center gap-3 mb-6

@@ -1,0 +1,265 @@
+{% extends "dashboard/base_dashboard.html" %}
+{% block title %}Settings – {{ workspace.name|default:"Workspace" }}{% endblock %}
+{% block page_heading %}Settings{% endblock %}
+
+{% block main_content %}
+<style>
+  .input-field { width:100%; padding:.625rem .875rem; border:1px solid #e2e8f0; border-radius:.75rem; font-size:.875rem; outline:none; transition:border-color .2s,box-shadow .2s; }
+  .input-field:focus { border-color:#03466e; box-shadow:0 0 0 3px rgba(3,70,110,.1); }
+  .section-card { background:#fff; border-radius:1rem; border:1px solid #f1f5f9; box-shadow:0 1px 3px rgba(0,0,0,.05); padding:1.5rem; margin-bottom:1.5rem; }
+  .section-title { font-size:1rem; font-weight:700; color:#1e293b; margin-bottom:1rem; display:flex; align-items:center; gap:.5rem; }
+  .tier-badge { font-size:.6875rem; font-weight:600; padding:.2rem .6rem; border-radius:9999px; text-transform:capitalize; }
+  .tier-free         { background:#f1f5f9; color:#475569; }
+  .tier-starter      { background:#dbeafe; color:#1d4ed8; }
+  .tier-professional { background:#fef3c7; color:#92400e; }
+  .tier-enterprise   { background:#f3e8ff; color:#7c3aed; }
+</style>
+
+<div class="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+
+  {% if messages %}
+  {% for m in messages %}
+  <div class="rounded-xl px-4 py-3 flex items-center gap-3 mb-6
+    {% if m.tags == 'success' %}bg-green-50 border border-green-200 text-green-800
+    {% elif m.tags == 'error' %}bg-red-50 border border-red-200 text-red-800
+    {% else %}bg-blue-50 border border-blue-200 text-blue-800{% endif %}">
+    <i class="fas fa-check-circle"></i><span>{{ m }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if workspace %}
+
+  <!-- 1. Workspace Info -->
+  <div class="section-card">
+    <p class="section-title"><i class="fas fa-building text-[var(--primary)]"></i> Workspace Information</p>
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update_workspace">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">Workspace Name</label>
+          <input type="text" name="workspace_name" value="{{ workspace.name }}" required class="input-field">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1">Tier</label>
+          <div class="input-field bg-gray-50 flex items-center gap-2" style="cursor:default">
+            <span class="tier-badge tier-{{ workspace.tier }}">{{ workspace.tier }}</span>
+            <a href="{% url 'dashboard:billing' %}" class="text-xs text-[var(--accent)] hover:underline ml-auto">Upgrade Plan →</a>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+        <textarea name="workspace_description" rows="2" class="input-field resize-none">{{ workspace.description|default:'' }}</textarea>
+      </div>
+      <div class="flex justify-end">
+        <button type="submit" class="px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition" style="background:var(--primary)">
+          <i class="fas fa-save mr-2"></i>Save Changes
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 2. Plan Limits -->
+  <div class="section-card">
+    <p class="section-title"><i class="fas fa-tachometer-alt text-[var(--accent)]"></i> Plan Limits</p>
+    {% with stats=workspace.get_usage_stats %}
+    <div class="space-y-4">
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="font-medium text-gray-700">Tables</span>
+          <span class="text-gray-500">{{ stats.tables }} / {{ workspace.max_tables }}</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full transition-all"
+            style="width:{% widthratio stats.tables workspace.max_tables 100 %}%;background:{% if stats.tables >= workspace.max_tables %}#ef4444{% else %}var(--primary){% endif %}">
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="font-medium text-gray-700">Records</span>
+          <span class="text-gray-500">{{ stats.records }} / {{ workspace.max_records }}</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full transition-all"
+            style="width:{% widthratio stats.records workspace.max_records 100 %}%;background:{% if stats.records >= workspace.max_records %}#ef4444{% else %}var(--primary){% endif %}">
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="font-medium text-gray-700">Members</span>
+          <span class="text-gray-500">{{ stats.members }} / {{ workspace.max_members }}</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full transition-all"
+            style="width:{% widthratio stats.members workspace.max_members 100 %}%;background:{% if stats.members >= workspace.max_members %}#ef4444{% else %}var(--primary){% endif %}">
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+  </div>
+
+  <!-- 3. Share & API -->
+  <div class="section-card">
+    <p class="section-title"><i class="fas fa-share-alt text-purple-500"></i> Share & API</p>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Workspace ID</label>
+        <div class="flex gap-2">
+          <input type="text" value="{{ workspace.id }}" readonly
+            class="input-field bg-gray-50 text-gray-500 font-mono text-xs" id="ws-uuid">
+          <button type="button" onclick="copyToClipboard('ws-uuid')"
+            class="px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
+            <i class="fas fa-copy mr-1"></i>Copy
+          </button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">API Key <span class="text-gray-400 font-normal">(coming soon)</span></label>
+        <div class="flex gap-2">
+          <input type="text" value="••••••••••••••••••••••••••••••••" readonly
+            class="input-field bg-gray-50 text-gray-400 font-mono text-xs">
+          <button type="button" disabled
+            class="px-3 py-2 rounded-xl border border-gray-100 text-sm text-gray-300 whitespace-nowrap cursor-not-allowed">
+            <i class="fas fa-sync-alt mr-1"></i>Rotate
+          </button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Use this key to authenticate REST API requests.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Notifications -->
+  <div class="section-card" x-data="{
+    email_invites: true,
+    email_import: true,
+    email_insights: false
+  }">
+    <p class="section-title"><i class="fas fa-bell text-yellow-500"></i> Notification Preferences</p>
+    <div class="space-y-3">
+      {% for key, label, desc in 'email_invites,Team invitations,Get notified when someone joins or is invited|email_import,Import completions,Notify when a CSV or Excel import finishes|email_insights,Insight reports,Receive weekly automated insight summaries'|addslashes|slice:":3" %}
+      {% endfor %}
+      <!-- Toggle rows rendered statically; persisted in a future sprint -->
+      {% for item in "Team invitations:email_invites:Get notified when someone joins or is invited,Import completions:email_import:Notify when a CSV or Excel import finishes,Insight reports:email_insights:Receive weekly automated insight summaries"|split:"," %}
+      {% endfor %}
+      <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+        <div>
+          <p class="text-sm font-semibold text-gray-700">Team invitations</p>
+          <p class="text-xs text-gray-500">Get notified when someone joins or is invited</p>
+        </div>
+        <button type="button" @click="email_invites = !email_invites"
+          :class="email_invites ? 'bg-[#03466e]' : 'bg-gray-300'"
+          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200">
+          <span :class="email_invites ? 'translate-x-5' : 'translate-x-0'"
+            class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200"></span>
+        </button>
+      </div>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+        <div>
+          <p class="text-sm font-semibold text-gray-700">Import completions</p>
+          <p class="text-xs text-gray-500">Notify when a CSV or Excel import finishes</p>
+        </div>
+        <button type="button" @click="email_import = !email_import"
+          :class="email_import ? 'bg-[#03466e]' : 'bg-gray-300'"
+          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200">
+          <span :class="email_import ? 'translate-x-5' : 'translate-x-0'"
+            class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200"></span>
+        </button>
+      </div>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+        <div>
+          <p class="text-sm font-semibold text-gray-700">Insight reports</p>
+          <p class="text-xs text-gray-500">Receive weekly automated insight summaries</p>
+        </div>
+        <button type="button" @click="email_insights = !email_insights"
+          :class="email_insights ? 'bg-[#03466e]' : 'bg-gray-300'"
+          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200">
+          <span :class="email_insights ? 'translate-x-5' : 'translate-x-0'"
+            class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200"></span>
+        </button>
+      </div>
+    </div>
+    <p class="text-xs text-gray-400 mt-3">Notification preferences persistence coming in a future update.</p>
+  </div>
+
+  <!-- 5. Danger Zone -->
+  <div class="section-card border-red-100" x-data="{ confirmDelete: false, confirmText: '' }">
+    <p class="section-title text-red-600"><i class="fas fa-exclamation-triangle text-red-500"></i> Danger Zone</p>
+    <div class="rounded-xl border border-red-200 p-4">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-semibold text-gray-800">Delete this workspace</p>
+          <p class="text-xs text-gray-500 mt-0.5">Permanently remove this workspace and all its data. This cannot be undone.</p>
+        </div>
+        <button type="button" @click="confirmDelete = true"
+          class="px-4 py-2 rounded-xl text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 transition whitespace-nowrap">
+          <i class="fas fa-trash mr-1"></i>Delete
+        </button>
+      </div>
+
+      <!-- Confirm Modal -->
+      <div x-show="confirmDelete" x-transition
+        class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" style="display:none">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" @click.stop>
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <i class="fas fa-trash text-red-500"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900">Delete Workspace</h3>
+          </div>
+          <p class="text-sm text-gray-600 mb-4">
+            Type <strong class="font-mono">{{ workspace.name }}</strong> to confirm deletion.
+            All tables, records, dashboards, and members will be permanently removed.
+          </p>
+          <input type="text" x-model="confirmText" placeholder="Type workspace name to confirm"
+            class="input-field mb-4">
+          <div class="flex gap-3">
+            <button type="button" @click="confirmDelete = false"
+              class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+              Cancel
+            </button>
+            <form method="post" class="flex-1">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="delete_workspace">
+              <button type="submit"
+                :disabled="confirmText !== '{{ workspace.name }}'"
+                class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
+                style="background:#ef4444">
+                <i class="fas fa-trash mr-1"></i>Delete Workspace
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="text-center py-20 text-gray-400">
+    <i class="fas fa-layer-group text-5xl mb-4"></i>
+    <h3 class="text-lg font-semibold text-gray-600 mb-2">No workspace selected</h3>
+    <p class="text-sm">Create or switch to a workspace to manage its settings.</p>
+    <a href="{% url 'dashboard:workspaces' %}" class="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition" style="background:var(--primary)">
+      <i class="fas fa-layer-group"></i> View Workspaces
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+function copyToClipboard(inputId) {
+  const el = document.getElementById(inputId);
+  navigator.clipboard.writeText(el.value).then(() => {
+    const btn = el.nextElementSibling;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  });
+}
+</script>
+{% endblock %}

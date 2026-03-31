@@ -1,29 +1,14 @@
-{% extends "base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 {% block title %}{% if form.instance.pk %}Edit Dashboard{% else %}New Dashboard{% endif %}{% endblock %}
 
-{% block content %}
+{% block main_content %}
 <style>
   :root{--primary:#03466e;--accent:#f68712;}
   .input-field { width:100%; padding:.625rem .875rem; border:1px solid #e2e8f0; border-radius:.75rem; font-size:.875rem; outline:none; transition:border-color .2s,box-shadow .2s; }
   .input-field:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(3,70,110,.1); }
 </style>
 
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-2xl mx-auto">
-    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
-      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <span class="text-white">{% if form.instance.pk %}Edit Dashboard{% else %}New Dashboard{% endif %}</span>
-    </nav>
-    <h1 class="text-2xl font-bold">
-      <i class="fas fa-chart-pie mr-2"></i>
-      {% if form.instance.pk %}Edit "{{ form.instance.name }}"{% else %}Create a Dashboard{% endif %}
-    </h1>
-    <p style="color:rgba(255,255,255,.8)" class="mt-1 text-sm">
-      {% if form.instance.pk %}Update dashboard settings{% else %}Build a new interactive dashboard{% endif %}
-    </p>
-  </div>
-</div>
+{% block page_heading %}{% if form.instance.pk %}Edit Dashboard{% else %}New Dashboard{% endblock %}
 
 <div class="max-w-2xl mx-auto px-4 sm:px-6 py-8">
   <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">

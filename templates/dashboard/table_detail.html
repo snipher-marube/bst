@@ -1,24 +1,32 @@
-{% extends 'base.html' %}
+{% extends 'dashboard/base_dashboard.html' %}
 {% load static dashboard_filters %}
 
-{% block title %}{{ table.name }} - {{ site_settings.site_name }}{% endblock %}
+{% block title %}{{ table.name }} – Tables{% endblock %}
+{% block page_heading %}{{ table.name }}{% endblock %}
 
-{% block content %}
-<div class="min-h-screen bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white shadow-sm border-b">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-                        <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
-                        <i class="fas fa-chevron-right text-xs"></i>
-                        <span class="text-[#03466e] font-medium">{{ table.name }}</span>
-                    </div>
-                    <h1 class="text-2xl font-bold text-[#03466e]">{{ table.name }}</h1>
-                    <p class="text-gray-600">{{ table.description }}</p>
+{% block topbar_actions %}
+<a href="{% url 'dashboard:record_create' table_id=table.id %}"
+   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+   style="background:#f68712">
+  <i class="fas fa-plus text-xs"></i> Add Record
+</a>
+{% endblock %}
+
+{% block main_content %}
+<div class="min-h-full bg-[#f8fafc]">
+    <!-- Page Header -->
+    <div class="bg-white border-b border-gray-100 px-6 py-4">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                    <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
+                    <i class="fas fa-chevron-right text-[10px]"></i>
+                    <span class="text-gray-600">{{ table.name }}</span>
                 </div>
-                <div class="flex space-x-3">
+                <h1 class="text-xl font-bold text-[#03466e]">{{ table.name }}</h1>
+                {% if table.description %}<p class="text-sm text-gray-500 mt-0.5">{{ table.description }}</p>{% endif %}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
                     <a href="{% url 'dashboard:record_create' table_id=table.id %}" 
                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
                         <i class="fas fa-plus mr-2"></i>Add Record
@@ -31,13 +39,28 @@
                         <button @click="open = !open" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                             <i class="fas fa-ellipsis-h"></i>
                         </button>
-                        <div x-show="open" @click.away="open = false" 
-                             class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-10">
-                            <a href="{% url 'dashboard:table_edit' pk=table.id %}" 
+                        <div x-show="open" @click.away="open = false"
+                             class="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-10">
+                            <a href="{% url 'dashboard:table_edit' pk=table.id %}"
                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <i class="fas fa-edit w-5"></i> Edit Table
                             </a>
-                            <a href="{% url 'dashboard:table_delete' pk=table.id %}" 
+                            <div class="border-t border-gray-100 my-1"></div>
+                            <p class="px-4 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">Export</p>
+                            <a href="{% url 'dashboard:table_export' pk=table.id %}?format=csv"
+                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-file-csv w-5 text-green-600"></i> Export as CSV
+                            </a>
+                            <a href="{% url 'dashboard:table_export' pk=table.id %}?format=json"
+                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-file-code w-5 text-blue-600"></i> Export as JSON
+                            </a>
+                            <a href="{% url 'dashboard:table_export' pk=table.id %}?format=excel"
+                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-file-excel w-5 text-emerald-600"></i> Export as Excel
+                            </a>
+                            <div class="border-t border-gray-100 my-1"></div>
+                            <a href="{% url 'dashboard:table_delete' pk=table.id %}"
                                class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50">
                                 <i class="fas fa-trash w-5"></i> Delete Table
                             </a>
@@ -147,7 +170,7 @@
         </div>
     </div>
 </div>
-{% endblock %}
+{% endblock main_content %}
 
 {% block extra_scripts %}
 <script>

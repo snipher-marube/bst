@@ -1,31 +1,18 @@
-{% extends 'base.html' %}
+{% extends 'dashboard/base_dashboard.html' %}
 {% load static %}
 
 {% block title %}Import Data - {{ table.name }} - {{ site_settings.site_name }}{% endblock %}
 
-{% block content %}
-<div class="min-h-screen bg-gray-50 py-8">
+{% block page_heading %}{% if is_new_table %}Create from File{% else %}Import to {{ table.name }}{% endblock %}
+
+{% block main_content %}
+<div class="bg-[#f8fafc] py-8">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-2xl">
-        <!-- Header -->
-        <div class="mb-6">
-            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-                <a href="{% url 'dashboard:tables' %}" class="hover:text-[#03466e]">Tables</a>
-                <i class="fas fa-chevron-right text-xs"></i>
-                    {% if not is_new_table %}
-                <a href="{% url 'dashboard:table_detail' pk=table.id %}" class="hover:text-[#03466e]">{{ table.name }}</a>
-                <i class="fas fa-chevron-right text-xs"></i>
-                    {% endif %}
-                    <span class="text-[#03466e] font-medium">{% if is_new_table %}Create from File{% else %}Import Data{% endif %}</span>
-            </div>
-                <h1 class="text-2xl font-bold text-[#03466e]">{% if is_new_table %}Create Table from File{% else %}Import Data to {{ table.name }}{% endif %}</h1>
-                <p class="text-gray-600">Upload a CSV or Excel file to {% if is_new_table %}automatically create a new table{% else %}add multiple records at once{% endif %}</p>
-        </div>
-        
         <!-- Import Card -->
-        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-            <div class="px-8 py-6 bg-gradient-to-r from-[#03466e] to-[#025b8c]">
-                <h2 class="text-xl font-semibold text-white">{% if is_new_table %}File Upload{% else %}Data Import{% endif %}</h2>
-                <p class="text-white/80 text-sm">Select a CSV or Excel file</p>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-8 py-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-[#03466e]">{% if is_new_table %}Create Table from File{% else %}Import Data to {{ table.name }}{% endif %}</h2>
+                <p class="text-sm text-gray-500 mt-0.5">Upload a CSV or Excel file to {% if is_new_table %}automatically create a new table{% else %}add multiple records at once{% endif %}</p>
             </div>
             
             <div class="p-8 relative">

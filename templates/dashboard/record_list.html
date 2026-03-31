@@ -1,7 +1,7 @@
-{% extends "base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 {% block title %}Records – {{ table.name }}{% endblock %}
 
-{% block content %}
+{% block main_content %}
 <style>
   :root{--primary:#03466e;--accent:#f68712;}
   .action-btn { padding:.375rem .75rem; border-radius:.625rem; font-size:.8125rem; font-weight:500; border:1px solid #e5e7eb; transition:all .15s; display:inline-flex; align-items:center; gap:.375rem; }
@@ -10,37 +10,15 @@
   .btn-primary:hover { opacity:.9; background:var(--primary); }
 </style>
 
-<!-- Header -->
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-7xl mx-auto">
-    <nav class="flex flex-wrap items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
-      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <a href="{% url 'dashboard:tables' %}" class="hover:text-white">Tables</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <a href="{% url 'dashboard:table_detail' table.id %}" class="hover:text-white">{{ table.name }}</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <span class="text-white">Records</span>
-    </nav>
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold">{{ table.name }} Records</h1>
-        <p style="color:rgba(255,255,255,.8)" class="mt-1 text-sm">{{ table.record_count }} records total</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <a href="{% url 'dashboard:record_create' table.id %}" class="action-btn btn-primary text-white">
-          <i class="fas fa-plus"></i> Add Record
-        </a>
-        <a href="{% url 'dashboard:table_import' table.id %}" class="action-btn bg-white/15 text-white hover:bg-white/25 border-white/30">
-          <i class="fas fa-upload"></i> Import
-        </a>
-        <a href="{% url 'dashboard:table_export' table.id %}?format=csv" class="action-btn bg-white/15 text-white hover:bg-white/25 border-white/30">
-          <i class="fas fa-download"></i> Export CSV
-        </a>
-      </div>
-    </div>
-  </div>
-</div>
+{% block page_heading %}{{ table.name }} – Records{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'dashboard:record_create' table.id %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition" style="background:#f68712">
+  <i class="fas fa-plus text-xs"></i> Add Record
+</a>
+<a href="{% url 'dashboard:table_import' table.id %}" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 hover:border-[#03466e] hover:text-[#03466e] transition">
+  <i class="fas fa-upload text-xs"></i> Import
+</a>
+{% endblock %}
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
   {% if records %}

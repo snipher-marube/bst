@@ -1,0 +1,222 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{# ── suppress marketing chrome ─────────────────────────────────────────── #}
+{% block navbar %}{% endblock %}
+{% block site_footer %}{% endblock %}
+{% block mobile_menu %}{% endblock %}
+{% block cookie_banner %}{% endblock %}
+{% block main_class %}{% endblock %}
+
+{# ── dashboard shell ────────────────────────────────────────────────────── #}
+{% block content %}
+<div class="flex h-screen overflow-hidden bg-[#f8fafc]" x-data="dashboardShell()" x-init="init()">
+
+  {# ── sidebar overlay (mobile) ───────────────────────────────────────── #}
+  <div x-show="sidebarOpen"
+       x-transition:enter="transition-opacity ease-linear duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition-opacity ease-linear duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       @click="sidebarOpen = false"
+       class="fixed inset-0 bg-black/40 z-30 lg:hidden"
+       style="display:none"></div>
+
+  {# ── SIDEBAR ────────────────────────────────────────────────────────── #}
+  <aside id="sidebar"
+         :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+         class="fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#03466e] text-white
+                transition-transform duration-200 ease-in-out lg:static lg:inset-auto lg:translate-x-0">
+
+    {# brand #}
+    <div class="flex items-center gap-3 px-5 h-16 border-b border-white/10 shrink-0">
+      <a href="{% url 'core:home' %}" class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-lg bg-[#f68712] flex items-center justify-center shrink-0">
+          <i class="fas fa-chart-pie text-white text-sm"></i>
+        </div>
+        <span class="font-bold text-lg leading-none truncate">AnalyticsMeta</span>
+      </a>
+      <button @click="sidebarOpen = false" class="ml-auto lg:hidden text-white/60 hover:text-white">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    {# workspace switcher #}
+    {% if workspace %}
+    <div class="px-4 py-3 border-b border-white/10 shrink-0">
+      <a href="{% url 'dashboard:workspaces' %}"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition group">
+        <div class="w-8 h-8 rounded-lg bg-[#f68712]/80 flex items-center justify-center text-white font-bold text-sm shrink-0">
+          {{ workspace.name|first|upper }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-white truncate">{{ workspace.name }}</p>
+          <p class="text-[11px] text-white/60 capitalize">{{ workspace.tier }} plan</p>
+        </div>
+        <i class="fas fa-chevron-down text-white/50 text-xs group-hover:text-white/80 transition shrink-0"></i>
+      </a>
+    </div>
+    {% endif %}
+
+    {# main navigation #}
+    <nav class="flex-1 px-3 py-4 overflow-y-auto space-y-1">
+      <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Workspace</p>
+
+      {% with url_name=request.resolver_match.url_name %}
+      <a href="{% url 'dashboard:home' %}"
+         class="nav-link {% if url_name == 'home' %}active{% endif %}">
+        <i class="fas fa-chart-bar w-5 text-center"></i>
+        <span>Overview</span>
+      </a>
+
+      <a href="{% url 'dashboard:tables' %}"
+         class="nav-link {% if 'table' in url_name or 'record' in url_name %}active{% endif %}">
+        <i class="fas fa-table w-5 text-center"></i>
+        <span>Tables</span>
+        {% if stats.tables %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full">{{ stats.tables }}</span>{% endif %}
+      </a>
+
+      <a href="{% if insights_dashboard %}{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}{% else %}{% url 'dashboard:home' %}{% endif %}"
+         class="nav-link {% if 'dashboard' in url_name and url_name != 'home' %}active{% endif %}">
+        <i class="fas fa-chart-pie w-5 text-center"></i>
+        <span>Dashboards</span>
+      </a>
+
+      <div class="pt-3 pb-1">
+        <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Workspace</p>
+      </div>
+
+      <a href="{% url 'dashboard:members' %}"
+         class="nav-link {% if url_name == 'members' %}active{% endif %}">
+        <i class="fas fa-users w-5 text-center"></i>
+        <span>Team</span>
+      </a>
+
+      <a href="{% url 'dashboard:activity' %}"
+         class="nav-link {% if url_name == 'activity' %}active{% endif %}">
+        <i class="fas fa-history w-5 text-center"></i>
+        <span>Activity</span>
+        {% if unread_notifications_count > 0 %}
+        <span class="ml-auto text-[11px] font-bold bg-[#f68712] px-1.5 py-0.5 rounded-full">{{ unread_notifications_count }}</span>
+        {% endif %}
+      </a>
+      {% endwith %}
+    </nav>
+
+    {# bottom nav #}
+    <div class="px-3 py-3 border-t border-white/10 shrink-0 space-y-1">
+      {% with url_name=request.resolver_match.url_name %}
+      <a href="{% url 'dashboard:settings' %}"
+         class="nav-link {% if url_name == 'settings' %}active{% endif %}">
+        <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
+      </a>
+      <a href="{% url 'dashboard:billing' %}"
+         class="nav-link {% if url_name == 'billing' %}active{% endif %}">
+        <i class="fas fa-credit-card w-5 text-center"></i><span>Billing</span>
+      </a>
+      {% endwith %}
+
+      {# user row #}
+      <div class="flex items-center gap-2.5 px-3 py-2.5 mt-2 rounded-xl bg-white/5 border border-white/10">
+        <a href="{% url 'dashboard:profile' %}" class="flex items-center gap-2.5 min-w-0 flex-1 group">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#f68712] to-[#e07810] flex items-center justify-center text-white font-bold text-sm shrink-0">
+            {{ user.email|first|upper }}
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-white truncate group-hover:text-[#f68712] transition">
+              {{ user.get_full_name|default:user.email|truncatechars:18 }}
+            </p>
+            <p class="text-[11px] text-white/50 truncate">{{ user.email|truncatechars:20 }}</p>
+          </div>
+        </a>
+        <a href="{% url 'account_logout' %}" title="Sign out"
+           class="shrink-0 w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition">
+          <i class="fas fa-sign-out-alt text-sm"></i>
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  {# ── MAIN COLUMN ────────────────────────────────────────────────────── #}
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    {# top bar #}
+    <header class="h-14 shrink-0 bg-white border-b border-gray-100 flex items-center gap-3 px-4 sm:px-6 shadow-sm z-20">
+      {# mobile hamburger #}
+      <button @click="sidebarOpen = true" class="lg:hidden text-gray-500 hover:text-[#03466e] p-1.5 rounded-lg hover:bg-gray-100 transition">
+        <i class="fas fa-bars text-lg"></i>
+      </button>
+
+      {# breadcrumb / page title #}
+      <div class="flex-1 min-w-0">
+        {% block topbar_title %}
+        <h1 class="text-sm font-semibold text-gray-700 truncate">
+          {% block page_heading %}Dashboard{% endblock %}
+        </h1>
+        {% endblock %}
+      </div>
+
+      {# right side actions #}
+      <div class="flex items-center gap-2 shrink-0">
+        {# page-level actions slot #}
+        {% block topbar_actions %}{% endblock %}
+
+        {# notification bell #}
+        <a href="{% url 'dashboard:activity' %}"
+           class="relative p-2 rounded-lg text-gray-400 hover:text-[#03466e] hover:bg-gray-100 transition">
+          <i class="fas fa-bell text-base"></i>
+          {% if unread_notifications_count > 0 %}
+          <span class="absolute top-1 right-1 w-2 h-2 bg-[#f68712] rounded-full ring-2 ring-white"></span>
+          {% endif %}
+        </a>
+
+        {# workspace switcher shortcut #}
+        <a href="{% url 'dashboard:workspaces' %}"
+           class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-[#03466e] text-xs font-medium text-gray-600 hover:text-[#03466e] transition">
+          <i class="fas fa-layer-group text-xs"></i>
+          <span class="truncate max-w-[100px]">{{ workspace.name|default:"Workspace" }}</span>
+        </a>
+      </div>
+    </header>
+
+    {# scrollable page content #}
+    <main class="flex-1 overflow-y-auto">
+      {% block main_content %}{% endblock %}
+    </main>
+  </div>
+
+</div>
+
+<style>
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    padding: .5rem .75rem;
+    border-radius: .625rem;
+    font-size: .8125rem;
+    font-weight: 500;
+    color: rgba(255,255,255,.7);
+    transition: background .15s, color .15s;
+    text-decoration: none;
+  }
+  .nav-link:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .nav-link.active { background: rgba(255,255,255,.15); color: #fff; border-left: 3px solid #f68712; padding-left: calc(.75rem - 3px); }
+</style>
+
+<script>
+function dashboardShell() {
+  return {
+    sidebarOpen: false,
+    init() {
+      this.sidebarOpen = window.innerWidth >= 1024;
+      window.addEventListener('resize', () => {
+        if (window.innerWidth >= 1024) this.sidebarOpen = true;
+      });
+    }
+  }
+}
+</script>
+{% endblock %}

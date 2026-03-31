@@ -1,6 +1,7 @@
 from django.conf import settings
 from .models import SiteSettings
 from apps.dashboards.models import Dashboard
+from apps.notifications.models import Notification
 
 
 def site_settings(request):
@@ -29,6 +30,7 @@ def navigation(request):
     Context processor for navigation menus
     """
     insights_dashboard = None
+    unread_notifications_count = 0
     if request.user.is_authenticated:
         workspace_id = request.session.get('current_workspace_id')
         if workspace_id:
@@ -37,9 +39,14 @@ def navigation(request):
                 slug='workspace-overview',
                 is_active=True
             ).first()
+        unread_notifications_count = Notification.objects.filter(
+            user=request.user,
+            is_read=False,
+        ).count()
 
     return {
         'insights_dashboard': insights_dashboard,
+        'unread_notifications_count': unread_notifications_count,
         'main_nav': [
             {'title': 'Home', 'url': '/', 'active': request.path == '/'},
             {'title': 'Features', 'url': '/features/', 'active': request.path.startswith('/features')},
@@ -52,30 +59,11 @@ def navigation(request):
             'product': [
                 {'title': 'Features', 'url': '/features/'},
                 {'title': 'Pricing', 'url': '/pricing/'},
-                {'title': 'Integrations', 'url': '/integrations/'},
-                {'title': 'API', 'url': '/api/docs/'},
-                {'title': 'Roadmap', 'url': '/roadmap/'},
-            ],
-            'solutions': [
-                {'title': 'Small Business', 'url': '/solutions/small-business/'},
-                {'title': 'Agriculture', 'url': '/solutions/agriculture/'},
-                {'title': 'Personal Finance', 'url': '/solutions/personal/'},
-                {'title': 'E-commerce', 'url': '/solutions/ecommerce/'},
-                {'title': 'Non-profit', 'url': '/solutions/nonprofit/'},
-            ],
-            'resources': [
-                {'title': 'Documentation', 'url': '/docs/'},
-                {'title': 'Tutorials', 'url': '/tutorials/'},
                 {'title': 'Blog', 'url': '/blog/'},
-                {'title': 'Case Studies', 'url': '/case-studies/'},
-                {'title': 'Webinars', 'url': '/webinars/'},
             ],
             'company': [
                 {'title': 'About Us', 'url': '/about/'},
-                {'title': 'Careers', 'url': '/careers/'},
-                {'title': 'Press', 'url': '/press/'},
                 {'title': 'Contact', 'url': '/contact/'},
-                {'title': 'Legal', 'url': '/legal/'},
             ],
         }
     }

@@ -70,21 +70,21 @@
     </a>
     
     <!-- Header/Navbar -->
-    {% include 'includes/header.html' %}
-    
+    {% block navbar %}{% include 'includes/header.html' %}{% endblock %}
+
     <!-- Main Content -->
-    <main id="main-content" class="min-h-screen">
+    <main id="main-content" class="{% block main_class %}min-h-screen{% endblock %}">
         {% block content %}{% endblock %}
     </main>
-    
+
     <!-- Footer -->
-    {% include 'includes/footer.html' %}
-    
+    {% block site_footer %}{% include 'includes/footer.html' %}{% endblock %}
+
     <!-- Mobile Menu -->
-    {% include 'includes/mobile-menu.html' %}
-    
+    {% block mobile_menu %}{% include 'includes/mobile-menu.html' %}{% endblock %}
+
     <!-- Cookie Consent -->
-    {% include 'includes/cookie-consent.html' %}
+    {% block cookie_banner %}{% include 'includes/cookie-consent.html' %}{% endblock %}
     
     <!-- JavaScript -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>

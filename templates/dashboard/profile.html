@@ -1,7 +1,7 @@
-{% extends "base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 {% block title %}My Profile{% endblock %}
 
-{% block content %}
+{% block main_content %}
 <style>
   :root{--primary:#03466e;--accent:#f68712;}
   .avatar-lg {
@@ -17,24 +17,7 @@
   .input-field:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(3,70,110,.1); }
 </style>
 
-<!-- Header -->
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-3xl mx-auto">
-    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
-      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <span class="text-white">My Profile</span>
-    </nav>
-    <div class="flex items-center gap-5">
-      <div class="avatar-lg">{{ request.user.first_name|first|upper|default:request.user.email|first|upper }}</div>
-      <div>
-        <h1 class="text-2xl font-bold">{{ request.user.get_full_name|default:request.user.email }}</h1>
-        <p style="color:rgba(255,255,255,.75)" class="text-sm mt-0.5">{{ request.user.email }}</p>
-        <p style="color:rgba(255,255,255,.6)" class="text-xs mt-1">Member since {{ request.user.date_joined|date:"F Y" }}</p>
-      </div>
-    </div>
-  </div>
-</div>
+{% block page_heading %}My Profile{% endblock %}
 
 <div class="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 

@@ -1,14 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Activity Log – {{ request.user.current_workspace.name }}{% endblock %}
+{% extends "dashboard/base_dashboard.html" %}
+{% block title %}Activity Log{% endblock %}
+{% block page_heading %}Activity Log{% endblock %}
 
-{% block content %}
+{% block main_content %}
 <style>
-  :root{--primary:#03466e;--accent:#f68712;}
-  .timeline-dot {
-    width:36px; height:36px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    font-size:.75rem; flex-shrink:0;
-  }
+  .timeline-dot { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.75rem; flex-shrink:0; }
   .action-create  { background:#d1fae5; color:#065f46; }
   .action-update  { background:#dbeafe; color:#1e40af; }
   .action-delete  { background:#fee2e2; color:#991b1b; }
@@ -16,23 +12,10 @@
   .action-share   { background:#ede9fe; color:#5b21b6; }
   .action-view    { background:#f3f4f6; color:#374151; }
   .filter-btn { padding:.375rem .875rem; border-radius:9999px; font-size:.8125rem; font-weight:500; border:1px solid #e2e8f0; cursor:pointer; transition:all .15s; }
-  .filter-btn.active,.filter-btn:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .filter-btn.active,.filter-btn:hover { background:#03466e; color:#fff; border-color:#03466e; }
 </style>
 
-<!-- Header -->
-<div style="background:linear-gradient(135deg,var(--primary),#025b8c);padding:2rem 1.5rem;color:#fff;">
-  <div class="max-w-4xl mx-auto">
-    <nav class="flex items-center gap-2 text-sm mb-3" style="color:rgba(255,255,255,.7)">
-      <a href="{% url 'dashboard:home' %}" class="hover:text-white">Dashboard</a>
-      <i class="fas fa-chevron-right text-xs"></i>
-      <span class="text-white">Activity Log</span>
-    </nav>
-    <h1 class="text-2xl font-bold">Activity Log</h1>
-    <p style="color:rgba(255,255,255,.8)" class="mt-1 text-sm">Every action taken in this workspace</p>
-  </div>
-</div>
-
-<div class="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+<div class="max-w-4xl mx-auto px-4 sm:px-6 py-6">
 
   <!-- Filters -->
   <div class="flex flex-wrap gap-2 mb-6" x-data="{ active: 'all' }">
