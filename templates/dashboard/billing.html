@@ -16,7 +16,8 @@
 
 {% block page_heading %}Billing & Plans{% endblock %}
 
-<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10"
+     x-data="mpesaPayment()">
 
   {% for m in messages %}
   <div class="rounded-xl px-4 py-3 flex items-center gap-3 {% if m.tags == 'success' %}bg-green-50 border border-green-200 text-green-800{% else %}bg-blue-50 border border-blue-200 text-blue-800{% endif %}">
@@ -33,16 +34,14 @@
     {% with stats=workspace.get_usage_stats %}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-      <!-- Tables -->
       <div>
         <div class="flex justify-between text-sm mb-1">
           <span class="text-gray-600 font-medium">Tables</span>
           <span class="text-gray-900 font-semibold">{{ stats.tables }} / {{ stats.tables_limit }}</span>
         </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:{% widthratio stats.tables stats.tables_limit 100 %}%; background:{% if stats.tables == stats.tables_limit %}#ef4444{% elif stats.tables >= stats.tables_limit|floatformat:0|add:-1 %}#f59e0b{% else %}var(--primary){% endif %}"></div></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:{% widthratio stats.tables stats.tables_limit 100 %}%; background:{% if stats.tables == stats.tables_limit %}#ef4444{% else %}var(--primary){% endif %}"></div></div>
       </div>
 
-      <!-- Records -->
       <div>
         <div class="flex justify-between text-sm mb-1">
           <span class="text-gray-600 font-medium">Records (total)</span>
@@ -51,7 +50,6 @@
         <div class="progress-bar"><div class="progress-fill" style="width:{% if stats.records_limit > 0 %}{% widthratio stats.records stats.records_limit 100 %}{% else %}0{% endif %}%; background:var(--primary)"></div></div>
       </div>
 
-      <!-- Members -->
       <div>
         <div class="flex justify-between text-sm mb-1">
           <span class="text-gray-600 font-medium">Team Members</span>
@@ -67,7 +65,7 @@
   <!-- Plan cards -->
   <div>
     <h2 class="text-xl font-bold text-gray-900 mb-2">Choose a Plan</h2>
-    <p class="text-gray-500 text-sm mb-6">Upgrade or downgrade at any time. All changes apply immediately.</p>
+    <p class="text-gray-500 text-sm mb-6">Pay securely via M-Pesa. All plans billed monthly in KES.</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
 
@@ -77,7 +75,10 @@
         {% if workspace.tier == 'free' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Free</h3>
-          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$0</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+          <div class="flex items-end gap-1 mt-1">
+            <span class="text-3xl font-extrabold text-gray-900">KES 0</span>
+            <span class="text-gray-400 text-sm mb-1">/mo</span>
+          </div>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>5 tables</span></li>
@@ -102,7 +103,10 @@
         {% if workspace.tier == 'starter' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Starter</h3>
-          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$19</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+          <div class="flex items-end gap-1 mt-1">
+            <span class="text-3xl font-extrabold text-gray-900">KES 2,500</span>
+            <span class="text-gray-400 text-sm mb-1">/mo</span>
+          </div>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>20 tables</span></li>
@@ -113,11 +117,17 @@
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>AI insights</span></li>
         </ul>
         {% if workspace %}
-        <a href="{% url 'subscriptions:upgrade' workspace.id 'starter' %}"
-          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+        {% if workspace.tier == 'starter' %}
+        <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
+        {% else %}
+        <button type="button"
+          @click="openModal('starter', 'KES 2,500', '{{ workspace.id }}')"
+          class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--primary)">
-          {% if workspace.tier == 'starter' %}Current{% else %}Upgrade to Starter{% endif %}
-        </a>
+          <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
+          Pay with M-Pesa
+        </button>
+        {% endif %}
         {% endif %}
       </div>
 
@@ -128,7 +138,10 @@
         {% if workspace.tier == 'professional' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3 mt-2">Current Plan</div>{% else %}<div class="mt-2"></div>{% endif %}
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Professional</h3>
-          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$49</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+          <div class="flex items-end gap-1 mt-1">
+            <span class="text-3xl font-extrabold text-gray-900">KES 6,500</span>
+            <span class="text-gray-400 text-sm mb-1">/mo</span>
+          </div>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>100 tables</span></li>
@@ -139,11 +152,17 @@
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Advanced widgets & gauges</span></li>
         </ul>
         {% if workspace %}
-        <a href="{% url 'subscriptions:upgrade' workspace.id 'professional' %}"
-          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+        {% if workspace.tier == 'professional' %}
+        <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
+        {% else %}
+        <button type="button"
+          @click="openModal('professional', 'KES 6,500', '{{ workspace.id }}')"
+          class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--accent)">
-          {% if workspace.tier == 'professional' %}Current{% else %}Upgrade to Pro{% endif %}
-        </a>
+          <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
+          Pay with M-Pesa
+        </button>
+        {% endif %}
         {% endif %}
       </div>
 
@@ -153,7 +172,10 @@
         {% if workspace.tier == 'enterprise' %}<div class="text-xs font-semibold text-[#03466e] bg-blue-50 px-2 py-0.5 rounded-full w-fit mb-3">Current Plan</div>{% endif %}
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Enterprise</h3>
-          <div class="flex items-end gap-1 mt-1"><span class="text-3xl font-extrabold text-gray-900">$99</span><span class="text-gray-400 text-sm mb-1">/mo</span></div>
+          <div class="flex items-end gap-1 mt-1">
+            <span class="text-3xl font-extrabold text-gray-900">KES 12,900</span>
+            <span class="text-gray-400 text-sm mb-1">/mo</span>
+          </div>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Unlimited tables</span></li>
@@ -165,28 +187,289 @@
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>SLA guarantee</span></li>
         </ul>
         {% if workspace %}
-        <a href="{% url 'subscriptions:upgrade' workspace.id 'enterprise' %}"
-          class="block text-center py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+        {% if workspace.tier == 'enterprise' %}
+        <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
+        {% else %}
+        <button type="button"
+          @click="openModal('enterprise', 'KES 12,900', '{{ workspace.id }}')"
+          class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--primary)">
-          {% if workspace.tier == 'enterprise' %}Current{% else %}Upgrade to Enterprise{% endif %}
-        </a>
+          <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
+          Pay with M-Pesa
+        </button>
+        {% endif %}
         {% endif %}
       </div>
 
     </div>
   </div>
 
-  <!-- Invoice history stub -->
+  <!-- Invoice / M-Pesa transaction history -->
   <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-100">
-      <h2 class="font-semibold text-gray-900"><i class="fas fa-file-invoice mr-2 text-[#03466e]"></i>Invoice History</h2>
+      <h2 class="font-semibold text-gray-900"><i class="fas fa-file-invoice mr-2 text-[#03466e]"></i>Payment History</h2>
     </div>
+    {% if workspace %}
+    {% with txns=workspace.mpesa_transactions.all|slice:":10" %}
+    {% if txns %}
+    <div class="divide-y divide-gray-50">
+      {% for txn in txns %}
+      <div class="px-6 py-4 flex items-center gap-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0
+          {% if txn.status == 'completed' %}bg-green-100{% elif txn.status == 'failed' %}bg-red-100{% else %}bg-amber-100{% endif %}">
+          <i class="fas {% if txn.status == 'completed' %}fa-check text-green-600{% elif txn.status == 'failed' %}fa-times text-red-600{% else %}fa-clock text-amber-600{% endif %} text-sm"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-gray-900">
+            M-Pesa – {{ txn.plan.name|default:"Plan Upgrade" }}
+            {% if txn.mpesa_receipt_number %}
+            <span class="ml-2 text-xs font-mono text-gray-400">{{ txn.mpesa_receipt_number }}</span>
+            {% endif %}
+          </p>
+          <p class="text-xs text-gray-500">{{ txn.phone_number }} · {{ txn.created_at|date:"M j, Y H:i" }}</p>
+        </div>
+        <div class="text-right">
+          <p class="text-sm font-semibold text-gray-900">KES {{ txn.amount|floatformat:0 }}</p>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium
+            {% if txn.status == 'completed' %}bg-green-100 text-green-700
+            {% elif txn.status == 'failed' %}bg-red-100 text-red-700
+            {% else %}bg-amber-100 text-amber-700{% endif %}">
+            {{ txn.status|capfirst }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
     <div class="px-6 py-12 text-center text-gray-400">
       <i class="fas fa-receipt text-4xl mb-3"></i>
-      <p class="text-sm font-medium text-gray-600">No invoices yet</p>
-      <p class="text-xs mt-1">Invoices will appear here once you subscribe to a paid plan.</p>
+      <p class="text-sm font-medium text-gray-600">No payments yet</p>
+      <p class="text-xs mt-1">M-Pesa transactions will appear here.</p>
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% endif %}
+  </div>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- M-Pesa Payment Modal                                              -->
+  <!-- ---------------------------------------------------------------- -->
+  <div x-show="modalOpen" x-transition.opacity
+    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" style="display:none">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full" @click.stop>
+
+      <!-- Step: Phone input -->
+      <div x-show="step === 'input'" class="p-6">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+            <i class="fas fa-mobile-alt text-green-600"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Pay with M-Pesa</h3>
+            <p class="text-sm text-gray-500" x-text="planLabel + ' plan · ' + planPrice + '/mo'"></p>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">M-Pesa phone number</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">+254</span>
+            <input type="tel" x-model="phone" placeholder="7XXXXXXXX" maxlength="9"
+              class="w-full pl-14 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
+              @keydown.enter="initiatePayment()">
+          </div>
+          <p class="text-xs text-gray-400 mt-1">Enter the number registered with M-Pesa.</p>
+        </div>
+
+        <div x-show="errorMsg" class="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700" x-text="errorMsg"></div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 text-xs text-amber-700">
+          <i class="fas fa-lock mr-1"></i>
+          A push notification will be sent to your phone. Enter your M-Pesa PIN to complete payment.
+        </div>
+
+        <div class="flex gap-3">
+          <button type="button" @click="closeModal()"
+            class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+            Cancel
+          </button>
+          <button type="button" @click="initiatePayment()" :disabled="loading"
+            class="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition disabled:opacity-60 flex items-center justify-center gap-2"
+            style="background:#4caf50">
+            <span x-show="!loading"><i class="fas fa-paper-plane mr-1"></i>Send STK Push</span>
+            <span x-show="loading"><i class="fas fa-spinner fa-spin mr-1"></i>Sending…</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Step: Waiting for payment -->
+      <div x-show="step === 'waiting'" class="p-6 text-center">
+        <div class="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-mobile-alt text-green-600 text-2xl"></i>
+        </div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">Check your phone</h3>
+        <p class="text-sm text-gray-600 mb-1" x-text="customerMessage"></p>
+        <p class="text-xs text-gray-400 mb-6">Enter your M-Pesa PIN on your phone to confirm.</p>
+
+        <div class="flex items-center justify-center gap-2 mb-6">
+          <div class="w-2 h-2 rounded-full bg-green-500 animate-bounce" style="animation-delay:0ms"></div>
+          <div class="w-2 h-2 rounded-full bg-green-500 animate-bounce" style="animation-delay:150ms"></div>
+          <div class="w-2 h-2 rounded-full bg-green-500 animate-bounce" style="animation-delay:300ms"></div>
+        </div>
+
+        <p class="text-xs text-gray-400">Waiting for confirmation…</p>
+        <button type="button" @click="closeModal()" class="mt-4 text-xs text-gray-400 hover:text-gray-600 underline">Cancel</button>
+      </div>
+
+      <!-- Step: Success -->
+      <div x-show="step === 'success'" class="p-6 text-center">
+        <div class="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-check-circle text-green-500 text-3xl"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Payment Successful!</h3>
+        <p class="text-sm text-gray-600 mb-1">Your workspace has been upgraded to <strong x-text="planLabel"></strong>.</p>
+        <p class="text-xs text-gray-400 mb-1">Receipt: <span class="font-mono" x-text="receiptNumber"></span></p>
+        <button type="button" @click="window.location.reload()"
+          class="mt-5 px-6 py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90"
+          style="background:var(--primary)">
+          <i class="fas fa-check mr-1"></i>Done
+        </button>
+      </div>
+
+      <!-- Step: Failed -->
+      <div x-show="step === 'failed'" class="p-6 text-center">
+        <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-times-circle text-red-500 text-3xl"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Payment Failed</h3>
+        <p class="text-sm text-gray-500 mb-5" x-text="errorMsg || 'The payment was not completed. Please try again.'"></p>
+        <div class="flex gap-3">
+          <button type="button" @click="closeModal()"
+            class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700">
+            Close
+          </button>
+          <button type="button" @click="step = 'input'; errorMsg = ''"
+            class="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold"
+            style="background:var(--primary)">
+            Try Again
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
 
 </div>
+
+<script>
+function mpesaPayment() {
+  return {
+    modalOpen: false,
+    step: 'input',      // input | waiting | success | failed
+    planTier: '',
+    planLabel: '',
+    planPrice: '',
+    workspaceId: '',
+    phone: '',
+    loading: false,
+    errorMsg: '',
+    customerMessage: '',
+    receiptNumber: '',
+    checkoutRequestId: '',
+    pollTimer: null,
+    pollCount: 0,
+
+    openModal(tier, price, wsId) {
+      this.planTier = tier;
+      this.planLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
+      this.planPrice = price;
+      this.workspaceId = wsId;
+      this.step = 'input';
+      this.phone = '';
+      this.errorMsg = '';
+      this.loading = false;
+      this.modalOpen = true;
+    },
+
+    closeModal() {
+      clearInterval(this.pollTimer);
+      this.modalOpen = false;
+    },
+
+    async initiatePayment() {
+      const rawPhone = this.phone.trim();
+      if (!rawPhone) { this.errorMsg = 'Please enter your M-Pesa phone number.'; return; }
+
+      this.loading = true;
+      this.errorMsg = '';
+
+      try {
+        const csrfToken = document.cookie.split('; ')
+          .find(r => r.startsWith('csrftoken='))?.split('=')[1] || '';
+
+        const res = await fetch('/subscriptions/mpesa/stk-push/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+          body: JSON.stringify({
+            workspace_id: this.workspaceId,
+            tier: this.planTier,
+            phone: rawPhone,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          this.errorMsg = data.error || 'Payment initiation failed.';
+          this.loading = false;
+          return;
+        }
+
+        this.checkoutRequestId = data.checkout_request_id;
+        this.customerMessage = data.customer_message;
+        this.step = 'waiting';
+        this.loading = false;
+        this.startPolling();
+      } catch (err) {
+        this.errorMsg = 'Network error. Please try again.';
+        this.loading = false;
+      }
+    },
+
+    startPolling() {
+      this.pollCount = 0;
+      this.pollTimer = setInterval(() => this.pollStatus(), 4000);
+    },
+
+    async pollStatus() {
+      this.pollCount++;
+      // Stop polling after ~2 minutes (30 × 4s)
+      if (this.pollCount > 30) {
+        clearInterval(this.pollTimer);
+        this.errorMsg = 'Payment timed out. If you completed payment please refresh the page.';
+        this.step = 'failed';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/subscriptions/mpesa/status/${this.checkoutRequestId}/`);
+        const data = await res.json();
+
+        if (data.status === 'completed') {
+          clearInterval(this.pollTimer);
+          this.receiptNumber = data.mpesa_receipt_number || '';
+          this.step = 'success';
+        } else if (data.status === 'failed' || data.status === 'cancelled') {
+          clearInterval(this.pollTimer);
+          this.errorMsg = data.result_desc || 'Payment was not completed.';
+          this.step = 'failed';
+        }
+        // 'pending' → keep polling
+      } catch (err) {
+        // Network hiccup — keep polling silently
+      }
+    },
+  };
+}
+</script>
 {% endblock %}

@@ -138,6 +138,24 @@ SITE_ID = 1
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ---------------------------------------------------------------------------
+# M-Pesa Daraja API (Safaricom)
+# ---------------------------------------------------------------------------
+MPESA_SANDBOX = config('MPESA_SANDBOX', default=True, cast=bool)
+MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY', default='')
+MPESA_CONSUMER_SECRET = config('MPESA_CONSUMER_SECRET', default='')
+# Sandbox shortcode and passkey (Lipa Na M-Pesa Online)
+MPESA_SHORTCODE = config('MPESA_SHORTCODE', default='174379')
+MPESA_PASSKEY = config(
+    'MPESA_PASSKEY',
+    default='bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919',
+)
+# Must be a publicly reachable HTTPS URL for Safaricom to POST the callback
+MPESA_CALLBACK_URL = config(
+    'MPESA_CALLBACK_URL',
+    default='https://sandbox.safaricom.co.ke/mpesa/callback/',
+)
+
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Default Django auth

@@ -1,7 +1,6 @@
 """
 Subscription & Billing views.
-Real Stripe integration is stubbed – replace the STRIPE_WEBHOOK_SECRET env var
-and uncomment the signature-verification block when going live.
+Includes M-Pesa Daraja API STK Push and Stripe (stubbed).
 """
 import json
 import logging
@@ -14,7 +13,8 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 
 from apps.workspaces.models import Workspace
-from .models import Plan, Subscription, StripeWebhookEvent, PLAN_LIMITS
+from .models import Plan, Subscription, StripeWebhookEvent, MpesaTransaction, PLAN_LIMITS
+from .mpesa_service import MpesaService
 
 logger = logging.getLogger(__name__)
 
@@ -175,3 +175,222 @@ def _handle_invoice_failed(data_obj):
         sub.save(update_fields=['status'])
     except Subscription.DoesNotExist:
         pass
+
+
+# ---------------------------------------------------------------------------
+# M-Pesa – KES price map
+# ---------------------------------------------------------------------------
+
+MPESA_PLAN_PRICES = {
+    'starter':      2500,
+    'professional': 6500,
+    'enterprise':   12900,
+}
+
+
+# ---------------------------------------------------------------------------
+# M-Pesa STK Push – initiate payment
+# ---------------------------------------------------------------------------
+
+@login_required
+@require_POST
+def mpesa_stk_push(request):
+    """
+    Initiate an M-Pesa STK Push for a plan upgrade.
+
+    Expected POST body (JSON):
+        { "workspace_id": "<uuid>", "tier": "starter|professional|enterprise", "phone": "07XXXXXXXX" }
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+
+    workspace_id = body.get('workspace_id', '')
+    tier = body.get('tier', '').lower()
+    phone = body.get('phone', '').strip()
+
+    if tier not in MPESA_PLAN_PRICES:
+        return JsonResponse({'error': 'Invalid plan tier.'}, status=400)
+
+    if not phone:
+        return JsonResponse({'error': 'Phone number is required.'}, status=400)
+
+    try:
+        workspace = Workspace.objects.get(id=workspace_id, owner=request.user)
+    except Workspace.DoesNotExist:
+        return JsonResponse({'error': 'Workspace not found.'}, status=404)
+
+    amount = MPESA_PLAN_PRICES[tier]
+    plan, _ = Plan.objects.get_or_create(
+        tier=tier,
+        defaults={'name': tier.capitalize(), **PLAN_LIMITS.get(tier, PLAN_LIMITS['free'])},
+    )
+
+    # Create a pending transaction record first
+    txn = MpesaTransaction.objects.create(
+        workspace=workspace,
+        user=request.user,
+        plan=plan,
+        phone_number=phone,
+        amount=amount,
+        status='pending',
+    )
+
+    service = MpesaService()
+    try:
+        result = service.lipa_na_mpesa_online(
+            phone_number=phone,
+            amount=amount,
+            account_reference='AnalyticsMeta',
+            transaction_desc='Plan Upgrade',
+        )
+    except Exception as exc:
+        txn.status = 'failed'
+        txn.result_desc = str(exc)
+        txn.save(update_fields=['status', 'result_desc'])
+        logger.error("STK Push failed for workspace %s: %s", workspace.name, exc)
+        return JsonResponse({'error': 'M-Pesa request failed. Please try again.'}, status=502)
+
+    response_code = result.get('ResponseCode', '')
+    if response_code != '0':
+        txn.status = 'failed'
+        txn.result_desc = result.get('ResponseDescription', '')
+        txn.save(update_fields=['status', 'result_desc'])
+        return JsonResponse(
+            {'error': result.get('ResponseDescription', 'STK Push rejected.')},
+            status=400,
+        )
+
+    # Save Daraja identifiers for later callback matching
+    txn.merchant_request_id = result.get('MerchantRequestID', '')
+    txn.checkout_request_id = result.get('CheckoutRequestID', '')
+    txn.save(update_fields=['merchant_request_id', 'checkout_request_id'])
+
+    return JsonResponse({
+        'success': True,
+        'checkout_request_id': txn.checkout_request_id,
+        'customer_message': result.get('CustomerMessage', 'STK Push sent. Check your phone.'),
+    })
+
+
+# ---------------------------------------------------------------------------
+# M-Pesa Callback – Safaricom posts payment result here
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+@require_POST
+def mpesa_callback(request):
+    """
+    Daraja sends a POST to this endpoint with the payment result.
+    The URL must be publicly reachable (use ngrok during development).
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponse(status=400)
+
+    callback = body.get('Body', {}).get('stkCallback', {})
+    merchant_request_id = callback.get('MerchantRequestID', '')
+    checkout_request_id = callback.get('CheckoutRequestID', '')
+    result_code = str(callback.get('ResultCode', ''))
+    result_desc = callback.get('ResultDesc', '')
+
+    try:
+        txn = MpesaTransaction.objects.get(checkout_request_id=checkout_request_id)
+    except MpesaTransaction.DoesNotExist:
+        logger.warning("M-Pesa callback for unknown CheckoutRequestID: %s", checkout_request_id)
+        return HttpResponse(status=200)
+
+    txn.result_code = result_code
+    txn.result_desc = result_desc
+
+    if result_code == '0':
+        # Payment successful – extract M-Pesa receipt number
+        items = callback.get('CallbackMetadata', {}).get('Item', [])
+        receipt = next((i['Value'] for i in items if i.get('Name') == 'MpesaReceiptNumber'), '')
+        txn.mpesa_receipt_number = receipt
+        txn.status = 'completed'
+        txn.save(update_fields=['result_code', 'result_desc', 'mpesa_receipt_number', 'status'])
+
+        # Apply the plan limits to the workspace
+        if txn.plan and txn.workspace:
+            sub, _ = Subscription.objects.get_or_create(
+                workspace=txn.workspace,
+                defaults={'plan': txn.plan, 'status': 'active'},
+            )
+            sub.plan = txn.plan
+            sub.status = 'active'
+            sub.save(update_fields=['plan', 'status'])
+            sub.apply_plan_limits()
+            logger.info(
+                "Workspace %s upgraded to %s via M-Pesa (%s)",
+                txn.workspace.name, txn.plan.tier, receipt,
+            )
+    else:
+        txn.status = 'failed'
+        txn.save(update_fields=['result_code', 'result_desc', 'status'])
+        logger.info("M-Pesa payment failed for %s: %s", checkout_request_id, result_desc)
+
+    return HttpResponse(status=200)
+
+
+# ---------------------------------------------------------------------------
+# M-Pesa payment status – frontend polls this
+# ---------------------------------------------------------------------------
+
+@login_required
+def mpesa_payment_status(request, checkout_request_id):
+    """
+    Return the current status of an M-Pesa transaction.
+    Frontend polls every few seconds after initiating STK Push.
+    """
+    try:
+        txn = MpesaTransaction.objects.get(
+            checkout_request_id=checkout_request_id,
+            user=request.user,
+        )
+    except MpesaTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found.'}, status=404)
+
+    data = {
+        'status': txn.status,
+        'result_desc': txn.result_desc,
+        'mpesa_receipt_number': txn.mpesa_receipt_number,
+        'plan': txn.plan.tier if txn.plan else '',
+        'amount': str(txn.amount),
+    }
+
+    # If still pending, optionally query Daraja for live status
+    if txn.status == 'pending' and txn.checkout_request_id:
+        service = MpesaService()
+        try:
+            result = service.query_stk_push(txn.checkout_request_id)
+            daraja_result_code = str(result.get('ResultCode', ''))
+            if daraja_result_code == '0':
+                txn.status = 'completed'
+                txn.result_code = daraja_result_code
+                txn.result_desc = result.get('ResultDesc', '')
+                txn.save(update_fields=['status', 'result_code', 'result_desc'])
+                # Apply plan
+                if txn.plan and txn.workspace:
+                    sub, _ = Subscription.objects.get_or_create(
+                        workspace=txn.workspace,
+                        defaults={'plan': txn.plan, 'status': 'active'},
+                    )
+                    sub.plan = txn.plan
+                    sub.status = 'active'
+                    sub.save(update_fields=['plan', 'status'])
+                    sub.apply_plan_limits()
+                data['status'] = 'completed'
+            elif daraja_result_code not in ('', '1032'):  # 1032 = request cancelled / still pending
+                txn.status = 'failed'
+                txn.result_code = daraja_result_code
+                txn.result_desc = result.get('ResultDesc', '')
+                txn.save(update_fields=['status', 'result_code', 'result_desc'])
+                data['status'] = 'failed'
+                data['result_desc'] = txn.result_desc
+        except Exception:
+            pass  # Don't fail the poll on transient Daraja errors
+
+    return JsonResponse(data)

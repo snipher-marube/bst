@@ -103,6 +103,47 @@ class Subscription(models.Model):
         ])
 
 
+class MpesaTransaction(models.Model):
+    """Records an M-Pesa STK Push payment attempt for a subscription upgrade."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='mpesa_transactions')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='mpesa_transactions')
+    plan = models.ForeignKey(Plan, on_delete=models.SET_NULL, null=True, blank=True)
+
+    phone_number = models.CharField(max_length=20)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # Daraja API identifiers
+    merchant_request_id = models.CharField(max_length=100, blank=True)
+    checkout_request_id = models.CharField(max_length=100, blank=True, db_index=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Filled on callback
+    mpesa_receipt_number = models.CharField(max_length=50, blank=True)
+    result_code = models.CharField(max_length=10, blank=True)
+    result_desc = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['checkout_request_id', 'status']),
+        ]
+
+    def __str__(self):
+        return f"M-Pesa {self.phone_number} → {self.amount} ({self.status})"
+
+
 class StripeWebhookEvent(models.Model):
     """Raw Stripe webhook payloads for idempotency and audit."""
     stripe_event_id = models.CharField(max_length=100, unique=True)

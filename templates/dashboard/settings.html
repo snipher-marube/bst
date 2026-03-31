@@ -141,11 +141,6 @@
   }">
     <p class="section-title"><i class="fas fa-bell text-yellow-500"></i> Notification Preferences</p>
     <div class="space-y-3">
-      {% for key, label, desc in 'email_invites,Team invitations,Get notified when someone joins or is invited|email_import,Import completions,Notify when a CSV or Excel import finishes|email_insights,Insight reports,Receive weekly automated insight summaries'|addslashes|slice:":3" %}
-      {% endfor %}
-      <!-- Toggle rows rendered statically; persisted in a future sprint -->
-      {% for item in "Team invitations:email_invites:Get notified when someone joins or is invited,Import completions:email_import:Notify when a CSV or Excel import finishes,Insight reports:email_insights:Receive weekly automated insight summaries"|split:"," %}
-      {% endfor %}
       <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50">
         <div>
           <p class="text-sm font-semibold text-gray-700">Team invitations</p>
