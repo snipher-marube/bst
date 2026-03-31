@@ -1,119 +1,214 @@
 # AnalyticsMeta
 
-A powerful business intelligence and analytics platform built with Django, enabling teams to create custom data tables, build interactive dashboards, and gain insights from their data.
+A multi-tenant business intelligence SaaS platform built with Django. Teams can create custom data tables, build interactive dashboards, gain AI-powered insights from their data, and collaborate in real time — all from a clean, professional workspace UI.
 
-## 📋 Table of Contents
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Docker Setup (Recommended)](#-docker-setup-recommended)
-- [Manual Installation](#-manual-installation)
-- [Project Structure](#-project-structure)
-- [Architecture](#-architecture)
-- [Security Features](#-security-features)
-- [API Documentation](#-api-documentation)
-- [Testing](#-testing)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
+## Table of Contents
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Docker Setup](#docker-setup-recommended)
+- [Manual Installation](#manual-installation)
+- [Environment Variables](#environment-variables)
+- [Project Structure](#project-structure)
+- [Architecture](#architecture)
+- [Payment — M-Pesa](#payment--m-pesa-daraja)
+- [REST API](#rest-api)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
-## 🚀 Features
+---
 
-### Core Functionality
-- **Workspace Management**: Multi-tenant architecture with tiered plans (Free, Starter, Professional, Enterprise)
-- **Data Tables**: Create flexible, schema-based tables similar to Airtable with support for multiple field types
-- **Interactive Dashboards**: Build custom dashboards with various widget types
-- **Team Collaboration**: Role-based access control (Owner, Admin, Editor, Viewer)
-- **Real-time Analytics**: Track KPIs and visualize data with charts
-- **Professional Data Import**: Step-by-step import wizard for CSV and Excel files with auto-schema detection and column mapping
-- **Data Export**: Export data in multiple formats for external use
+## Features
 
-### Field Types Supported
-- Text, Number, Date, DateTime
-- Boolean (Yes/No)
-- Email, URL, Phone
-- Currency, Percentage
+### Workspaces & Plans
+- Multi-tenant architecture — each workspace is isolated
+- Four tiers: **Free / Starter / Professional / Enterprise**
+- Per-workspace limits on tables, records, and team members
+- Workspace switcher in the sidebar for users who belong to multiple workspaces
 
-### Key Applications
-- 📊 **Dashboards**: Create and customize analytical dashboards
-- 📈 **Charts**: Visualize data with various chart types
-- 📋 **Categories**: Organize data into categories
-- 🔢 **KPIs**: Track key performance indicators
-- 📥 **Imports**: Import data from external sources
-- 📤 **Exports**: Export data in multiple formats
-- 🔗 **Integrations**: Connect with third-party services
-- 📧 **Newsletter**: Manage email campaigns and newsletters
-- 🔔 **Notifications**: Real-time alerts and notifications
-- 👥 **Teams**: Collaborative workspace management
-- 💳 **Subscriptions**: Manage user subscriptions and billing
+### Data Tables
+- Schema-based tables with typed columns (text, number, date, boolean, email, URL, phone, currency, percentage)
+- Paginated record list with inline add/edit/delete
+- CSV and Excel import with auto-schema detection and column mapping
+- Export to CSV, JSON, or Excel
 
-## 🛠️ Tech Stack
+### Dashboards & Widgets
+- Drag-and-drop dashboard builder (GridStack.js)
+- Widget types: bar chart, line chart, pie chart, scatter plot, KPI card, data table (Plotly.js)
+- Real-time widget updates via Django Channels WebSockets
+- AI-powered insight generation (Celery + OpenAI/custom)
+
+### Team Collaboration
+- Role-based access control: **Owner / Admin / Editor / Viewer**
+- Email invitations with expiry and revoke
+- Member limit enforced per plan tier
+- Real-time notifications (WebSocket channel layer)
+
+### Billing & Payments
+- Plan cards with usage progress bars
+- **M-Pesa Daraja STK Push** — Lipa Na M-Pesa Online (sandbox + production)
+- Payment history with M-Pesa receipt numbers
+- Stripe webhook handler (stubbed, ready to activate)
+
+### Dashboard UI
+- Professional SaaS sidebar layout (collapsible, responsive)
+- Notification bell with unread badge
+- Activity timeline with filterable action log
+- Profile management, password change via allauth
+
+---
+
+## Tech Stack
 
 ### Backend
-- **Django 6.0.2**: Web framework
-- **Django REST Framework 3.16**: API development
-- **PostgreSQL 18**: Primary database (via psycopg 3.3)
-- **Celery 5.6**: Asynchronous task processing
-- **Redis 7**: Caching and task queue
-- **Django Allauth 65.14**: Authentication with OAuth support
+| Package | Version | Purpose |
+|---|---|---|
+| Django | 6.0.2 | Web framework |
+| Django REST Framework | 3.16 | REST API |
+| Django Channels + Daphne | latest | WebSockets / ASGI |
+| Celery | 5.6 | Async tasks |
+| Redis | 7 | Message broker + cache |
+| PostgreSQL | 18 | Primary database (psycopg 3) |
+| Django Allauth | 65.14 | Auth + Google/LinkedIn OAuth2 |
+| requests | 2.32+ | M-Pesa Daraja API calls |
+| Pandas | latest | Data manipulation (import/export) |
+| WhiteNoise | latest | Static file serving |
+| Gunicorn | latest | Production WSGI server |
+| python-decouple | latest | 12-factor config |
 
 ### Frontend
-- **Tailwind CSS 4.1**: Utility-first CSS framework
-- **Alpine.js/HTMX**: Interactive UI components
+| Library | Purpose |
+|---|---|
+| Tailwind CSS 4 | Utility-first CSS |
+| Alpine.js | Reactive UI components, modals, toggles |
+| HTMX | Server-side partial rendering |
+| Plotly.js | Charts and visualizations |
+| GridStack.js | Drag-and-drop dashboard layout |
+| Font Awesome 6.5 | Icons |
 
-### Authentication & Security
-- Google OAuth2
-- LinkedIn OAuth2
-- Django rate limiting
-- JWT authentication
-- Cryptography for secure data handling
+### Infrastructure
+- Docker + Docker Compose (dev)
+- Nginx (production reverse proxy)
+- Let's Encrypt / SSL
+- `TIME_ZONE = 'Africa/Nairobi'`
 
-### Additional Tools
-- **Pandas**: Data manipulation and analysis
-- **Pillow**: Image processing
-- **WhiteNoise**: Static file serving
-- **Gunicorn**: Production WSGI server
+---
 
-## 🐳 Docker Setup (Recommended)
-
-Docker is the recommended way to run this project as it handles all dependencies and services (PostgreSQL, Redis, Celery) automatically.
+## Docker Setup (Recommended)
 
 ### Prerequisites
+- Docker 24.0+
+- Docker Compose 2.20+
 
-- [Docker](https://docs.docker.com/get-docker/) (version 24.0 or higher)
-- [Docker Compose](https://docs.docker.com/compose/install/) (version 2.20 or higher)
-- Git
-
-### Quick Start with Docker
-
-#### 1. Clone the Repository
+### 1. Clone
 ```bash
 git clone https://github.com/snipher-marube/bst
 cd bst
 ```
 
-#### 2. Configure Environment Variables
+### 2. Create `.env` (see [Environment Variables](#environment-variables))
 
-Create a `.env` file in the project root (copy from `.env.example` if available):
+### 3. Build and start
+```bash
+docker compose -f docker-compose.dev.yml up --build
+# Or detached:
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+Starts: PostgreSQL 18 · Redis 7 · Django dev server (:8000) · Celery worker
+
+### 4. First-run setup
+```bash
+docker compose -f docker-compose.dev.yml exec web python manage.py migrate
+docker compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
+docker compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput
+```
+
+### 5. Open
+| URL | Description |
+|---|---|
+| http://localhost:8000 | Main application |
+| http://localhost:8000/admin | Django admin |
+| http://localhost:8000/api/v1/ | REST API |
+| http://localhost:8000/dashboard/analytics/ | Dashboard home |
+
+### Useful Docker commands
+```bash
+# Logs
+docker compose -f docker-compose.dev.yml logs -f web
+
+# Django shell
+docker compose -f docker-compose.dev.yml exec web python manage.py shell
+
+# Postgres CLI
+docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d analyticsmeta
+
+# Stop
+docker compose -f docker-compose.dev.yml down
+```
+
+---
+
+## Manual Installation
+
+### Prerequisites
+- Python 3.14+
+- PostgreSQL 15+
+- Redis 6+
+- Node.js 18+ (Tailwind CSS build)
+
+### Steps
+```bash
+# 1. Clone
+git clone https://github.com/snipher-marube/bst && cd bst
+
+# 2. Virtual environment
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# 3. Node dependencies
+npm install
+
+# 4. Copy and configure env
+cp .env.example .env   # then edit .env
+
+# 5. Database
+createdb analyticsmeta
+python manage.py migrate
+python manage.py createsuperuser
+
+# 6. Run services (four terminals)
+python manage.py runserver                  # Terminal 1
+celery -A config worker -l info             # Terminal 2
+celery -A config beat -l info               # Terminal 3
+npm run dev                                 # Terminal 4 (Tailwind watch)
+```
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the project root. Do **not** add inline comments on the same line as a value.
 
 ```env
-# Django Settings
+# Django
 SECRET_KEY=your-super-secret-key-change-this-in-production
 DEBUG=True
 DJANGO_SETTINGS_MODULE=config.settings.development
 
-# PostgreSQL Database (Docker will use these)
+# Database
 PG_DATABASE_NAME_DEV=analyticsmeta
 PG_DATABASE_USER_DEV=postgres
 PG_DATABASE_PASSWORD_DEV=postgres
-# IMPORTANT: Use 'postgres' as host when running with Docker (service name)
-PG_DATABASE_HOST_DEV=postgres
+PG_DATABASE_HOST_DEV=postgres        # Use 'postgres' with Docker, 'localhost' for manual
 PG_DATABASE_PORT_DEV=5432
 
-# Redis Configuration
+# Redis / Celery
 REDIS_URL=redis://redis:6379/0
 CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
 
-# Email Configuration (for development)
+# Email
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USE_TLS=True
@@ -121,672 +216,285 @@ EMAIL_HOST_USER=your-email@gmail.com
 EMAIL_HOST_PASSWORD=your-app-password
 SUPPORT_EMAIL=support@example.com
 
-# OAuth Configuration (optional - for production)
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-LINKEDIN_CLIENT_ID=your-linkedin-client-id
-LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
+# OAuth (optional)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
 
-# Site Configuration
+# Site
 SITE_URL=http://localhost:8000
 SITE_NAME=AnalyticsMeta
+
+# M-Pesa Daraja API
+# Set MPESA_SANDBOX=True for sandbox, False for production
+MPESA_SANDBOX=True
+MPESA_CONSUMER_KEY=your_daraja_consumer_key
+MPESA_CONSUMER_SECRET=your_daraja_consumer_secret
+# Sandbox defaults are pre-filled in settings; override here for production:
+MPESA_SHORTCODE=174379
+MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
+# Must be a publicly reachable HTTPS URL (use ngrok for local testing)
+MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok.io/subscriptions/mpesa/callback/
+
+# Stripe (optional — webhook handler is present but stubbed)
+STRIPE_WEBHOOK_SECRET=
 ```
-
-**⚠️ Important Notes:**
-- Do **NOT** add comments on the same line as environment variables
-- Use `postgres` as the database host (Docker service name), not `localhost`
-- Keep the `.env` file secure and never commit it to version control
-
-#### 3. Build and Start Containers
-
-```bash
-# Build and start all services
-docker compose -f docker-compose.dev.yml up --build
-
-# Or run in detached mode (background)
-docker compose -f docker-compose.dev.yml up -d --build
-```
-
-This will start:
-- **PostgreSQL 18** on port 5432
-- **Redis 7** on port 6380 (mapped to container's 6379)
-- **Django Development Server** on port 8000
-- **Celery Worker** for background tasks
-
-#### 4. Run Database Migrations
-
-In a new terminal, run:
-
-```bash
-# Run migrations
-docker compose -f docker-compose.dev.yml exec web python manage.py migrate
-
-# Create a superuser (admin account)
-docker compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
-
-# Collect static files
-docker compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput
-```
-
-#### 5. Access the Application
-
-Open your browser and navigate to:
-- **Main Application**: http://localhost:8000
-- **Admin Panel**: http://localhost:8000/admin (use the superuser credentials)
-- **API Endpoints**: http://localhost:8000/api/v1/
-
-### Docker Commands Reference
-
-#### Container Management
-```bash
-# Start all services
-docker compose -f docker-compose.dev.yml up -d
-
-# Stop all services
-docker compose -f docker-compose.dev.yml down
-
-# Stop and remove volumes (deletes database data)
-docker compose -f docker-compose.dev.yml down -v
-
-# Rebuild after changes
-docker compose -f docker-compose.dev.yml up --build
-
-# View running containers
-docker compose -f docker-compose.dev.yml ps
-
-# View logs
-docker compose -f docker-compose.dev.yml logs -f
-
-# View specific service logs
-docker compose -f docker-compose.dev.yml logs -f web
-docker compose -f docker-compose.dev.yml logs -f postgres
-docker compose -f docker-compose.dev.yml logs -f redis
-```
-
-#### Running Management Commands
-```bash
-# Django shell
-docker compose -f docker-compose.dev.yml exec web python manage.py shell
-
-# Django shell_plus (if django-extensions is installed)
-docker compose -f docker-compose.dev.yml exec web python manage.py shell_plus
-
-# Check migrations status
-docker compose -f docker-compose.dev.yml exec web python manage.py showmigrations
-
-# Create new app
-docker compose -f docker-compose.dev.yml exec web python manage.py startapp app_name
-
-# Run tests
-docker compose -f docker-compose.dev.yml exec web python manage.py test
-```
-
-#### Database Operations
-```bash
-# Access PostgreSQL directly
-docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d analyticsmeta
-
-# Backup database
-docker compose -f docker-compose.dev.yml exec postgres pg_dump -U postgres analyticsmeta > backup.sql
-
-# Restore database
-cat backup.sql | docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres analyticsmeta
-```
-
-#### Redis Commands
-```bash
-# Access Redis CLI
-docker compose -f docker-compose.dev.yml exec redis redis-cli
-
-# Monitor Redis keys
-docker compose -f docker-compose.dev.yml exec redis redis-cli MONITOR
-```
-
-### Docker Architecture
-
-The project uses a multi-container setup:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Network                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Web App    │  │   Celery     │  │   Celery     │  │
-│  │   (Django)   │  │   Worker     │  │   Beat       │  │
-│  │   :8000      │  │              │  │              │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  │
-│         │                 │                 │           │
-│         ▼                 ▼                 ▼           │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │              Redis (Message Broker)               │  │
-│  │                    :6379                         │  │
-│  └──────────────────────────────────────────────────┘  │
-│         │                                               │
-│         ▼                                               │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │           PostgreSQL (Database)                  │  │
-│  │                    :5432                         │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Environment-Specific Docker Files
-
-- **docker-compose.dev.yml**: Development setup with hot-reload and mounted volumes
-- **Dockerfile.dev**: Development Docker image with uv package manager
-
-### Hot Reloading
-
-The development setup includes hot reloading:
-- Django auto-reloads on code changes (mounted volume)
-- Static files are served directly from the mounted directory
-- No need to rebuild containers during development
-
-## ⚙️ Manual Installation
-
-If you prefer not to use Docker, you can install manually.
-
-### Prerequisites
-
-- Python 3.14+
-- PostgreSQL 15+
-- Redis 6+
-- Node.js 18+ (for Tailwind CSS)
-
-### Installation Steps
-
-#### 1. Clone the repository
-```bash
-git clone https://github.com/snipher-marube/bst
-cd bst
-```
-
-#### 2. Create virtual environment
-```bash
-# Using uv (recommended)
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e .
-
-# Or using pip
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
-```
-
-#### 3. Install Node.js dependencies
-```bash
-npm install
-```
-
-#### 4. Configure environment
-Create `.env` file (see Docker section for example) and update:
-- `PG_DATABASE_HOST_DEV=localhost` (when not using Docker)
-- Other database credentials
-
-#### 5. Setup database
-```bash
-# Create PostgreSQL database
-createdb analyticsmeta
-
-# Run migrations
-python manage.py migrate
-
-# Create superuser
-python manage.py createsuperuser
-```
-
-#### 6. Run the application
-
-Start all services:
-
-**Terminal 1 - Django Server:**
-```bash
-python manage.py runserver
-```
-
-**Terminal 2 - Celery Worker:**
-```bash
-celery -A config worker -l info
-```
-
-**Terminal 3 - Celery Beat (optional, for scheduled tasks):**
-```bash
-celery -A config beat -l info
-```
-
-**Terminal 4 - Tailwind CSS (optional):**
-```bash
-npm run dev
-```
-
-Visit `http://localhost:8000`
-
-## 📁 Project Structure
-
-```
-analyticsmeta/
-├── apps/                       # Django applications
-│   ├── categories/            # Data categorization
-│   ├── charts/                # Chart visualization
-│   ├── core/                  # Core functionality
-│   ├── dashboards/            # Dashboard management
-│   ├── exports/               # Data export functionality
-│   ├── fields/                # Custom field types
-│   ├── formulas/              # Formula calculations
-│   ├── imports/               # Data import functionality
-│   ├── integrations/          # Third-party integrations
-│   ├── insights/              # AI-powered insights
-│   ├── kpis/                  # KPI tracking
-│   ├── newsletter/            # Newsletter management
-│   ├── notifications/         # Notification system
-│   ├── records/               # Data records
-│   ├── subscriptions/         # Subscription management
-│   ├── teams/                 # Team collaboration
-│   ├── templates_app/         # Template management
-│   ├── users/                 # User management
-│   └── workspaces/            # Workspace management
-├── config/                     # Django configuration
-│   ├── settings/              # Environment-specific settings
-│   │   ├── base.py           # Base settings
-│   │   ├── development.py    # Development settings
-│   │   └── production.py     # Production settings
-│   ├── __init__.py
-│   ├── asgi.py               # ASGI configuration
-│   ├── celery.py             # Celery configuration
-│   ├── urls.py               # URL routing
-│   └── wsgi.py               # WSGI configuration
-├── static/                     # Static files (CSS, JS, images)
-├── staticfiles/               # Collected static files
-├── templates/                  # Django templates
-├── .env                        # Environment variables (gitignored)
-├── .env.example                # Example environment variables
-├── .gitignore                  # Git ignore file
-├── docker-compose.dev.yml     # Docker Compose configuration
-├── Dockerfile.dev             # Development Dockerfile
-├── manage.py                  # Django management script
-├── pyproject.toml             # Python dependencies
-├── package.json               # Node.js dependencies
-└── README.md                  # This file
-```
-
-## 🏗️ Architecture
-
-### Data Model Hierarchy
-1. **Workspace**: Top-level organization unit, supports multiple tiers
-2. **DataTable**: Schema-based tables within workspaces
-3. **Record**: Individual data entries in tables
-4. **Dashboard**: Visual representation of data
-5. **Widget**: Individual visualization components
-
-### Access Control
-- **Owner**: Full workspace control
-- **Admin**: Workspace settings management
-- **Editor**: Create and edit dashboards
-- **Viewer**: Read-only access
-
-### Tier Limits
-- **Free**: 5 tables, 1000 records per table, 1 team member
-- **Starter**: 20 tables, 10,000 records, 5 team members
-- **Professional**: 100 tables, 100,000 records, 20 team members
-- **Enterprise**: Unlimited tables/records, custom solutions
-
-## 🔐 Security Features
-
-- CSRF protection
-- SQL injection prevention via Django ORM
-- XSS protection
-- Rate limiting on API endpoints (5 attempts per 5 minutes for login)
-- Secure password hashing (PBKDF2 with 600,000 iterations)
-- OAuth2 integration with Google and LinkedIn
-- JWT token authentication for API
-- Audit logging for all actions
-- Account enumeration prevention
-- Email verification required for new accounts
-- Password complexity requirements
-
-## 📊 API Documentation
-
-RESTful API endpoints are available at `/api/v1/`:
-
-### Authentication
-- `POST /api/v1/auth/login/` - Login with email/password
-- `POST /api/v1/auth/logout/` - Logout
-- `POST /api/v1/auth/register/` - Register new user
-- `POST /api/v1/auth/password/reset/` - Password reset
-
-### Workspaces
-- `GET /api/v1/workspaces/` - List workspaces
-- `POST /api/v1/workspaces/` - Create workspace
-- `GET /api/v1/workspaces/{id}/` - Get workspace details
-- `PUT /api/v1/workspaces/{id}/` - Update workspace
-- `DELETE /api/v1/workspaces/{id}/` - Delete workspace
-
-### Tables
-- `GET /api/v1/workspaces/{id}/tables/` - List tables
-- `POST /api/v1/workspaces/{id}/tables/` - Create table
-- `GET /api/v1/tables/{id}/` - Get table details
-- `PUT /api/v1/tables/{id}/` - Update table schema
-- `DELETE /api/v1/tables/{id}/` - Delete table
-
-### Records
-- `GET /api/v1/tables/{id}/records/` - List records (with pagination)
-- `POST /api/v1/tables/{id}/records/` - Create record
-- `GET /api/v1/records/{id}/` - Get record
-- `PUT /api/v1/records/{id}/` - Update record
-- `DELETE /api/v1/records/{id}/` - Delete record
-
-### Dashboards
-- `GET /api/v1/workspaces/{id}/dashboards/` - List dashboards
-- `POST /api/v1/workspaces/{id}/dashboards/` - Create dashboard
-- `GET /api/v1/dashboards/{id}/` - Get dashboard configuration
-- `PUT /api/v1/dashboards/{id}/` - Update dashboard
-- `DELETE /api/v1/dashboards/{id}/` - Delete dashboard
-
-All API endpoints require authentication via JWT token (Bearer token) or session authentication.
-
-## 🧪 Testing
-
-### Run All Tests
-```bash
-# With Docker
-docker-compose -f docker-compose.dev.yml exec web python manage.py test
-
-# Without Docker
-python manage.py test
-```
-
-### Run Specific App Tests
-```bash
-python manage.py test apps.users
-python manage.py test apps.workspaces
-```
-
-### Run with Coverage
-```bash
-# Install coverage
-uv add coverage
-
-# Run tests with coverage
-coverage run manage.py test
-coverage report
-coverage html  # Generates HTML report in htmlcov/
-```
-
-### Test Database
-By default, tests use an in-memory SQLite database for speed. Configure test database in settings:
-
-```python
-# In development.py
-import sys
-if 'test' in sys.argv:
-    DATABASES['default'] = {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:'
-    }
-```
-
-## 📝 Development Workflow
-
-### Code Style
-- Follow PEP 8 guidelines
-- Use Black for code formatting: `black .`
-- Use Flake8 for linting: `flake8 .`
-- Write descriptive commit messages
-- Add docstrings to functions and classes
-
-### Database Migrations
-After model changes:
-```bash
-# Create migration file
-python manage.py makemigrations
-
-# Review migration SQL
-python manage.py sqlmigrate app_name migration_number
-
-# Apply migrations
-python manage.py migrate
-
-# Create migration for specific app
-python manage.py makemigrations app_name
-```
-
-### Creating a New App
-```bash
-# Create app in apps directory
-python manage.py startapp app_name apps/app_name
-
-# Add to INSTALLED_APPS in settings
-```
-
-### Git Workflow
-```bash
-# Create feature branch
-git checkout -b feature/feature-name
-
-# Make changes and commit
-git add .
-git commit -m "feat: Add new feature"
-
-# Push and create PR
-git push origin feature/feature-name
-```
-
-## 🐛 Troubleshooting
-
-### Docker-Related Issues
-
-**Issue: Database connection error - "failed to resolve host ' not localhost!'"**
-- **Solution**: Check your `.env` file for inline comments. Move comments to separate lines:
-  ```env
-  # Wrong:
-  PG_DATABASE_HOST_DEV=postgres  # This is the host
-  
-  # Correct:
-  # This is the host
-  PG_DATABASE_HOST_DEV=postgres
-  ```
-
-**Issue: Port already in use**
-- **Solution**: Change ports in docker-compose.dev.yml or stop conflicting services:
-  ```bash
-  # Check what's using port 8000
-  sudo lsof -i :8000
-  # Stop the container using different port
-  docker stop container_name
-  ```
-
-**Issue: Permission denied for volume mounts**
-- **Solution**: Ensure proper permissions or use Docker Desktop with automatic permissions
-
-**Issue: Container exits immediately**
-- **Solution**: Check logs for errors:
-  ```bash
-  docker-compose -f docker-compose.dev.yml logs web
-  ```
-
-**Issue: Redis connection refused**
-- **Solution**: Ensure Redis container is healthy:
-  ```bash
-  docker-compose -f docker-compose.dev.yml ps
-  docker-compose -f docker-compose.dev.yml logs redis
-  ```
-
-### Common Development Issues
-
-**Database connection errors**:
-- Verify PostgreSQL is running: `docker-compose -f docker-compose.dev.yml ps postgres`
-- Check credentials in `.env` file
-- Ensure database exists: `docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -l`
-
-**Celery tasks not executing**:
-- Check Redis is running: `docker-compose -f docker-compose.dev.yml exec redis redis-cli ping`
-- Verify Celery worker logs: `docker-compose -f docker-compose.dev.yml logs celery-worker`
-- Check task registration: `docker-compose -f docker-compose.dev.yml exec web celery -A config inspect registered`
-
-**Static files not loading**:
-- Run collectstatic: `docker-compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput`
-- Check STATIC_URL and STATIC_ROOT settings
-- Verify WhiteNoise configuration in settings
-
-**Migration conflicts**:
-```bash
-# Reset migrations (careful - deletes data!)
-docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -c "DROP DATABASE analyticsmeta;"
-docker-compose -f docker-compose.dev.yml exec postgres psql -U postgres -c "CREATE DATABASE analyticsmeta;"
-docker-compose -f docker-compose.dev.yml exec web python manage.py migrate
-```
-
-**Slow Docker performance on Mac/Windows**:
-- Use Docker Desktop with VirtioFS or gRPC FUSE
-- Add project to Docker's file sharing exceptions
-- Use `:delegated` mount flag for volumes
-
-### Production Deployment Tips
-
-1. **Set DEBUG=False** in production
-2. **Use environment-specific settings**:
-   ```bash
-   DJANGO_SETTINGS_MODULE=config.settings.production
-   ```
-3. **Configure proper database settings**:
-   - Use connection pooling
-   - Set CONN_MAX_AGE appropriately
-   - Enable SSL for database connections
-
-4. **Use Gunicorn instead of runserver**:
-   ```bash
-   gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2
-   ```
-
-5. **Set up SSL/TLS** with Let's Encrypt or cloud provider SSL
-
-6. **Configure logging** to file or external service (Sentry, Logstash)
-
-## 📦 Deployment
-
-### Deploy with Docker to Production
-
-1. **Create production Dockerfile** (`Dockerfile.prod`):
-```dockerfile
-FROM python:3.14-slim-bookworm
-# Production-specific setup...
-```
-
-2. **Create production docker-compose** (`docker-compose.prod.yml`):
-```yaml
-services:
-  postgres:
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_DB: ${PG_DATABASE_NAME}
-      POSTGRES_USER: ${PG_DATABASE_USER}
-      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - analytics_network
-
-  redis:
-    image: redis:7-alpine
-    networks:
-      - analytics_network
-
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
-    environment:
-      - DJANGO_SETTINGS_MODULE=config.settings.production
-    networks:
-      - analytics_network
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - static_volume:/static
-    networks:
-      - analytics_network
-
-volumes:
-  postgres_data:
-  static_volume:
-
-networks:
-  analytics_network:
-    driver: bridge
-```
-
-### Deploy to Cloud Platforms
-
-**Heroku**:
-```bash
-heroku create analyticsmeta
-heroku addons:create heroku-postgresql:hobby-dev
-heroku addons:create heroku-redis:hobby-dev
-git push heroku main
-```
-
-**AWS Elastic Beanstalk**:
-```bash
-eb init -p docker analyticsmeta
-eb create analyticsmeta-env
-```
-
-**DigitalOcean App Platform**:
-- Use the Dockerfile and environment variables
-- Configure PostgreSQL and Redis as attached databases
-
-## 🤝 Contributing
-
-1. **Fork the repository**
-2. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
-3. **Commit your changes**:
-   ```bash
-   git commit -m 'feat: Add amazing feature'
-   ```
-4. **Push to the branch**:
-   ```bash
-   git push origin feature/amazing-feature
-   ```
-5. **Open a Pull Request**
-
-### Commit Convention
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation
-- `style:` Formatting
-- `refactor:` Code restructuring
-- `test:` Testing
-- `chore:` Maintenance
-
-## 📄 License
-
-[Add your license information here]
-
-## 📧 Contact & Support
-
-- **Project Maintainer**: sniphermarube@gmail.com
-- **Issue Tracker**: [GitHub Issues](https://github.com/snipher-marube/bst/issues)
-- **Documentation**: [Wiki](https://github.com/snipher-marube/bst/wiki)
-
-## 🙏 Acknowledgments
-
-- Django Software Foundation
-- All open-source contributors
-- PostgreSQL and Redis communities
-- Tailwind CSS team
 
 ---
 
-**Built with ❤️ using Django and modern web technologies**
+## Project Structure
+
 ```
-This README provides a comprehensive guide for new developers to set up the project using Docker, along with detailed instructions for manual installation, project structure, architecture, security features, API documentation, testing, troubleshooting, and deployment. It also includes a contributing guide and contact information for support.
+analyticsmeta/
+├── apps/
+│   ├── core/              # Context processors, site settings, base views
+│   ├── users/             # User model, profile
+│   ├── dashboards/        # Workspaces, DataTables, Records, Dashboards,
+│   │                      #   Widgets, middleware, REST API v1 views
+│   ├── exports/           # CSV / JSON / Excel export
+│   ├── insights/          # AI insight generation (Celery tasks)
+│   ├── newsletter/        # Email newsletter management
+│   ├── notifications/     # Real-time notification model + context
+│   ├── subscriptions/     # Plans, Subscriptions, MpesaTransaction,
+│   │                      #   Daraja service, Stripe webhook stub
+│   └── workspaces/        # Workspace CRUD, member invitations, roles
+├── config/
+│   ├── settings/
+│   │   ├── base.py        # Shared settings (M-Pesa, Celery, Channels…)
+│   │   ├── development.py
+│   │   └── production.py
+│   ├── asgi.py            # Daphne / Channels ASGI entry point
+│   ├── celery.py
+│   ├── urls.py
+│   └── wsgi.py
+├── templates/
+│   ├── base.html                      # Public marketing base
+│   ├── includes/                      # header, footer, mobile-menu
+│   └── dashboard/
+│       ├── base_dashboard.html        # SaaS sidebar shell
+│       ├── index.html                 # Analytics home
+│       ├── tables.html / table_detail.html / table_form.html
+│       ├── table_import.html / table_confirm_delete.html
+│       ├── record_form.html / record_list.html / record_confirm_delete.html
+│       ├── dashboard_detail.html / dashboard_form.html / dashboard_confirm_delete.html
+│       ├── workspaces.html / workspace_form.html
+│       ├── members.html               # Team management + invitations
+│       ├── billing.html               # Plans + M-Pesa payment modal
+│       ├── settings.html              # Workspace settings + danger zone
+│       ├── profile.html               # User profile
+│       └── activity.html             # Audit log timeline
+├── static/
+├── staticfiles/
+├── docker-compose.dev.yml
+├── Dockerfile.dev
+├── manage.py
+├── pyproject.toml
+└── package.json
+```
+
+---
+
+## Architecture
+
+### Data Model Hierarchy
+```
+User
+ └── WorkspaceMembership (role: owner/admin/editor/viewer)
+      └── Workspace (tier, limits)
+           ├── DataTable (schema: JSONField)
+           │    └── Record (data: JSONField)
+           ├── Dashboard
+           │    └── Widget (type, config, position)
+           ├── Subscription → Plan
+           └── MpesaTransaction
+```
+
+### Request / WebSocket Flow
+```
+Browser ──HTTP──► Daphne (ASGI) ──► Django views / DRF
+        ──WS───► Channels Consumer ──► Redis channel layer
+                                         ──► Celery worker (insights, exports)
+```
+
+### Tier Limits
+| Tier | Tables | Records/table | Members | Price |
+|---|---|---|---|---|
+| Free | 5 | 1,000 | 1 | KES 0 |
+| Starter | 20 | 10,000 | 5 | KES 2,500/mo |
+| Professional | 100 | 100,000 | 20 | KES 6,500/mo |
+| Enterprise | 999 | 999,999 | 999 | KES 12,900/mo |
+
+---
+
+## Payment — M-Pesa Daraja
+
+The billing page uses Safaricom's **Lipa Na M-Pesa Online** (STK Push) to process subscription payments.
+
+### Flow
+1. User clicks **Pay with M-Pesa** on a plan card
+2. Alpine.js modal opens — user enters their Kenyan phone number
+3. Frontend POSTs to `/subscriptions/mpesa/stk-push/` → backend calls Daraja STK Push API
+4. Safaricom sends a push notification to the user's phone
+5. User enters their M-Pesa PIN
+6. Frontend polls `/subscriptions/mpesa/status/<checkout_request_id>/` every 4 seconds
+7. On `completed` → workspace limits are upgraded immediately; receipt number displayed
+8. Safaricom also POSTs the callback to `/subscriptions/mpesa/callback/` (backup confirmation)
+
+### Relevant files
+| File | Purpose |
+|---|---|
+| `apps/subscriptions/mpesa_service.py` | `MpesaService` — OAuth token, STK Push, STK Query, phone normaliser |
+| `apps/subscriptions/views.py` | `mpesa_stk_push`, `mpesa_callback`, `mpesa_payment_status` |
+| `apps/subscriptions/models.py` | `MpesaTransaction` model |
+| `templates/dashboard/billing.html` | Plan cards + Alpine.js payment modal |
+
+### Sandbox testing
+1. Get sandbox credentials from [Safaricom Developer Portal](https://developer.safaricom.co.ke)
+2. Set `MPESA_CONSUMER_KEY` and `MPESA_CONSUMER_SECRET` in `.env`
+3. Expose your local server publicly: `ngrok http 8000`
+4. Set `MPESA_CALLBACK_URL=https://<your-ngrok>.ngrok.io/subscriptions/mpesa/callback/`
+5. Use the sandbox test phone number provided in the Daraja portal
+
+### Going to production
+```env
+MPESA_SANDBOX=False
+MPESA_CONSUMER_KEY=<production_key>
+MPESA_CONSUMER_SECRET=<production_secret>
+MPESA_SHORTCODE=<your_paybill>
+MPESA_PASSKEY=<your_passkey>
+MPESA_CALLBACK_URL=https://yourdomain.com/subscriptions/mpesa/callback/
+```
+
+---
+
+## REST API
+
+Base URL: `/api/v1/`
+
+All endpoints require authentication (session or Bearer JWT).
+
+### Workspaces
+```
+GET    /api/v1/workspaces/
+POST   /api/v1/workspaces/
+GET    /api/v1/workspaces/{id}/
+PUT    /api/v1/workspaces/{id}/
+DELETE /api/v1/workspaces/{id}/
+```
+
+### Tables & Records
+```
+GET    /api/v1/workspaces/{id}/tables/
+POST   /api/v1/workspaces/{id}/tables/
+GET    /api/v1/tables/{id}/
+PUT    /api/v1/tables/{id}/
+DELETE /api/v1/tables/{id}/
+
+GET    /api/v1/tables/{id}/records/   (paginated)
+POST   /api/v1/tables/{id}/records/
+GET    /api/v1/records/{id}/
+PUT    /api/v1/records/{id}/
+DELETE /api/v1/records/{id}/
+```
+
+### Dashboards
+```
+GET    /api/v1/workspaces/{id}/dashboards/
+POST   /api/v1/workspaces/{id}/dashboards/
+GET    /api/v1/dashboards/{id}/
+PUT    /api/v1/dashboards/{id}/
+DELETE /api/v1/dashboards/{id}/
+```
+
+### Auth
+```
+POST   /api/v1/auth/login/
+POST   /api/v1/auth/logout/
+POST   /api/v1/auth/register/
+POST   /api/v1/auth/password/reset/
+```
+
+---
+
+## Security
+
+- CSRF protection on all state-changing requests
+- `mpesa_callback` is `@csrf_exempt` (Safaricom posts without a CSRF token) — payload is validated by receipt structure
+- SQL injection prevention via Django ORM
+- XSS protection with Django's template auto-escaping
+- Rate limiting on authentication endpoints
+- Secure password hashing (PBKDF2, 600,000 iterations)
+- OAuth2 — Google and LinkedIn via django-allauth
+- JWT Bearer tokens for API
+- Audit log (`apps.notifications`) for all actions
+- Email verification required for new accounts
+
+---
+
+## Troubleshooting
+
+**`TemplateSyntaxError: Invalid filter`**
+Django does not have a built-in `split` filter. If you see this, a template is using `|split:","` which was removed in the codebase cleanup.
+
+**M-Pesa STK Push not reaching phone**
+- Verify `MPESA_CONSUMER_KEY` and `MPESA_CONSUMER_SECRET` are set
+- The callback URL must be HTTPS and publicly reachable (use ngrok locally)
+- Check sandbox phone numbers in the Daraja test credentials section
+
+**Database connection error with Docker**
+Inline comments in `.env` break python-decouple:
+```env
+# Wrong  — the comment becomes part of the value
+PG_DATABASE_HOST_DEV=postgres  # Docker service name
+
+# Correct
+# Docker service name
+PG_DATABASE_HOST_DEV=postgres
+```
+
+**Celery tasks not executing**
+```bash
+docker compose -f docker-compose.dev.yml exec redis redis-cli ping   # should return PONG
+docker compose -f docker-compose.dev.yml logs celery-worker
+```
+
+**Static files missing**
+```bash
+python manage.py collectstatic --noinput
+```
+
+**Migration conflicts**
+```bash
+python manage.py showmigrations
+python manage.py migrate --run-syncdb
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit using [Conventional Commits](https://www.conventionalcommits.org/):
+   - `feat:` new feature
+   - `fix:` bug fix
+   - `docs:` documentation only
+   - `refactor:` no behaviour change
+   - `chore:` maintenance
+4. Push and open a Pull Request
+
+---
+
+## License
+
+[Add your license here]
+
+## Contact
+
+- **Maintainer**: sniphermarube@gmail.com
+- **Issues**: https://github.com/snipher-marube/bst/issues
+
+---
+
+Built with Django · Tailwind CSS · Alpine.js · M-Pesa Daraja API
