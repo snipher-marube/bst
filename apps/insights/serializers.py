@@ -1,8 +1,6 @@
 # apps/insights/serializers.py
 from rest_framework import serializers
-from apps.dashboards.models import Dashboard, Widget, DataTable
-from .utils import InsightJSONEncoder
-import json
+from apps.dashboards.models import Dashboard, Widget
 import logging
 from uuid import UUID
 from datetime import datetime, date

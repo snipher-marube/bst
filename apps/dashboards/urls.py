@@ -29,8 +29,6 @@ urlpatterns = [
     path('tables/<uuid:table_id>/records/<uuid:record_id>/delete/', views.RecordDeleteView.as_view(), name='record_delete'),
     
     # Dashboard management
-    path('dashboards/', views.DashboardListView.as_view(), name='dashboards'),
-    path('dashboards/create/', views.DashboardCreateView.as_view(), name='dashboard_create'),
     path('dashboards/generate-insights/', views.GenerateWorkspaceInsightsView.as_view(), name='generate_insights'),
     path('dashboards/<uuid:pk>/', views.DashboardDetailView.as_view(), name='dashboard_detail'),
     path('dashboards/<uuid:pk>/edit/', views.DashboardEditView.as_view(), name='dashboard_edit'),
@@ -45,4 +43,6 @@ urlpatterns = [
 
     # Debug endpoint
     path('debug/dashboard/<uuid:pk>/', debug.debug_dashboard, name='debug_dashboard'),
+
+    
 ]

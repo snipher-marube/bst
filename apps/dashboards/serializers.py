@@ -75,23 +75,45 @@ class DashboardSerializer(serializers.ModelSerializer):
 
 class WidgetSerializer(serializers.ModelSerializer):
     widget_data = serializers.SerializerMethodField()
+    table_id = serializers.UUIDField(source='table.id', read_only=True)
+    table_name = serializers.CharField(source='table.name', read_only=True)
     
     class Meta:
         model = Widget
-        fields = ['id', 'dashboard', 'widget_type', 'title', 'table',
-                 'query_config', 'viz_config', 'position', 'widget_data']
-        read_only_fields = ['id', 'widget_data']
+        fields = ['id', 'dashboard', 'widget_type', 'title', 'table', 'table_id', 'table_name',
+                 'query_config', 'viz_config', 'position', 'widget_data', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'widget_data', 'table_id', 'table_name', 'created_at', 'updated_at']
     
     def get_widget_data(self, obj):
         """
-        Fetch data for the widget with proper error handling
+        Fetch data for the widget with proper error handling and caching
         """
         try:
-            # Always return data for existing widgets, regardless of request method
-            # This ensures newly created widgets also have data
-            data = obj.get_data(limit=100)
-            logger.debug(f"Widget {obj.id} data fetched successfully: {data}")
-            return data
+            # Check if we're in a request context
+            request = self.context.get('request')
+            
+            # Try to get from cache
+            from django.core.cache import cache
+            cache_key = f"widget_data_{obj.id}"
+            cached_data = cache.get(cache_key)
+            
+            if cached_data is not None:
+                return cached_data
+            
+            # Get fresh data
+            if obj.table:
+                data = obj.get_data(limit=100)
+                
+                # Cache for 5 minutes
+                cache.set(cache_key, data, 300)
+                
+                # Log the data for debugging
+                logger.debug(f"Widget {obj.id} data: {data}")
+                
+                return data
+            else:
+                return {"error": "No table selected"}
+                
         except Exception as e:
             logger.error(f"Error fetching widget {obj.id} data: {str(e)}", exc_info=True)
             return {"error": f"Failed to load data: {str(e)}"}

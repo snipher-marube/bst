@@ -262,10 +262,10 @@ NEWSLETTER_CONFIRM_REDIRECT = '/'  # Where to redirect after confirmation
 DISPOSABLE_EMAIL_DOMAINS = ['tempmail.com', 'throwaway.com']  # Optional
 
 # Redis Configuration - Use environment variables for flexibility
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
-REDIS_DB = int(os.environ.get('REDIS_DB', 0))
+REDIS_URL = config('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_HOST = config('REDIS_HOST', 'localhost')
+REDIS_PORT = int(config('REDIS_PORT', 6379))
+REDIS_DB = int(config('REDIS_DB', 0))
 
 # Cache settings (for tracking pixels)
 CACHES = {

@@ -576,41 +576,7 @@ class RecordDeleteView(LoginRequiredMixin, DeleteView):
         return redirect(self.get_success_url())
 
 
-class DashboardListView(LoginRequiredMixin, ListView):
-    """List all dashboards"""
-    model = Dashboard
-    template_name = 'dashboard/dashboards.html'
-    context_object_name = 'dashboards'
-    
-    def get_queryset(self):
-        workspace = self.request.user.current_workspace
-        if not workspace:
-            return Dashboard.objects.none()
-        
-        return Dashboard.objects.filter(
-            workspace=workspace,
-            is_active=True
-        ).order_by('-updated_at')
-
-
-class DashboardCreateView(LoginRequiredMixin, CreateView):
-    """Create a new dashboard"""
-    model = Dashboard
-    template_name = 'dashboard/dashboard_form.html'
-    fields = ['name', 'description']
-    
-    def get_success_url(self):
-        return reverse('dashboard:dashboard_detail', kwargs={'pk': self.object.pk})
-    
-    def form_valid(self, form):
-        workspace = self.request.user.current_workspace
-        form.instance.workspace = workspace
-        form.instance.created_by = self.request.user
-        form.instance.slug = form.instance.name.lower().replace(' ', '-')
-        messages.success(self.request, f'Dashboard "{form.instance.name}" created successfully!')
-        return super().form_valid(form)
-
-
+# In views.py - Update DashboardDetailView
 class DashboardDetailView(LoginRequiredMixin, DetailView):
     """View and interact with a dashboard"""
     model = Dashboard
@@ -622,7 +588,10 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
         return Dashboard.objects.filter(
             workspace=workspace,
             is_active=True
-        ).prefetch_related('widgets')
+        ).prefetch_related(
+            'widgets__table',
+            'widgets__table__workspace'
+        )
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -633,14 +602,56 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             is_active=True
         )
         
-        # Serialize dashboard data for frontend
-        from apps.dashboards.serializers import DashboardSerializer
-        serializer = DashboardSerializer(self.object, context={'request': self.request})
-        context['dashboard_json'] = json.dumps(serializer.data, cls=DjangoJSONEncoder)
+        # Serialize dashboard data with proper positions
+        dashboard_data = {
+            'id': str(self.object.id),
+            'name': self.object.name,
+            'description': self.object.description,
+            'slug': self.object.slug,
+            'layout_config': self.object.layout_config,
+            'is_public': self.object.is_public,
+            'public_uuid': str(self.object.public_uuid),
+            'created_at': self.object.created_at.isoformat(),
+            'updated_at': self.object.updated_at.isoformat(),
+            'widgets': []
+        }
+        
+        # Manually build widget data with proper positions
+        for widget in self.object.widgets.all().select_related('table'):
+            widget_data = {
+                'id': str(widget.id),
+                'dashboard': str(widget.dashboard_id),
+                'widget_type': widget.widget_type,
+                'title': widget.title,
+                'table': str(widget.table_id) if widget.table else None,
+                'table_name': widget.table.name if widget.table else None,
+                'query_config': widget.query_config,
+                'viz_config': widget.viz_config,
+                'position': widget.position or {'x': 0, 'y': 0, 'w': 4, 'h': 4},
+                'widget_data': self._get_widget_data(widget),
+                'created_at': widget.created_at.isoformat(),
+                'updated_at': widget.updated_at.isoformat()
+            }
+            dashboard_data['widgets'].append(widget_data)
+        
+        # Debug: Log positions
+        print(f"DEBUG: Dashboard {self.object.id} has {len(dashboard_data['widgets'])} widgets")
+        for w in dashboard_data['widgets']:
+            print(f"  Widget {w['title']}: position={w['position']}")
+        
+        context['dashboard_json'] = json.dumps(dashboard_data, cls=DjangoJSONEncoder)
         
         return context
-
-
+    
+    def _get_widget_data(self, widget):
+        """Get widget data with error handling"""
+        try:
+            data = widget.get_data(limit=100)
+            return data
+        except Exception as e:
+            print(f"Error getting data for widget {widget.id}: {e}")
+            return {"error": str(e)}
+         
 class DashboardEditView(LoginRequiredMixin, UpdateView):
     """Edit dashboard settings"""
     model = Dashboard

@@ -432,13 +432,27 @@ class Widget(models.Model):
         Execute the query and return data for this widget
         """
         if not self.table:
-            return None
+            return {"error": "No table selected"}
+    
+        # Check if table has records
+        if self.table.record_count == 0:
+            return {"message": "No data available in this table"}
+    
+        try:
+            from .services import QueryEngine
+            engine = QueryEngine()
+            result = engine.execute_widget_query(self, limit=limit)
         
-        from .services import QueryEngine
-        engine = QueryEngine()
-        return engine.execute_widget_query(self, limit=limit)
-
-
+            # Ensure we always return a dict
+            if result is None:
+                return {"message": "No data available"}
+        
+            return result
+        
+        except Exception as e:
+            logger.error(f"Widget query error: {str(e)}", exc_info=True)
+            return {"error": str(e)}
+    
 class AuditLog(models.Model):
     """
     Immutable audit log for compliance and debugging
