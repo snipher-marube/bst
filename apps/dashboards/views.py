@@ -314,7 +314,7 @@ class TableImportMixin:
             messages.error(request, 'Import session expired. Please upload the file again.')
             return None
 
-        df = pd.read_json(io.StringIO(serialized_df), orient='split')
+        df = pd.read_json(io.StringIO(serialized_df), orient='split', convert_dates=False)
         service = DataImportService()
 
         # If no table, create a new one first
