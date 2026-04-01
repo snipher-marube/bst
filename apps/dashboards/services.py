@@ -383,6 +383,88 @@ class DataImportService:
             'error_details': errors[:10]
         }
 
+    def clean_dataframe(self, df):
+        """
+        Clean a DataFrame before import and return (cleaned_df, report).
+        Report is a list of human-readable strings describing what was changed.
+        """
+        import re
+        report = []
+        original_rows = len(df)
+        original_cols = list(df.columns)
+
+        # 1. Strip whitespace from column names
+        new_cols = [str(c).strip() for c in df.columns]
+        renamed = {old: new for old, new in zip(df.columns, new_cols) if old != new}
+        if renamed:
+            df = df.rename(columns=renamed)
+            report.append(f"Trimmed whitespace from {len(renamed)} column name(s): {', '.join(renamed.values())}")
+
+        # 2. Strip whitespace from all string values
+        str_cols = df.select_dtypes(include='object').columns.tolist()
+        for col in str_cols:
+            df[col] = df[col].map(lambda x: x.strip() if isinstance(x, str) else x)
+            # Normalise empty strings to None
+            df[col] = df[col].replace('', None)
+
+        if str_cols:
+            report.append(f"Stripped whitespace and normalised empty strings in {len(str_cols)} text column(s)")
+
+        # 3. Remove completely duplicate rows
+        dupes = df.duplicated().sum()
+        if dupes:
+            df = df.drop_duplicates()
+            report.append(f"Removed {dupes} duplicate row(s)")
+
+        # 4. Clean numeric-looking columns that contain currency symbols or thousands separators
+        for col in str_cols:
+            sample = df[col].dropna().head(20)
+            numeric_looking = sample.map(
+                lambda v: bool(re.match(r'^[\$£€\s]?[\d,]+\.?\d*[\s%]?$', str(v)))
+            ).sum()
+            if numeric_looking >= len(sample) * 0.8 and len(sample) > 0:
+                cleaned = df[col].map(
+                    lambda v: re.sub(r'[^\d.\-]', '', str(v)) if pd.notna(v) else v
+                )
+                try:
+                    df[col] = pd.to_numeric(cleaned, errors='raise')
+                    report.append(f"Converted '{col}' to numeric (removed currency/separator characters)")
+                except (ValueError, TypeError):
+                    pass  # leave as-is if conversion fails
+
+        # 5. Attempt to parse date-like string columns
+        for col in df.select_dtypes(include='object').columns:
+            sample = df[col].dropna().head(20)
+            if len(sample) == 0:
+                continue
+            try:
+                converted = pd.to_datetime(sample, infer_datetime_format=True, errors='raise')
+                # Only convert if all sampled values parsed successfully
+                df[col] = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
+                nat_count = df[col].isna().sum()
+                if nat_count / max(len(df), 1) < 0.2:
+                    report.append(f"Parsed '{col}' as dates")
+                else:
+                    # Too many failures — revert by re-reading from original string representation
+                    df[col] = df[col].astype(str).replace('NaT', None)
+            except Exception:
+                pass
+
+        # 6. Report rows with all-None values (already dropped by parse_file, but re-check after cleaning)
+        all_null = df.isnull().all(axis=1).sum()
+        if all_null:
+            df = df[~df.isnull().all(axis=1)]
+            report.append(f"Removed {all_null} fully empty row(s)")
+
+        rows_removed = original_rows - len(df)
+        if rows_removed and not any('duplicate' in r or 'empty' in r for r in report):
+            report.append(f"Removed {rows_removed} row(s) during cleaning")
+
+        if not report:
+            report.append("No issues found — data looks clean")
+
+        return df, report
+
     def import_csv(self, table, file_obj, user, mapping=None):
         """
         Legacy support for import_csv

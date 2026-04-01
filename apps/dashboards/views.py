@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.core.serializers.json import DjangoJSONEncoder
+import io
 import json
 import uuid
 import pandas as pd
@@ -280,6 +281,7 @@ class TableImportMixin:
         file_obj = request.FILES['file']
         try:
             df = service.parse_file(file_obj)
+            df, cleaning_report = service.clean_dataframe(df)
             import_id = str(uuid.uuid4())
             # Use 'split' orientation for better schema preservation
             serialized_df = df.to_json(orient='split')
@@ -294,7 +296,8 @@ class TableImportMixin:
                 'preview_data': df.head(5).to_dict('records'),
                 'suggested_schema': suggested_schema,
                 'field_types': DataTable.FIELD_TYPES,
-                'is_new_table': table is None
+                'is_new_table': table is None,
+                'cleaning_report': cleaning_report,
             })
         except Exception as e:
             messages.error(request, f'Error parsing file: {str(e)}')
@@ -311,7 +314,7 @@ class TableImportMixin:
             messages.error(request, 'Import session expired. Please upload the file again.')
             return None
 
-        df = pd.read_json(serialized_df, orient='split')
+        df = pd.read_json(io.StringIO(serialized_df), orient='split')
         service = DataImportService()
 
         # If no table, create a new one first
