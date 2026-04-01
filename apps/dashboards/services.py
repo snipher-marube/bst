@@ -363,8 +363,11 @@ class DataImportService:
                             if source_field in row:
                                 mapped_row[target_field] = row[source_field]
                     else:
-                        mapped_row = row
-                    
+                        mapped_row = dict(row)
+
+                    # Ensure all values are JSON-serializable Python native types
+                    mapped_row = self._sanitize_row(mapped_row)
+
                     # Create record
                     Record.objects.create(
                         table=table,
@@ -372,7 +375,7 @@ class DataImportService:
                         created_by=user
                     )
                     success_count += 1
-                    
+
             except Exception as e:
                 error_count += 1
                 errors.append(f"Row {row_num}: {str(e)}")
@@ -382,6 +385,24 @@ class DataImportService:
             'errors': error_count,
             'error_details': errors[:10]
         }
+
+    def _sanitize_row(self, row):
+        """Convert a row dict to contain only JSON-serializable Python native types."""
+        import datetime
+        clean = {}
+        for k, v in row.items():
+            if v is None:
+                clean[k] = None
+            elif hasattr(v, 'isoformat'):  # datetime, date, pd.Timestamp
+                clean[k] = v.isoformat()
+            elif hasattr(v, 'item'):  # numpy scalar (int64, float64, bool_, etc.)
+                item = v.item()
+                clean[k] = None if (isinstance(item, float) and (item != item)) else item
+            elif isinstance(v, float) and v != v:  # plain float NaN
+                clean[k] = None
+            else:
+                clean[k] = v
+        return clean
 
     def clean_dataframe(self, df):
         """
@@ -432,21 +453,22 @@ class DataImportService:
                 except (ValueError, TypeError):
                     pass  # leave as-is if conversion fails
 
-        # 5. Attempt to parse date-like string columns
+        # 5. Attempt to parse date-like string columns — store as ISO strings
         for col in df.select_dtypes(include='object').columns:
             sample = df[col].dropna().head(20)
             if len(sample) == 0:
                 continue
             try:
-                converted = pd.to_datetime(sample, infer_datetime_format=True, errors='raise')
-                # Only convert if all sampled values parsed successfully
-                df[col] = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
-                nat_count = df[col].isna().sum()
+                pd.to_datetime(sample, infer_datetime_format=True, errors='raise')
+                # Keep original values as backup before conversion
+                original = df[col].copy()
+                parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
+                nat_count = parsed.isna().sum() - df[col].isna().sum()
                 if nat_count / max(len(df), 1) < 0.2:
-                    report.append(f"Parsed '{col}' as dates")
-                else:
-                    # Too many failures — revert by re-reading from original string representation
-                    df[col] = df[col].astype(str).replace('NaT', None)
+                    # Store as ISO date strings so JSON serialisation is safe
+                    df[col] = parsed.dt.strftime('%Y-%m-%d').where(parsed.notna(), None)
+                    report.append(f"Standardised '{col}' to ISO date format (YYYY-MM-DD)")
+                # else: leave original strings intact
             except Exception:
                 pass
 

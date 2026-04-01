@@ -345,8 +345,11 @@ class TableImportMixin:
                 mapping[col] = col
             table.schema = new_schema
             table.save()
-            # Generate default dashboard for new tables
-            table.generate_default_dashboard()
+            # Generate default dashboard for new tables (non-fatal if it fails)
+            try:
+                table.generate_default_dashboard()
+            except Exception:
+                pass
         else:
             for field in table.schema:
                 field_name = field['name']
@@ -403,6 +406,8 @@ class TableImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
                 messages.success(request, f'Successfully imported {result["success"]} records!')
             else:
                 messages.warning(request, f'Imported {result["success"]} records with {result["errors"]} errors.')
+                for detail in result.get('error_details', [])[:3]:
+                    messages.error(request, detail)
             return redirect('dashboard:table_detail', pk=table.id)
 
         return redirect('dashboard:table_import', pk=table.id)
@@ -444,7 +449,12 @@ class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateVi
                 return redirect('dashboard:table_create_import')
 
             table, result = result_data
-            messages.success(request, f'Table "{table.name}" created with {result["success"]} records!')
+            if result['errors'] == 0:
+                messages.success(request, f'Table "{table.name}" created with {result["success"]} records!')
+            else:
+                messages.warning(request, f'Table "{table.name}" created. Imported {result["success"]} records with {result["errors"]} errors.')
+                for detail in result.get('error_details', [])[:3]:
+                    messages.error(request, detail)
             return redirect('dashboard:table_detail', pk=table.id)
 
         return redirect('dashboard:table_create_import')
