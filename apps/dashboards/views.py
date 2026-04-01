@@ -216,19 +216,22 @@ class TableDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Get records for this table
+
         records = self.object.records.filter(is_active=True).order_by('-created_at')
-        
-        # Pagination
+
         from django.core.paginator import Paginator
-        paginator = Paginator(records, 50)
+        paginator = Paginator(records, 100)
         page_number = self.request.GET.get('page', 1)
-        context['records'] = paginator.get_page(page_number)
-        
-        # For API/data export
-        context['records_json'] = json.dumps([r.data for r in records[:100]], cls=DjangoJSONEncoder)
-        
+        page = paginator.get_page(page_number)
+        context['records'] = page
+        context['total_records'] = paginator.count
+
+        # Full record list for client-side search (id + data)
+        context['records_json'] = json.dumps(
+            [{'id': str(r.id), 'data': r.data} for r in page],
+            cls=DjangoJSONEncoder,
+        )
+
         return context
 
 
