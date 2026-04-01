@@ -183,6 +183,7 @@
 
     {# scrollable page content #}
     <main class="flex-1 overflow-y-auto">
+      {% include 'partials/messages.html' %}
       {% block main_content %}{% endblock %}
     </main>
   </div>

@@ -1,0 +1,135 @@
+{% if messages %}
+<div id="toast-container"
+     class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-full max-w-sm pointer-events-none"
+     x-data="toastManager()"
+     x-init="init()">
+
+  {% for message in messages %}
+  {% with tag=message.tags %}
+
+  {# Determine colours and icon by tag #}
+  {% if 'error' in tag %}
+    {% with bg="bg-red-50" border="border-red-300" text="text-red-800" icon="fa-circle-xmark" icon_color="text-red-500" bar="bg-red-400" %}
+    <div class="toast-item pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg {{ bg }} {{ border }}"
+         x-data="{ show: true }"
+         x-show="show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-8"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 translate-x-8"
+         x-init="setTimeout(() => show = false, 6000)">
+      <i class="fas {{ icon }} mt-0.5 text-base {{ icon_color }} shrink-0"></i>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold {{ text }}">Error</p>
+        <p class="text-sm {{ text }} opacity-90 mt-0.5 break-words">{{ message }}</p>
+      </div>
+      <button @click="show = false" class="{{ text }} opacity-50 hover:opacity-100 transition shrink-0 ml-1 mt-0.5">
+        <i class="fas fa-xmark text-sm"></i>
+      </button>
+      <div class="absolute bottom-0 left-0 h-0.5 {{ bar }} rounded-b-xl animate-shrink"></div>
+    </div>
+    {% endwith %}
+
+  {% elif 'warning' in tag %}
+    {% with bg="bg-amber-50" border="border-amber-300" text="text-amber-800" icon="fa-triangle-exclamation" icon_color="text-amber-500" bar="bg-amber-400" %}
+    <div class="toast-item pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg {{ bg }} {{ border }}"
+         x-data="{ show: true }"
+         x-show="show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-8"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 translate-x-8"
+         x-init="setTimeout(() => show = false, 7000)">
+      <i class="fas {{ icon }} mt-0.5 text-base {{ icon_color }} shrink-0"></i>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold {{ text }}">Warning</p>
+        <p class="text-sm {{ text }} opacity-90 mt-0.5 break-words">{{ message }}</p>
+      </div>
+      <button @click="show = false" class="{{ text }} opacity-50 hover:opacity-100 transition shrink-0 ml-1 mt-0.5">
+        <i class="fas fa-xmark text-sm"></i>
+      </button>
+      <div class="absolute bottom-0 left-0 h-0.5 {{ bar }} rounded-b-xl animate-shrink-slow"></div>
+    </div>
+    {% endwith %}
+
+  {% elif 'success' in tag %}
+    {% with bg="bg-emerald-50" border="border-emerald-300" text="text-emerald-800" icon="fa-circle-check" icon_color="text-emerald-500" bar="bg-emerald-400" %}
+    <div class="toast-item pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg {{ bg }} {{ border }}"
+         x-data="{ show: true }"
+         x-show="show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-8"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 translate-x-8"
+         x-init="setTimeout(() => show = false, 5000)">
+      <i class="fas {{ icon }} mt-0.5 text-base {{ icon_color }} shrink-0"></i>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold {{ text }}">Success</p>
+        <p class="text-sm {{ text }} opacity-90 mt-0.5 break-words">{{ message }}</p>
+      </div>
+      <button @click="show = false" class="{{ text }} opacity-50 hover:opacity-100 transition shrink-0 ml-1 mt-0.5">
+        <i class="fas fa-xmark text-sm"></i>
+      </button>
+      <div class="absolute bottom-0 left-0 h-0.5 {{ bar }} rounded-b-xl animate-shrink-fast"></div>
+    </div>
+    {% endwith %}
+
+  {% else %}
+    {# info / debug / default #}
+    {% with bg="bg-blue-50" border="border-blue-300" text="text-blue-800" icon="fa-circle-info" icon_color="text-blue-500" bar="bg-blue-400" %}
+    <div class="toast-item pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg {{ bg }} {{ border }}"
+         x-data="{ show: true }"
+         x-show="show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-8"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 translate-x-8"
+         x-init="setTimeout(() => show = false, 5000)">
+      <i class="fas {{ icon }} mt-0.5 text-base {{ icon_color }} shrink-0"></i>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold {{ text }}">Info</p>
+        <p class="text-sm {{ text }} opacity-90 mt-0.5 break-words">{{ message }}</p>
+      </div>
+      <button @click="show = false" class="{{ text }} opacity-50 hover:opacity-100 transition shrink-0 ml-1 mt-0.5">
+        <i class="fas fa-xmark text-sm"></i>
+      </button>
+      <div class="absolute bottom-0 left-0 h-0.5 {{ bar }} rounded-b-xl animate-shrink-fast"></div>
+    </div>
+    {% endwith %}
+  {% endif %}
+
+  {% endwith %}
+  {% endfor %}
+
+</div>
+
+<style>
+  @keyframes shrink {
+    from { width: 100%; }
+    to   { width: 0%; }
+  }
+  .animate-shrink-fast { animation: shrink 5s linear forwards; }
+  .animate-shrink      { animation: shrink 6s linear forwards; }
+  .animate-shrink-slow { animation: shrink 7s linear forwards; }
+  /* keep container positioned relative so the progress bar aligns */
+  .toast-item { position: relative; overflow: hidden; }
+</style>
+
+<script>
+function toastManager() {
+  return {
+    init() {
+      /* nothing needed – each toast manages itself via x-init */
+    }
+  }
+}
+</script>
+{% endif %}
