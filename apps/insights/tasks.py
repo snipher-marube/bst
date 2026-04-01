@@ -15,7 +15,7 @@ def broadcast_widget_update(widget_id, dashboard_id):
     """
     try:
         from apps.dashboards.models import Widget
-        from .services import QueryEngine
+        from apps.dashboards.services import QueryEngine
         
         # Get fresh data
         widget = Widget.objects.get(id=widget_id)

@@ -182,121 +182,111 @@ class QueryEngine:
         return result
     
     def _execute_chart_query(self, widget, limit):
-        """Execute chart widget query - return properly formatted data for charts"""
+        """Execute chart widget query and return data formatted for the frontend."""
         from .models import Record
-        import pandas as pd
         from collections import defaultdict
-        from datetime import datetime
-    
+
         config = widget.query_config or {}
         aggregations = config.get('aggregations', [])
-    
+
         if not aggregations:
             return {"error": "No aggregations configured"}
-    
-        # Get records
-        queryset = Record.objects.filter(
-            table=widget.table,
-            is_active=True
-        )
-    
+
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
-    
-        # Get records with their data
+
         records = list(queryset.values('data', 'created_at')[:limit])
-    
         if not records:
             return {"message": "No data", "val": {}}
-    
-        # Process aggregations
+
         result = {}
         for agg in aggregations:
             agg_type = agg.get('type', 'count')
-            field = agg.get('field')
+            field    = agg.get('field')
             group_by = agg.get('group_by')
-            name = agg.get('name', 'val')
-        
+            name     = agg.get('name', 'val')
+
             try:
                 if group_by:
-                    # Handle group by - this is for charts
-                    grouped_data = defaultdict(int)
-                
-                    for record in records:
-                        record_data = record['data'] or {}
-                    
-                        # Get group value
-                        if group_by == 'created_at' or group_by == '_created_at':
-                            # Group by date from created_at field
-                            group_value = record['created_at'].date().isoformat()
-                        elif group_by == 'created_at_date':
-                            group_value = record['created_at'].date().isoformat()
-                        elif group_by in record_data:
-                            group_value = str(record_data[group_by])
+                    # Grouped aggregation — builds {label: value} dict for charts
+                    sums   = defaultdict(float)
+                    counts = defaultdict(int)
+
+                    for rec in records:
+                        rdata = rec['data'] or {}
+
+                        # Resolve the group-by label
+                        if group_by in ('created_at', '_created_at', 'created_at_date'):
+                            label = rec['created_at'].date().isoformat()
+                        elif group_by in rdata:
+                            raw = rdata[group_by]
+                            # Skip None / blank labels
+                            if raw is None or str(raw).strip() in ('', 'None', 'nan'):
+                                continue
+                            label = str(raw)
                         else:
                             continue
-                    
-                        # Get value to aggregate
+
+                        # Resolve the numeric value for this record
                         if agg_type == 'count':
-                            value = 1
-                        elif field and field in record_data:
+                            val = 1.0
+                        elif field and field in rdata:
                             try:
-                                value = float(record_data[field])
+                                val = float(rdata[field])
                             except (ValueError, TypeError):
-                                value = 1 if agg_type == 'count' else 0
+                                continue
                         else:
-                            value = 1 if agg_type == 'count' else 0
-                    
-                        grouped_data[group_value] += value
-                
-                    # Convert to the format expected by frontend
-                    if grouped_data:
-                        # Sort by key (especially important for dates)
-                        sorted_items = sorted(grouped_data.items())
-                        result[name] = {
-                            str(k): float(v) for k, v in sorted_items
-                        }
-                    else:
+                            val = 1.0 if agg_type == 'count' else 0.0
+
+                        sums[label]   += val
+                        counts[label] += 1
+
+                    if not sums:
                         result[name] = {}
+                        continue
+
+                    # Compute final value per label
+                    if agg_type == 'avg':
+                        grouped = {k: sums[k] / counts[k] for k in sums}
+                    else:
+                        grouped = dict(sums)
+
+                    # Sort keys — ISO date strings sort correctly alphabetically
+                    result[name] = {str(k): round(v, 4) for k, v in sorted(grouped.items())}
+
                 else:
-                    # Simple aggregation (for metrics)
+                    # Scalar aggregation (used by metric widgets)
                     if agg_type == 'count':
                         result[name] = len(records)
                     elif field:
-                        total = 0
-                        count = 0
-                        for record in records:
-                            record_data = record['data'] or {}
-                            if field in record_data:
+                        vals = []
+                        for rec in records:
+                            rdata = rec['data'] or {}
+                            if field in rdata:
                                 try:
-                                    val = float(record_data[field])
-                                    if agg_type == 'sum':
-                                        total += val
-                                    elif agg_type == 'avg':
-                                        total += val
-                                        count += 1
-                                    elif agg_type == 'min':
-                                        if 'min' not in locals() or val < min_val:
-                                            min_val = val
-                                    elif agg_type == 'max':
-                                        if 'max' not in locals() or val > max_val:
-                                            max_val = val
+                                    vals.append(float(rdata[field]))
                                 except (ValueError, TypeError):
                                     pass
-                    
-                        if agg_type == 'sum':
-                            result[name] = total
+                        if not vals:
+                            result[name] = 0
+                        elif agg_type == 'sum':
+                            result[name] = sum(vals)
                         elif agg_type == 'avg':
-                            result[name] = total / count if count > 0 else 0
+                            result[name] = sum(vals) / len(vals)
                         elif agg_type == 'min':
-                            result[name] = min_val if 'min_val' in locals() else 0
+                            result[name] = min(vals)
                         elif agg_type == 'max':
-                            result[name] = max_val if 'max_val' in locals() else 0
-                
-            except Exception as e:
-                logger.error(f"Aggregation error: {str(e)}")
-                result[name] = {"error": str(e)}
-    
+                            result[name] = max(vals)
+                        else:
+                            result[name] = sum(vals)
+                    else:
+                        result[name] = 0
+
+            except Exception as exc:
+                logger.error(f"Chart aggregation error: {exc}", exc_info=True)
+                result[name] = {"error": str(exc)}
+
         return result
     
 class DataImportService:
@@ -333,57 +323,67 @@ class DataImportService:
 
     def import_data(self, table, df, user, mapping=None):
         """
-        Import data from a DataFrame into a table
+        Import data from a DataFrame into a table using bulk_create for performance.
+        Row-by-row Record.save() triggered a COUNT + UPDATE per row (O(n²) on large files);
+        bulk_create collapses that to a single INSERT batch + one count refresh at the end.
         """
         from django.db import transaction
         from .models import Record
-        
+
         # Auto-detect schema if not provided and table has no schema
         if not table.schema and not mapping:
             table.schema = self._detect_schema_from_df(df)
             table.save()
-        
+
+        # Replace NaN with None for JSON compatibility
+        df = df.replace({np.nan: None})
+        records_data = df.to_dict('records')
+
         success_count = 0
         error_count = 0
         errors = []
-        
-        # Replace NaN with None for JSON compatibility
-        df = df.replace({np.nan: None})
+        BATCH_SIZE = 200
 
-        # Convert DF to list of dicts
-        records_data = df.to_dict('records')
-
+        # Prepare all Record objects, collecting per-row errors
+        pending = []
         for row_num, row in enumerate(records_data, start=1):
             try:
-                with transaction.atomic():
-                    # Apply field mapping if provided
-                    if mapping:
-                        mapped_row = {}
-                        for target_field, source_field in mapping.items():
-                            if source_field in row:
-                                mapped_row[target_field] = row[source_field]
-                    else:
-                        mapped_row = dict(row)
-
-                    # Ensure all values are JSON-serializable Python native types
-                    mapped_row = self._sanitize_row(mapped_row)
-
-                    # Create record
-                    Record.objects.create(
-                        table=table,
-                        data=mapped_row,
-                        created_by=user
-                    )
-                    success_count += 1
-
+                if mapping:
+                    mapped_row = {target: row[src] for target, src in mapping.items() if src in row}
+                else:
+                    mapped_row = dict(row)
+                mapped_row = self._sanitize_row(mapped_row)
+                pending.append(Record(table=table, data=mapped_row, created_by=user))
             except Exception as e:
                 error_count += 1
                 errors.append(f"Row {row_num}: {str(e)}")
-        
+
+        # Bulk-insert in batches; bulk_create bypasses Record.save() intentionally —
+        # we update record_count once after all batches finish.
+        for i in range(0, len(pending), BATCH_SIZE):
+            batch = pending[i:i + BATCH_SIZE]
+            try:
+                Record.objects.bulk_create(batch)
+                success_count += len(batch)
+            except Exception:
+                # Batch-level failure: fall back row-by-row to isolate bad rows
+                for rec in batch:
+                    try:
+                        rec.save()
+                        success_count += 1
+                    except Exception as row_exc:
+                        error_count += 1
+                        errors.append(str(row_exc))
+
+        # Update record_count exactly once after all inserts
+        with transaction.atomic():
+            table.record_count = table.records.filter(is_active=True).count()
+            table.save(update_fields=['record_count'])
+
         return {
             'success': success_count,
             'errors': error_count,
-            'error_details': errors[:10]
+            'error_details': errors[:10],
         }
 
     def _sanitize_row(self, row):
@@ -544,161 +544,307 @@ class DataImportService:
 
 class WorkspaceInsightService:
     """
-    Automatically generate insights from workspace tables
+    Automatically generate BI insights from workspace tables.
+
+    Insight generation is purely query-config-driven: every widget spec
+    contains a `query_config` that QueryEngine can execute at render time.
+    No hardcoded data is embedded in widget specs.
     """
-    
+
+    # Field-type buckets used throughout
+    NUMERIC_TYPES = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+    DATE_TYPES    = {'date', 'datetime'}
+    TEXT_TYPES    = {'text', 'string', 'category', 'email', 'url'}
+
+    # KPI card visual palette (cycles for multiple numeric fields)
+    _KPI_COLORS = ['blue',   'green',  'orange', 'purple']
+    _KPI_ICONS  = ['fa-database', 'fa-chart-bar', 'fa-coins', 'fa-percent']
+
+    # ------------------------------------------------------------------ #
+    #  Public entry point
+    # ------------------------------------------------------------------ #
     def generate_workspace_overview(self, workspace, user):
-        from .models import Dashboard, DataTable, Widget
-        from apps.insights.generators.sales_insights import SalesInsightGenerator
-        
-        logger.info(f"Generating insights for workspace {workspace.id}")
-        
-        # Create or get the overview dashboard
+        from .models import Dashboard, Widget
+
+        logger.info(f"Generating workspace insights for workspace {workspace.id}")
+
         dashboard, created = Dashboard.objects.get_or_create(
             workspace=workspace,
             slug='workspace-overview',
             defaults={
                 'name': 'Workspace Insights',
-                'description': 'AI-powered insights from all your data',
+                'description': 'Auto-generated insights from all your data',
                 'created_by': user,
-                'layout_config': {
-                    "columns": 12,
-                    "rowHeight": 100,
-                    "compact": True,
-                    "margin": 10
-                }
+                'layout_config': {"columns": 12, "rowHeight": 100, "compact": True},
             }
         )
-        
+
         if not created:
-            # Clear existing auto-generated widgets
+            # Regenerate: wipe previously auto-generated widgets
             dashboard.widgets.filter(title__startswith='[Auto]').delete()
-        
-        # Analyze each table
-        tables = workspace.tables.filter(is_active=True, record_count__gt=0)
-        pos_x, pos_y = 0, 0
-        widget_count = 0
-        
+
+        from django.db.models import Exists, OuterRef
+        _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
+        tables = (
+            workspace.tables
+            .filter(is_active=True)
+            .annotate(_has_data=Exists(_has_records))
+            .filter(_has_data=True)
+        )
+        current_y   = 0
+        total_count = 0
+
         for table in tables:
-            logger.info(f"Analyzing table: {table.name}")
-            
-            # Get schema-based insights
+            if total_count >= 30:
+                break
+            logger.info(f"  Profiling table: {table.name} ({table.record_count} records)")
+
             insights = self._generate_table_insights(table)
-            
-            # Add widgets for each insight
-            for insight in insights:
-                if pos_x + insight.get('width', 3) > 12:
-                    pos_x = 0
-                    pos_y += insight.get('height', 4)
-                
-                widget = Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type=insight['type'],
-                    title=f"[Auto] {insight['title']}",
-                    table=table,
-                    query_config=insight.get('query_config', {}),
-                    viz_config=insight.get('viz_config', {}),
-                    position={
-                        'x': pos_x,
-                        'y': pos_y,
-                        'w': insight.get('width', 3),
-                        'h': insight.get('height', 4)
-                    }
-                )
-                
-                pos_x += insight.get('width', 3)
-                widget_count += 1
-                
-                if widget_count >= 20:
-                    break
-            
-            # Add table sample widget
-            if widget_count < 20:
+            if not insights:
+                continue
+
+            # ── Place KPI cards in their own row(s) ────────────────────
+            kpis   = [i for i in insights if i['type'] == 'metric']
+            charts = [i for i in insights if i['type'] not in ('metric',)]
+
+            kpi_row_h = 2  # all KPIs are h=2
+            kpi_x, kpi_y = 0, current_y
+            for spec in kpis:
+                w = spec['width']
+                if kpi_x + w > 12:
+                    kpi_x  = 0
+                    kpi_y += kpi_row_h
                 Widget.objects.create(
                     dashboard=dashboard,
-                    widget_type='table',
-                    title=f"[Auto] {table.name} Sample",
+                    widget_type=spec['type'],
+                    title=f"[Auto] {spec['title']}",
                     table=table,
-                    query_config={"limit": 10},
-                    viz_config={},
-                    position={"x": 0, "y": pos_y + 4, "w": 12, "h": 4}
+                    query_config=spec['query_config'],
+                    viz_config=spec.get('viz_config', {}),
+                    position={'x': kpi_x, 'y': kpi_y, 'w': w, 'h': kpi_row_h},
                 )
-                widget_count += 1
-                pos_y += 8
-        
-        logger.info(f"Generated {widget_count} widgets")
+                kpi_x    += w
+                total_count += 1
+
+            # Charts start below the last KPI row
+            chart_start_y = (kpi_y + kpi_row_h) if kpis else current_y
+            chart_x, chart_y = 0, chart_start_y
+
+            for spec in charts:
+                w, h = spec['width'], spec['height']
+                if chart_x + w > 12:
+                    chart_x  = 0
+                    chart_y += h
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type=spec['type'],
+                    title=f"[Auto] {spec['title']}",
+                    table=table,
+                    query_config=spec['query_config'],
+                    viz_config=spec.get('viz_config', {}),
+                    position={'x': chart_x, 'y': chart_y, 'w': w, 'h': h},
+                )
+                chart_x     += w
+                total_count += 1
+
+            # ── Data table preview at full width ───────────────────────
+            last_chart_h = charts[-1]['height'] if charts else 0
+            table_y = (chart_y + last_chart_h) if charts else chart_start_y
+            Widget.objects.create(
+                dashboard=dashboard,
+                widget_type='table',
+                title=f"[Auto] {table.name} Records",
+                table=table,
+                query_config={"limit": 20},
+                viz_config={},
+                position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
+            )
+            total_count += 1
+
+            # Leave a 1-unit gap before the next table's section
+            current_y = table_y + 5 + 1
+
+        logger.info(f"Generated {total_count} widgets across {tables.count()} tables")
         return dashboard
-    
+
+    # ------------------------------------------------------------------ #
+    #  Data profiling + insight spec generation
+    # ------------------------------------------------------------------ #
     def _generate_table_insights(self, table):
-        """Generate insights based on table schema"""
-        schema = {f['name']: f['type'] for f in table.schema}
+        """
+        Profile actual record data and return a list of insight specs.
+
+        Every spec is a dict with:
+          type, title, width, height, query_config, viz_config
+
+        The query_config follows the QueryEngine contract so widgets render
+        without any hardcoded data.
+        """
+        from .models import Record
+
+        schema = {f['name']: f['type'] for f in (table.schema or [])}
+        if not schema:
+            return []
+
+        # Sample up to 1000 records for profiling
+        sample = list(
+            Record.objects.filter(table=table, is_active=True)
+            .values_list('data', flat=True)[:1000]
+        )
+        if not sample:
+            return []
+
+        # ── Classify schema fields ──────────────────────────────────────
+        numeric_fields = [n for n, t in schema.items() if t in self.NUMERIC_TYPES]
+        date_fields    = [n for n, t in schema.items() if t in self.DATE_TYPES]
+        text_fields    = [n for n, t in schema.items() if t in self.TEXT_TYPES]
+
+        # Keep only numeric fields that actually contain numbers in the data
+        valid_numeric = self._filter_numeric_fields(numeric_fields, sample)
+
+        # Classify text fields by cardinality
+        low_card  = []   # 2–25 unique values  → bar / pie charts
+        for field in text_fields:
+            unique = self._unique_values(field, sample)
+            if 2 <= len(unique) <= 25:
+                low_card.append(field)
+
+        # Primary date field (first one detected)
+        primary_date = date_fields[0] if date_fields else None
+
         insights = []
-        
-        # Check if it's a sales pipeline
-        if 'Deal Value' in schema and 'Status' in schema:
-            generator = SalesInsightGenerator(table.workspace)
-            sales_insights = generator.analyze_sales_pipeline(table)
-            if sales_insights:
-                return sales_insights
-        
-        # Generic insights for other tables
-        # Always include record count
-        insights.append({
-            'type': 'metric',
-            'title': 'Total Records',
-            'width': 3,
-            'height': 2,
-            'query_config': {
-                'aggregations': [{'type': 'count', 'name': 'val'}]
-            },
-            'viz_config': {
-                'format': 'number'
-            }
-        })
-        
-        # Add date-based insights if available
-        date_fields = [name for name, type in schema.items() if type in ['date', 'datetime']]
-        if date_fields:
+        color_i  = 0
+
+        # ── KPI row ─────────────────────────────────────────────────────
+        insights.append(self._kpi_spec('Total Records', 'count', None, color_i))
+        color_i += 1
+
+        for field in valid_numeric[:3]:
+            ft     = schema.get(field, 'number')
+            prefix = '$' if ft == 'currency' else ''
+            suffix = '%' if ft == 'percentage' else ''
+            insights.append(
+                self._kpi_spec(f'Total {field}', 'sum', field, color_i,
+                               prefix=prefix, suffix=suffix)
+            )
+            color_i += 1
+
+        # Average for first numeric field when it makes sense
+        if len(valid_numeric) >= 1:
+            ft     = schema.get(valid_numeric[0], 'number')
+            prefix = '$' if ft == 'currency' else ''
+            insights.append(
+                self._kpi_spec(f'Avg {valid_numeric[0]}', 'avg', valid_numeric[0],
+                               color_i, prefix=prefix)
+            )
+            color_i += 1
+
+        # ── Trend charts (numeric value over the date field) ────────────
+        group_by    = primary_date if primary_date else 'created_at_date'
+        date_label  = primary_date if primary_date else 'Time'
+
+        for field in valid_numeric[:2]:
             insights.append({
                 'type': 'line_chart',
-                'title': f'Records Over Time',
-                'width': 6,
-                'height': 4,
-                'query_config': {
-                    'aggregations': [{
-                        'type': 'count',
-                        'group_by': date_fields[0],
-                        'name': 'val'
-                    }]
-                },
-                'viz_config': {
-                    'x_axis': date_fields[0],
-                    'y_axis': 'val'
-                }
+                'title': f'{field} by {date_label}',
+                'width': 6, 'height': 4,
+                'query_config': {'aggregations': [
+                    {'type': 'sum', 'field': field, 'group_by': group_by, 'name': 'val'}
+                ]},
+                'viz_config': {'x_axis': group_by, 'y_axis': 'val'},
             })
-        
-        # Add categorical insights
-        text_fields = [name for name, type in schema.items() if type == 'text']
-        for field in text_fields[:2]:  # Limit to 2 categorical fields
+
+        # Records timeline when there are no numeric fields
+        if not valid_numeric and primary_date:
+            insights.append({
+                'type': 'line_chart',
+                'title': f'Records by {primary_date}',
+                'width': 6, 'height': 4,
+                'query_config': {'aggregations': [
+                    {'type': 'count', 'group_by': primary_date, 'name': 'val'}
+                ]},
+                'viz_config': {'x_axis': primary_date, 'y_axis': 'val'},
+            })
+
+        # ── Categorical bar charts ───────────────────────────────────────
+        for field in low_card[:2]:
+            if valid_numeric:
+                # Show numeric total broken down by the category
+                agg   = {'type': 'sum', 'field': valid_numeric[0], 'group_by': field, 'name': 'val'}
+                title = f'{valid_numeric[0]} by {field}'
+            else:
+                agg   = {'type': 'count', 'group_by': field, 'name': 'val'}
+                title = f'{field} Distribution'
+
             insights.append({
                 'type': 'bar_chart',
-                'title': f'Records by {field}',
-                'width': 6,
-                'height': 4,
-                'query_config': {
-                    'aggregations': [{
-                        'type': 'count',
-                        'group_by': field,
-                        'name': 'val'
-                    }]
-                },
-                'viz_config': {
-                    'x_axis': field,
-                    'y_axis': 'val'
-                }
+                'title': title,
+                'width': 6, 'height': 4,
+                'query_config': {'aggregations': [agg]},
+                'viz_config': {'x_axis': field, 'y_axis': 'val'},
             })
-        
+
+        # ── Pie chart for first categorical field ────────────────────────
+        if low_card:
+            cat = low_card[0]
+            if valid_numeric:
+                agg   = {'type': 'sum', 'field': valid_numeric[0], 'group_by': cat, 'name': 'val'}
+                title = f'{valid_numeric[0]} Split by {cat}'
+            else:
+                agg   = {'type': 'count', 'group_by': cat, 'name': 'val'}
+                title = f'{cat} Breakdown'
+
+            insights.append({
+                'type': 'pie_chart',
+                'title': title,
+                'width': 6, 'height': 4,
+                'query_config': {'aggregations': [agg]},
+                'viz_config': {},
+            })
+
         return insights
+
+    # ------------------------------------------------------------------ #
+    #  Helpers
+    # ------------------------------------------------------------------ #
+    def _kpi_spec(self, title, agg_type, field, color_i, prefix='', suffix=''):
+        """Build a metric widget spec with branded icon/colour."""
+        agg = {'type': agg_type, 'name': 'val'}
+        if field:
+            agg['field'] = field
+        color = self._KPI_COLORS[color_i % len(self._KPI_COLORS)]
+        icon  = self._KPI_ICONS[color_i  % len(self._KPI_ICONS)]
+        return {
+            'type': 'metric',
+            'title': title,
+            'width': 3, 'height': 2,
+            'query_config': {'aggregations': [agg]},
+            'viz_config': {'icon': icon, 'color': color, 'prefix': prefix, 'suffix': suffix},
+        }
+
+    def _filter_numeric_fields(self, fields, sample):
+        """Return only fields that actually contain parseable numbers."""
+        valid = []
+        for field in fields:
+            for rec in sample[:200]:
+                if rec and field in rec:
+                    try:
+                        float(rec[field])
+                        valid.append(field)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+        return valid
+
+    def _unique_values(self, field, sample):
+        """Return set of non-null unique string values for a field."""
+        seen = set()
+        for rec in sample:
+            if rec and field in rec:
+                v = rec[field]
+                if v not in (None, '', 'None', 'nan'):
+                    seen.add(str(v))
+        return seen
 class AuditService:
     """
     Service for creating audit logs

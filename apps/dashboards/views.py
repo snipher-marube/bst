@@ -654,9 +654,12 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             dashboard_data['widgets'].append(widget_data)
         
         logger.debug(f"Dashboard {self.object.id} has {len(dashboard_data['widgets'])} widgets")
-        
-        context['dashboard_json'] = json.dumps(dashboard_data, cls=DjangoJSONEncoder)
-        
+
+        # Pass the raw dict — the template uses |json_script which handles serialization.
+        # Do NOT pre-serialize with json.dumps(); that causes double-encoding and
+        # makes dashboardData a string instead of an object in JavaScript.
+        context['dashboard_data'] = dashboard_data
+
         return context
     
     def _get_widget_data(self, widget):

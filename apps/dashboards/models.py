@@ -134,127 +134,134 @@ class DataTable(models.Model):
         return self.record_count * avg_record_size
 
     def generate_default_dashboard(self):
-        """Automatically create a dashboard for this table"""
+        """Automatically create a smart dashboard for this table"""
         from .models import Dashboard, Widget
-        
+        import re
+
+        # Generate a unique slug
+        base_slug = re.sub(r'[^a-z0-9]+', '-', self.name.lower().strip()).strip('-') + '-dashboard'
+        slug = base_slug
+        counter = 1
+        while Dashboard.objects.filter(workspace=self.workspace, slug=slug).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
         dashboard = Dashboard.objects.create(
             workspace=self.workspace,
             name=f"{self.name} Dashboard",
             description=f"Auto-generated dashboard for {self.name}",
-            slug=f"{self.name.lower().replace(' ', '-')}-dashboard",
+            slug=slug,
             created_by=self.created_by,
-            layout_config={
-                "columns": 12,
-                "rowHeight": 100,
-                "compact": True
-            }
+            layout_config={"columns": 12, "rowHeight": 100, "compact": True}
         )
-        
-        position_x = 0
-        position_y = 0
-        
-        for field in self.schema:
-            field_name = field['name']
-            field_type = field['type']
-            
-            if field_type in ['number', 'currency', 'percentage']:
-                # Create summary widget for numeric fields
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='metric',
-                    title=f"Total {field_name}",
-                    table=self,
-                    query_config={
-                        "aggregations": [
-                            {
-                                "type": "sum",
-                                "field": field_name,
-                                "name": "val"
-                            }
-                        ]
-                    },
-                    viz_config={
-                        "format": "number",
-                        "prefix": "$" if field_type == 'currency' else "",
-                        "suffix": "%" if field_type == 'percentage' else ""
-                    },
-                    position={"x": position_x, "y": position_y, "w": 3, "h": 2}
-                )
-                position_x += 3
-                
-                if position_x >= 12:
-                    position_x = 0
-                    position_y += 2
-                
-                # Create trend chart
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='line_chart',
-                    title=f"{field_name} Over Time",
-                    table=self,
-                    query_config={
-                        "aggregations": [
-                            {
-                                "type": "sum",
-                                "field": field_name,
-                                "group_by": "created_at_date",
-                                "name": "val"
-                            }
-                        ]
-                    },
-                    viz_config={
-                        "x_axis": "created_at_date",
-                        "y_axis": "val",
-                        "show_legend": True
-                    },
-                    position={"x": position_x, "y": position_y, "w": 6, "h": 4}
-                )
-                position_x += 6
-                
-            elif field_type in ['date', 'datetime']:
-                # Create timeline widget
-                Widget.objects.create(
-                    dashboard=dashboard,
-                    widget_type='line_chart',
-                    title=f"Records by {field_name}",
-                    table=self,
-                    query_config={
-                        "aggregations": [
-                            {
-                                "type": "count",
-                                "field": "id",
-                                "group_by": field_name,
-                                "name": "val"
-                            }
-                        ]
-                    },
-                    viz_config={
-                        "x_axis": field_name,
-                        "y_axis": "val",
-                        "show_legend": True
-                    },
-                    position={"x": position_x, "y": position_y, "w": 6, "h": 4}
-                )
-                position_x += 6
-                
-            if position_x >= 12:
-                position_x = 0
-                position_y += 4
-        
-        # Add a data table widget to see all records
+
+        # Classify schema fields
+        numeric_types = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+        date_types    = {'date', 'datetime'}
+        text_types    = {'text', 'string', 'category', 'email', 'url'}
+
+        numeric_fields = [f for f in self.schema if f.get('type') in numeric_types]
+        date_fields    = [f for f in self.schema if f.get('type') in date_types]
+        text_fields    = [f for f in self.schema if f.get('type') in text_types]
+
+        # ── Row 1: KPI cards (w=3 h=2 each, up to 4 across) ──────────────────
+        kpi_colors = ['blue', 'green', 'orange', 'purple']
+        kpi_icons  = ['fa-database', 'fa-chart-bar', 'fa-coins', 'fa-percent']
+        kpi_x, kpi_y, kpi_w, kpi_h = 0, 0, 3, 2
+
+        # Total Records — always present
         Widget.objects.create(
-            dashboard=dashboard,
-            widget_type='table',
-            title=f"All {self.name} Records",
-            table=self,
-            query_config={"limit": 10},
-            viz_config={
-                "page_size": 10,
-                "show_search": True
-            },
-            position={"x": 0, "y": position_y + 2, "w": 12, "h": 6}
+            dashboard=dashboard, widget_type='metric', title='Total Records', table=self,
+            query_config={"aggregations": [{"type": "count", "name": "val"}]},
+            viz_config={"icon": "fa-database", "color": "blue"},
+            position={"x": kpi_x, "y": kpi_y, "w": kpi_w, "h": kpi_h}
         )
-        
+        kpi_x += kpi_w
+
+        # One KPI per numeric field (max 3 more so row stays 4-wide)
+        for i, field in enumerate(numeric_fields[:3]):
+            prefix = "$" if field.get('type') == 'currency' else ""
+            suffix = "%" if field.get('type') == 'percentage' else ""
+            color  = kpi_colors[(i + 1) % len(kpi_colors)]
+            icon   = kpi_icons[(i + 1) % len(kpi_icons)]
+            Widget.objects.create(
+                dashboard=dashboard, widget_type='metric',
+                title=f"Total {field['name']}", table=self,
+                query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
+                viz_config={"prefix": prefix, "suffix": suffix, "icon": icon, "color": color},
+                position={"x": kpi_x, "y": kpi_y, "w": kpi_w, "h": kpi_h}
+            )
+            kpi_x += kpi_w
+            if kpi_x >= 12:
+                kpi_x = 0
+                kpi_y += kpi_h
+
+        # ── Row 2+: Charts ────────────────────────────────────────────────────
+        chart_y = kpi_y + kpi_h   # start below KPI row
+        chart_x = 0
+
+        primary_date = date_fields[0]['name'] if date_fields else None
+
+        # Numeric trend charts — group by date field if available, else by created_at
+        for field in numeric_fields[:2]:
+            group_by = primary_date if primary_date else 'created_at_date'
+            title = f"{field['name']} Over Time" if primary_date else f"{field['name']} Trend"
+            Widget.objects.create(
+                dashboard=dashboard, widget_type='line_chart', title=title, table=self,
+                query_config={"aggregations": [
+                    {"type": "sum", "field": field['name'], "group_by": group_by, "name": "val"}
+                ]},
+                viz_config={"x_axis": group_by, "y_axis": "val"},
+                position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+            )
+            chart_x += 6
+            if chart_x >= 12:
+                chart_x = 0
+                chart_y += 4
+
+        # Date field: records-per-period line chart (only if we have a date but no numeric field used it)
+        if date_fields and not numeric_fields:
+            for dfield in date_fields[:1]:
+                Widget.objects.create(
+                    dashboard=dashboard, widget_type='line_chart',
+                    title=f"Records by {dfield['name']}", table=self,
+                    query_config={"aggregations": [
+                        {"type": "count", "group_by": dfield['name'], "name": "val"}
+                    ]},
+                    viz_config={"x_axis": dfield['name'], "y_axis": "val"},
+                    position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+                )
+                chart_x += 6
+                if chart_x >= 12:
+                    chart_x = 0
+                    chart_y += 4
+
+        # Categorical fields: bar chart for distribution
+        for field in text_fields[:2]:
+            Widget.objects.create(
+                dashboard=dashboard, widget_type='bar_chart',
+                title=f"{field['name']} Distribution", table=self,
+                query_config={"aggregations": [
+                    {"type": "count", "group_by": field['name'], "name": "val"}
+                ]},
+                viz_config={"x_axis": field['name'], "y_axis": "val"},
+                position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+            )
+            chart_x += 6
+            if chart_x >= 12:
+                chart_x = 0
+                chart_y += 4
+
+        # Data table at the bottom — always present
+        table_y = chart_y + (4 if chart_x > 0 else 0)
+        Widget.objects.create(
+            dashboard=dashboard, widget_type='table',
+            title=f"All {self.name} Records", table=self,
+            query_config={"limit": 20},
+            viz_config={"page_size": 20, "show_search": True},
+            position={"x": 0, "y": table_y, "w": 12, "h": 6}
+        )
+
         return dashboard
 
 
@@ -434,11 +441,7 @@ class Widget(models.Model):
         """
         if not self.table:
             return {"error": "No table selected"}
-    
-        # Check if table has records
-        if self.table.record_count == 0:
-            return {"message": "No data available in this table"}
-    
+
         try:
             from .services import QueryEngine
             engine = QueryEngine()
