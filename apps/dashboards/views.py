@@ -711,11 +711,55 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
 class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
     """Workspace settings page"""
     template_name = 'dashboard/settings.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['workspace'] = self.request.user.current_workspace
         return context
+
+    def post(self, request, *args, **kwargs):
+        workspace = request.user.current_workspace
+        if not workspace:
+            messages.error(request, 'No active workspace.')
+            return redirect('dashboard:settings')
+
+        # Only the owner can modify or delete
+        if workspace.owner != request.user:
+            messages.error(request, 'Only the workspace owner can make changes.')
+            return redirect('dashboard:settings')
+
+        action = request.POST.get('action')
+
+        if action == 'update_workspace':
+            name = request.POST.get('workspace_name', '').strip()
+            if not name:
+                messages.error(request, 'Workspace name cannot be empty.')
+                return redirect('dashboard:settings')
+            workspace.name = name
+            workspace.save(update_fields=['name'])
+            messages.success(request, 'Workspace updated successfully.')
+            return redirect('dashboard:settings')
+
+        if action == 'delete_workspace':
+            confirm_name = request.POST.get('confirm_name', '').strip()
+            if confirm_name != workspace.name:
+                messages.error(request, 'Workspace name did not match. Deletion cancelled.')
+                return redirect('dashboard:settings')
+
+            workspace_name = workspace.name
+            workspace.delete()
+
+            # Clear workspace from session so the user isn't left with a broken reference
+            request.session.pop('current_workspace_id', None)
+            request.session.modified = True
+            if hasattr(request.user, 'current_workspace'):
+                del request.user.current_workspace
+
+            messages.success(request, f'Workspace "{workspace_name}" has been permanently deleted.')
+            return redirect('dashboard:workspaces')
+
+        messages.error(request, 'Unknown action.')
+        return redirect('dashboard:settings')
 
 
 class TeamMembersView(LoginRequiredMixin, ListView):
