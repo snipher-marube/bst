@@ -709,7 +709,51 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
 
 
 class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
-    """Workspace settings page"""
+    """
+    Workspace settings page — GET to view, POST to mutate.
+
+    URL: ``/dashboard/settings/``
+
+    Supported POST actions
+    ----------------------
+    The template submits two separate forms, each including a hidden
+    ``action`` field to distinguish them server-side:
+
+    ``action = 'update_workspace'``
+        Rename the workspace.  Requires a non-empty ``workspace_name`` field.
+        Redirects back to the settings page with a success/error message.
+
+    ``action = 'delete_workspace'``
+        Permanently delete the workspace and all cascading data (tables,
+        records, dashboards, memberships, M-Pesa transactions, etc.).
+        Requires a ``confirm_name`` field that must exactly match the current
+        workspace name — this acts as a second factor to prevent accidental
+        deletion.
+
+        On success:
+
+        1. The workspace DB row is deleted (cascades via FK constraints).
+        2. ``current_workspace_id`` is removed from the session.
+        3. The transient ``request.user.current_workspace`` attribute is
+           cleared so the next request doesn't attempt to load a deleted row.
+        4. Redirects to ``dashboard:workspaces`` so the user can create or
+           switch to another workspace.
+
+    Authorization
+    -------------
+    Only the workspace **owner** (``workspace.owner == request.user``) can
+    submit either action.  Members with other roles see an error message and
+    are redirected back.  This check is applied before routing by action so
+    it cannot be bypassed by sending an unexpected ``action`` value.
+
+    Context (GET)
+    -------------
+    ``workspace``
+        The user's currently active ``Workspace`` object, or ``None`` if the
+        user has no workspace.  The template handles the ``None`` case with a
+        "No workspace selected" empty state.
+    """
+
     template_name = 'dashboard/settings.html'
 
     def get_context_data(self, **kwargs):
@@ -723,7 +767,7 @@ class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
             messages.error(request, 'No active workspace.')
             return redirect('dashboard:settings')
 
-        # Only the owner can modify or delete
+        # Only the owner can modify or delete — members with other roles cannot.
         if workspace.owner != request.user:
             messages.error(request, 'Only the workspace owner can make changes.')
             return redirect('dashboard:settings')
@@ -747,9 +791,12 @@ class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
                 return redirect('dashboard:settings')
 
             workspace_name = workspace.name
+
+            # Deleting the workspace cascades via FK to all child data.
             workspace.delete()
 
-            # Clear workspace from session so the user isn't left with a broken reference
+            # Clear the workspace reference from the session and from the
+            # transient user attribute so the next request starts clean.
             request.session.pop('current_workspace_id', None)
             request.session.modified = True
             if hasattr(request.user, 'current_workspace'):
@@ -803,21 +850,69 @@ class ActivityLogView(LoginRequiredMixin, ListView):
 
 
 class BillingView(LoginRequiredMixin, TemplateView):
-    """Billing and subscription management"""
+    """
+    Billing and subscription management page for the active workspace.
+
+    URL: ``/dashboard/billing/``
+
+    Also the destination for the public ``/pricing/`` page when a logged-in
+    user visits it — ``core.views.PricingView.dispatch`` issues a 302 redirect
+    here so authenticated users skip the marketing copy and land directly where
+    they can pay.
+
+    This view is **read-only** (GET only).  All mutations — initiating a
+    payment, upgrading a plan — are handled by the M-Pesa API endpoints in
+    ``apps/subscriptions/views.py``.
+
+    Template
+    --------
+    ``dashboard/billing.html`` renders:
+
+    * Current usage progress bars (tables, records, members).
+    * Four plan cards (Free / Starter / Professional / Enterprise) with
+      M-Pesa payment buttons.
+    * A sandbox warning banner (only when ``debug=True``).
+    * Payment history table (last 10 ``MpesaTransaction`` rows for the workspace).
+    * An Alpine.js M-Pesa modal that drives the STK Push → polling flow.
+
+    Context variables
+    -----------------
+    ``workspace``
+        The user's active ``Workspace``, or ``None``.
+    ``debug``
+        ``True`` when ``settings.DEBUG`` is set.  The template uses this to
+        show the amber *"Sandbox mode: KES 1 charged"* banner so developers
+        are never surprised by sandbox amounts.
+    ``plans``
+        ``QuerySet[Plan]`` of all active plans ordered by ``price_monthly``.
+        Used by the template to render plan cards dynamically.  Falls back to
+        an empty queryset if the subscriptions app tables don't exist yet
+        (e.g. before migrations are run).
+    ``subscription``
+        The workspace's current ``Subscription`` object, or ``None`` if no
+        subscription row exists yet (free tier workspaces may not have one).
+    ``plan_limits``
+        The ``PLAN_LIMITS`` dict from ``apps.subscriptions.models`` — passed
+        to the template for building feature comparison tooltips.
+    """
+
     template_name = 'dashboard/billing.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         workspace = self.request.user.current_workspace
         context['workspace'] = workspace
+        # Passed to the template to conditionally render the sandbox warning banner.
         context['debug'] = settings.DEBUG
         if workspace:
             try:
                 from apps.subscriptions.models import Plan, Subscription, PLAN_LIMITS
-                context['plans'] = Plan.objects.filter(is_active=True).order_by('price_monthly')
+                context['plans']       = Plan.objects.filter(is_active=True).order_by('price_monthly')
                 context['subscription'] = Subscription.objects.filter(workspace=workspace).first()
                 context['plan_limits'] = PLAN_LIMITS
             except Exception:
+                # Gracefully degrade if migration hasn't been run yet — the billing
+                # page will render without plan cards rather than raising a 500.
                 pass
         return context
 
