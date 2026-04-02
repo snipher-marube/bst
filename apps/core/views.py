@@ -406,85 +406,100 @@ class FeatureDetailView(DetailView):
 
 class PricingView(TemplateView):
     """
-    Pricing page
+    Public pricing page.
+    Authenticated users are redirected to their billing page so they can pay
+    immediately without re-reading marketing copy.
     """
     template_name = 'core/pricing.html'
-    
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            return redirect('dashboard:billing')
+        return super().dispatch(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        signup_url = reverse('account_signup')
         context['plans'] = [
             {
+                'tier': 'free',
                 'name': 'Free',
-                'price': '$0',
-                'period': 'month',
-                'description': 'Perfect for getting started',
+                'price': 'KES 0',
+                'period': 'mo',
+                'description': 'Perfect for getting started — no card required.',
                 'features': [
-                    '5 categories',
-                    '1,000 records',
-                    'Basic charts',
-                    'CSV export',
-                    '1 user',
+                    '5 tables',
+                    '1,000 records per table',
+                    '1 team member',
+                    'Auto-generated dashboards',
+                    'CSV / Excel import',
                 ],
-                'button_text': 'Get Started',
-                'button_class': 'bg-gray-800 hover:bg-gray-900',
+                'cta': 'Get Started Free',
+                'cta_url': signup_url,
                 'featured': False,
+                'badge': None,
             },
             {
+                'tier': 'starter',
                 'name': 'Starter',
-                'price': '$15',
-                'period': 'month',
-                'description': 'For growing businesses',
+                'price': 'KES 2,500',
+                'period': 'mo',
+                'description': 'For small teams ready to grow.',
                 'features': [
-                    '25 categories',
-                    '10,000 records',
-                    'All chart types',
-                    'CSV import/export',
-                    '3 users',
-                    'Email support',
+                    '20 tables',
+                    '10,000 records per table',
+                    '5 team members',
+                    'All Free features',
+                    'Real-time collaboration',
+                    'AI insights',
                 ],
-                'button_text': 'Start Free Trial',
-                'button_class': 'bg-blue-600 hover:bg-blue-700',
-                'featured': True,
+                'cta': 'Start with Starter',
+                'cta_url': f"{signup_url}?plan=starter",
+                'featured': False,
+                'badge': None,
             },
             {
+                'tier': 'professional',
                 'name': 'Professional',
-                'price': '$39',
-                'period': 'month',
-                'description': 'For advanced analytics',
+                'price': 'KES 6,500',
+                'period': 'mo',
+                'description': 'Advanced analytics for power users.',
                 'features': [
-                    '100 categories',
-                    '100,000 records',
-                    'Custom formulas',
-                    'API access',
-                    '10 users',
+                    '100 tables',
+                    '100,000 records per table',
+                    '20 team members',
+                    'All Starter features',
                     'Priority support',
-                    'Advanced permissions',
+                    'Advanced widgets & gauges',
                 ],
-                'button_text': 'Start Free Trial',
-                'button_class': 'bg-gray-800 hover:bg-gray-900',
-                'featured': False,
+                'cta': 'Go Professional',
+                'cta_url': f"{signup_url}?plan=professional",
+                'featured': True,
+                'badge': 'Most Popular',
             },
             {
+                'tier': 'enterprise',
                 'name': 'Enterprise',
-                'price': 'Custom',
-                'period': 'month',
-                'description': 'For large organizations',
+                'price': 'KES 12,900',
+                'period': 'mo',
+                'description': 'Unlimited scale for large organisations.',
                 'features': [
-                    'Unlimited categories',
+                    'Unlimited tables',
                     'Unlimited records',
-                    'SSO & 2FA',
-                    'Audit logs',
+                    'Unlimited members',
+                    'All Pro features',
+                    'SSO / SAML',
+                    'Dedicated success manager',
                     'SLA guarantee',
-                    'Dedicated support',
-                    'Custom integrations',
                 ],
-                'button_text': 'Contact Sales',
-                'button_class': 'bg-gray-800 hover:bg-gray-900',
+                'cta': 'Get Enterprise',
+                'cta_url': f"{signup_url}?plan=enterprise",
                 'featured': False,
+                'badge': None,
             },
         ]
         context['faqs'] = FAQ.objects.filter(is_active=True, category='pricing')[:8]
-        context['meta_title'] = 'Pricing - MetaAnalytics Plans'
+        context['meta_title'] = 'Pricing – AnalyticsMeta Plans'
         return context
 
 

@@ -1,102 +1,292 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Pricing - {{ site_settings.site_name }} Plans{% endblock %}
-
-{% block meta_description %}Choose the right plan for your business. Free plan available. No credit card required. Start tracking your data today.{% endblock %}
+{% block title %}{{ meta_title }}{% endblock %}
+{% block meta_description %}Simple, transparent pricing for every stage of your business. Start free, pay with M-Pesa. No hidden fees.{% endblock %}
 
 {% block content %}
-<!-- Hero Section -->
-<section class="bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white py-20">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="max-w-4xl mx-auto text-center">
-            <h1 class="text-4xl md:text-5xl font-bold mb-6">
-                Simple, Transparent Pricing
-            </h1>
-            <p class="text-xl text-white/80">
-                Start free, upgrade as you grow. No hidden fees, no surprises.
-            </p>
-        </div>
+
+<style>
+  :root { --primary:#03466e; --accent:#f68712; --success:#10b981; }
+  .plan-card { transition: transform .2s, box-shadow .2s; }
+  .plan-card:hover { transform: translateY(-6px); box-shadow: 0 24px 48px rgba(0,0,0,.1); }
+  .check-item { display:flex; align-items:flex-start; gap:.5rem; }
+  .check-item i { color:var(--success); flex-shrink:0; margin-top:.15rem; }
+  .popular-card { background: linear-gradient(135deg, var(--primary) 0%, #025b8c 100%); }
+</style>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<section class="bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white pt-20 pb-28">
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center max-w-3xl">
+    <span class="inline-block mb-4 px-4 py-1 rounded-full bg-white/10 text-white/80 text-sm font-medium tracking-wide">
+      Simple, Transparent Pricing
+    </span>
+    <h1 class="text-4xl md:text-5xl font-extrabold mb-5 leading-tight">
+      Start free.<br class="hidden sm:block"> Upgrade when you're ready.
+    </h1>
+    <p class="text-lg text-white/75 mb-8">
+      All plans include a full-featured free tier. Paid plans are billed monthly in KES
+      and paid securely via M-Pesa — no credit card required.
+    </p>
+    <div class="inline-flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2 text-sm text-white/80">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg"
+           alt="M-Pesa" class="h-5 w-auto brightness-0 invert">
+      <span>Secure payments via M-Pesa · Cancel anytime</span>
     </div>
+  </div>
 </section>
 
-<!-- Pricing Cards -->
-<section class="py-20 bg-white">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {% for plan in plans %}
-            <div class="rounded-xl {% if plan.featured %}bg-[#f68712] text-white transform scale-105 shadow-2xl{% else %}bg-white border border-gray-200 text-gray-900{% endif %} overflow-hidden card-hover">
-                <div class="p-6">
-                    <h2 class="text-xl font-bold mb-2 {% if plan.featured %}text-white{% else %}text-[#03466e]{% endif %}">
-                        {{ plan.name }}
-                    </h2>
-                    <div class="mb-4">
-                        <span class="text-3xl font-bold">{{ plan.price }}</span>
-                        <span class="text-sm {% if plan.featured %}text-white/80{% else %}text-gray-500{% endif %}">/{{ plan.period }}</span>
-                    </div>
-                    <p class="{% if plan.featured %}text-white/90{% else %}text-gray-600{% endif %} mb-6">{{ plan.description }}</p>
-                    
-                    <ul class="space-y-3 mb-6">
-                        {% for feature in plan.features %}
-                        <li class="flex items-start">
-                            <i class="fas fa-check-circle {% if plan.featured %}text-white{% else %}text-[#f68712]{% endif %} mt-1 mr-2"></i>
-                            <span class="text-sm {% if plan.featured %}text-white/90{% else %}text-gray-600{% endif %}">{{ feature }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                    
-                    <a href="{% url 'account_signup' %}?plan={{ plan.name|lower }}" 
-                       class="block w-full py-3 px-4 text-center rounded-lg font-medium transition-all duration-200 {% if plan.featured %}bg-white text-[#f68712] hover:bg-gray-100{% else %}bg-[#03466e] text-white hover:bg-[#023a58]{% endif %}">
-                        {{ plan.button_text }}
-                    </a>
-                </div>
-            </div>
+<!-- ── Plan Cards ─────────────────────────────────────────────────────── -->
+<section class="py-0">
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+    <!-- Cards pulled up over the hero -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 -mt-16">
+
+      {% for plan in plans %}
+      <div class="plan-card rounded-2xl border-2 flex flex-col relative overflow-visible
+        {% if plan.featured %}popular-card border-transparent text-white{% else %}bg-white border-gray-200 text-gray-900{% endif %}">
+
+        {% if plan.badge %}
+        <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap
+                    bg-[#f68712] text-white text-xs font-bold px-3 py-1 rounded-full shadow">
+          {{ plan.badge }}
+        </div>
+        {% endif %}
+
+        <div class="p-6 flex flex-col flex-1 {% if plan.badge %}pt-8{% endif %}">
+          <!-- Plan name -->
+          <h2 class="text-lg font-bold mb-1
+            {% if plan.featured %}text-white{% else %}text-[#03466e]{% endif %}">
+            {{ plan.name }}
+          </h2>
+          <p class="text-xs mb-4 {% if plan.featured %}text-white/70{% else %}text-gray-500{% endif %}">
+            {{ plan.description }}
+          </p>
+
+          <!-- Price -->
+          <div class="flex items-end gap-1 mb-6">
+            <span class="text-3xl font-extrabold
+              {% if plan.featured %}text-white{% else %}text-gray-900{% endif %}">
+              {{ plan.price }}
+            </span>
+            <span class="text-sm mb-1 {% if plan.featured %}text-white/60{% else %}text-gray-400{% endif %}">
+              /{{ plan.period }}
+            </span>
+          </div>
+
+          <!-- Features -->
+          <ul class="space-y-2.5 text-sm flex-1 mb-6
+            {% if plan.featured %}text-white/85{% else %}text-gray-600{% endif %}">
+            {% for feature in plan.features %}
+            <li class="check-item">
+              <i class="fas fa-check text-xs
+                {% if plan.featured %}text-[#f68712]{% else %}text-emerald-500{% endif %}
+                mt-0.5"></i>
+              <span>{{ feature }}</span>
+            </li>
             {% endfor %}
+          </ul>
+
+          <!-- CTA -->
+          <a href="{{ plan.cta_url }}"
+             class="block text-center py-3 rounded-xl text-sm font-semibold transition-all duration-200
+             {% if plan.featured %}
+               bg-[#f68712] text-white hover:bg-[#e07810]
+             {% elif plan.tier == 'free' %}
+               border-2 border-[#03466e] text-[#03466e] hover:bg-[#03466e] hover:text-white
+             {% else %}
+               bg-[#03466e] text-white hover:bg-[#025b8c]
+             {% endif %}">
+            {{ plan.cta }}
+          </a>
         </div>
-        
-        <!-- Note -->
-        <p class="text-center text-gray-500 mt-8 text-sm">
-            All plans include core features. Enterprise plans include custom SLAs and dedicated support.
-        </p>
+      </div>
+      {% endfor %}
+
     </div>
+  </div>
 </section>
 
-<!-- FAQ Section -->
+<!-- ── Trust bar ─────────────────────────────────────────────────────── -->
+<section class="py-12 bg-white border-b border-gray-100 mt-10">
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+      <div>
+        <div class="text-2xl font-extrabold text-[#03466e]">No card</div>
+        <div class="text-xs text-gray-500 mt-1">required to start</div>
+      </div>
+      <div>
+        <div class="text-2xl font-extrabold text-[#03466e]">M-Pesa</div>
+        <div class="text-xs text-gray-500 mt-1">secure payments</div>
+      </div>
+      <div>
+        <div class="text-2xl font-extrabold text-[#03466e]">Cancel</div>
+        <div class="text-xs text-gray-500 mt-1">anytime, instantly</div>
+      </div>
+      <div>
+        <div class="text-2xl font-extrabold text-[#03466e]">KES</div>
+        <div class="text-xs text-gray-500 mt-1">local currency billing</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Feature Comparison Table ──────────────────────────────────────── -->
 <section class="py-20 bg-gray-50">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-12">
-            <h2 class="text-3xl font-bold text-[#03466e] mb-4">
-                Frequently Asked Questions
-            </h2>
-            <p class="text-lg text-gray-600">
-                Got questions about pricing? We've got answers.
-            </p>
-        </div>
-        
-        <div class="max-w-3xl mx-auto space-y-4">
-            {% for faq in faqs %}
-            <details class="bg-white rounded-lg p-4 border border-gray-200">
-                <summary class="font-semibold text-[#03466e] cursor-pointer">{{ faq.question }}</summary>
-                <p class="mt-2 text-gray-600">{{ faq.answer }}</p>
-            </details>
-            {% endfor %}
-        </div>
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
+    <h2 class="text-2xl font-bold text-center text-[#03466e] mb-10">Full plan comparison</h2>
+
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100">
+            <th class="text-left px-6 py-4 text-gray-500 font-medium w-1/3">Feature</th>
+            <th class="text-center px-4 py-4 text-gray-700 font-semibold">Free</th>
+            <th class="text-center px-4 py-4 text-gray-700 font-semibold">Starter</th>
+            <th class="text-center px-4 py-4 text-[#03466e] font-bold">Professional</th>
+            <th class="text-center px-4 py-4 text-gray-700 font-semibold">Enterprise</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% with check='<i class="fas fa-check text-emerald-500"></i>' cross='<span class="text-gray-300">—</span>' %}
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Monthly price</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">KES 0</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">KES 2,500</td>
+            <td class="text-center px-4 py-3.5 font-semibold text-[#03466e]">KES 6,500</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">KES 12,900</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Tables</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">5</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">20</td>
+            <td class="text-center px-4 py-3.5 font-semibold text-[#03466e]">100</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">Unlimited</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Records per table</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">1,000</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">10,000</td>
+            <td class="text-center px-4 py-3.5 font-semibold text-[#03466e]">100,000</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">Unlimited</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Team members</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">1</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">5</td>
+            <td class="text-center px-4 py-3.5 font-semibold text-[#03466e]">20</td>
+            <td class="text-center px-4 py-3.5 text-gray-600">Unlimited</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Auto-generated dashboards</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">CSV / Excel import</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Real-time collaboration</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">AI insights</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Advanced widgets & gauges</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Priority support</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">SSO / SAML</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">Dedicated success manager</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          <tr class="hover:bg-gray-50/60">
+            <td class="px-6 py-3.5 text-gray-700">SLA guarantee</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ cross }}</td>
+            <td class="text-center px-4 py-3.5">{{ check }}</td>
+          </tr>
+          {% endwith %}
+        </tbody>
+      </table>
     </div>
+  </div>
 </section>
 
-<!-- CTA -->
-<section class="py-20 bg-[#03466e] text-white">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <h2 class="text-3xl font-bold mb-4">
-            Not sure which plan is right for you?
-        </h2>
-        <p class="text-xl text-white/80 mb-8">
-            Our team can help you choose the perfect plan for your needs.
-        </p>
-        <a href="{% url 'core:contact' %}" class="inline-flex items-center px-8 py-4 bg-[#f68712] text-white rounded-lg hover:bg-[#e07810] transition-colors duration-200 font-medium text-lg">
-            Contact Sales
-            <i class="fas fa-arrow-right ml-2"></i>
-        </a>
+<!-- ── FAQ ───────────────────────────────────────────────────────────── -->
+{% if faqs %}
+<section class="py-20 bg-white">
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
+    <h2 class="text-2xl font-bold text-center text-[#03466e] mb-10">Frequently asked questions</h2>
+    <div class="space-y-3">
+      {% for faq in faqs %}
+      <details class="group bg-gray-50 border border-gray-200 rounded-xl px-5 py-4 cursor-pointer">
+        <summary class="flex justify-between items-center font-semibold text-[#03466e] list-none select-none">
+          {{ faq.question }}
+          <i class="fas fa-chevron-down text-xs text-gray-400 transition-transform duration-200 group-open:rotate-180 flex-shrink-0 ml-3"></i>
+        </summary>
+        <p class="mt-3 text-sm text-gray-600 leading-relaxed">{{ faq.answer }}</p>
+      </details>
+      {% endfor %}
     </div>
+  </div>
 </section>
+{% endif %}
+
+<!-- ── Bottom CTA ─────────────────────────────────────────────────────── -->
+<section class="py-20 bg-gradient-to-br from-[#03466e] to-[#025b8c] text-white">
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center max-w-2xl">
+    <h2 class="text-3xl font-bold mb-4">Ready to take control of your data?</h2>
+    <p class="text-white/75 mb-8">
+      Start free today. No credit card needed. Upgrade via M-Pesa when your team grows.
+    </p>
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="{% url 'account_signup' %}"
+         class="inline-flex items-center gap-2 px-8 py-3.5 bg-[#f68712] text-white rounded-xl font-semibold text-sm hover:bg-[#e07810] transition-colors duration-200 shadow-lg">
+        <i class="fas fa-rocket"></i>
+        Start Free — No card needed
+      </a>
+      <a href="{% url 'core:contact' %}"
+         class="inline-flex items-center gap-2 px-8 py-3.5 bg-white/10 text-white rounded-xl font-semibold text-sm hover:bg-white/20 transition-colors duration-200 border border-white/20">
+        <i class="fas fa-comments"></i>
+        Talk to Sales
+      </a>
+    </div>
+  </div>
+</section>
+
 {% endblock %}
