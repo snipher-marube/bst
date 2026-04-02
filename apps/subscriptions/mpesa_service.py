@@ -9,15 +9,23 @@ sandbox and production by flipping MPESA_SANDBOX in the environment.
 """
 import base64
 import logging
+import re
 from datetime import datetime
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
 _SANDBOX_BASE = 'https://sandbox.safaricom.co.ke'
 _PRODUCTION_BASE = 'https://api.safaricom.co.ke'
+
+# Kenyan mobile numbers: 2547XXXXXXXX or 2541XXXXXXXX (12 digits starting with 254)
+_PHONE_RE = re.compile(r'^2547\d{8}$|^2541\d{8}$')
+
+_TOKEN_CACHE_KEY = 'mpesa_access_token'
+_TOKEN_TTL = 50 * 60  # 50 minutes (Daraja tokens expire after 60 min)
 
 
 def _base_url() -> str:
@@ -32,7 +40,15 @@ class MpesaService:
     # ------------------------------------------------------------------ #
 
     def get_access_token(self) -> str:
-        """Return a fresh Bearer token from Daraja OAuth endpoint."""
+        """
+        Return a cached Bearer token from Daraja OAuth endpoint.
+        Token is cached for 50 minutes to avoid an extra HTTP round-trip
+        on every STK push initiation.
+        """
+        cached = cache.get(_TOKEN_CACHE_KEY)
+        if cached:
+            return cached
+
         consumer_key = settings.MPESA_CONSUMER_KEY
         consumer_secret = settings.MPESA_CONSUMER_SECRET
 
@@ -48,6 +64,7 @@ class MpesaService:
             token = response.json().get('access_token', '')
             if not token:
                 raise ValueError("Empty access_token in Daraja OAuth response.")
+            cache.set(_TOKEN_CACHE_KEY, token, _TOKEN_TTL)
             return token
         except requests.RequestException as exc:
             logger.error("M-Pesa OAuth request failed: %s", exc)
@@ -69,10 +86,10 @@ class MpesaService:
         return base64.b64encode(raw.encode()).decode()
 
     @staticmethod
-    def _format_phone(phone: str) -> str:
+    def normalize_phone(phone: str) -> str:
         """
         Normalise a Kenyan phone number to the 2547XXXXXXXX format
-        that Safaricom expects.
+        that Safaricom expects.  Raises ValueError for unrecognised formats.
         """
         phone = phone.strip().replace(' ', '').replace('-', '')
         if phone.startswith('+254'):
@@ -81,6 +98,12 @@ class MpesaService:
             phone = '254' + phone[1:]
         elif phone.startswith('7') or phone.startswith('1'):
             phone = '254' + phone
+
+        if not _PHONE_RE.match(phone):
+            raise ValueError(
+                f"Invalid Kenyan phone number: {phone!r}. "
+                "Expected format: 07XXXXXXXX, +2547XXXXXXXX, or 2547XXXXXXXX."
+            )
         return phone
 
     # ------------------------------------------------------------------ #
@@ -98,7 +121,7 @@ class MpesaService:
         Send a Lipa Na M-Pesa Online STK Push request.
 
         Returns the raw Daraja JSON response dict.
-        Raises on network/API errors.
+        Raises on network/API errors or invalid phone number.
 
         :param phone_number:      Kenyan number (any normalised format).
         :param amount:            Integer KES amount (Daraja rejects decimals).
@@ -112,7 +135,7 @@ class MpesaService:
 
         timestamp = self._timestamp()
         password = self._password(shortcode, passkey, timestamp)
-        phone = self._format_phone(phone_number)
+        phone = self.normalize_phone(phone_number)
 
         payload = {
             'BusinessShortCode': shortcode,

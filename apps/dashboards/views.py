@@ -15,6 +15,7 @@ import json
 import uuid
 import pandas as pd
 from django.core.cache import cache
+from django.conf import settings
 
 import logging
 
@@ -765,6 +766,7 @@ class BillingView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         workspace = self.request.user.current_workspace
         context['workspace'] = workspace
+        context['debug'] = settings.DEBUG
         if workspace:
             try:
                 from apps.subscriptions.models import Plan, Subscription, PLAN_LIMITS

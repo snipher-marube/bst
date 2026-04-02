@@ -44,6 +44,17 @@ STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
 STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
 
+# ---------------------------------------------------------------------------
+# M-Pesa Daraja – production overrides (no safe defaults; must be in .env)
+# ---------------------------------------------------------------------------
+MPESA_SANDBOX = False
+MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY')        # raises if missing
+MPESA_CONSUMER_SECRET = config('MPESA_CONSUMER_SECRET')  # raises if missing
+MPESA_SHORTCODE = config('MPESA_SHORTCODE')              # raises if missing
+MPESA_PASSKEY = config('MPESA_PASSKEY')                  # raises if missing
+# Must be a publicly reachable HTTPS URL (e.g. https://analyticsmeta.com/subscriptions/mpesa/callback/)
+MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL')        # raises if missing
+
 # Static / media
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = '/media/'

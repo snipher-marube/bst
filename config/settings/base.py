@@ -140,17 +140,21 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ---------------------------------------------------------------------------
 # M-Pesa Daraja API (Safaricom)
+# Defaults below are Safaricom's PUBLIC sandbox test credentials — safe for
+# development only.  production.py overrides all of these with no defaults,
+# so missing env vars will raise an error at startup in production.
 # ---------------------------------------------------------------------------
 MPESA_SANDBOX = config('MPESA_SANDBOX', default=True, cast=bool)
 MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY', default='')
 MPESA_CONSUMER_SECRET = config('MPESA_CONSUMER_SECRET', default='')
-# Sandbox shortcode and passkey (Lipa Na M-Pesa Online)
+# Safaricom public sandbox shortcode and passkey for Lipa Na M-Pesa Online
 MPESA_SHORTCODE = config('MPESA_SHORTCODE', default='174379')
 MPESA_PASSKEY = config(
     'MPESA_PASSKEY',
     default='bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919',
 )
-# Must be a publicly reachable HTTPS URL for Safaricom to POST the callback
+# In sandbox: set this to your ngrok/tunnel URL so callbacks reach your machine.
+# In production: production.py requires this to be set explicitly via env var.
 MPESA_CALLBACK_URL = config(
     'MPESA_CALLBACK_URL',
     default='https://sandbox.safaricom.co.ke/mpesa/callback/',
