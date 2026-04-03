@@ -48,8 +48,8 @@ STATICFILES_DIRS = [BASE_DIR / '../static']
 MEDIA_ROOT = BASE_DIR / '../static/media'
 STATIC_ROOT = BASE_DIR / '../staticfiles'
 
-# Email backend for development - use console to avoid sending real emails
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Use SMTP backend so confirmation emails are sent via Gmail in development
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
 # Disable rate limiting in development for easier testing
 ACCOUNT_RATE_LIMITS = {
