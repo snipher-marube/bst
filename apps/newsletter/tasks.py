@@ -8,8 +8,9 @@ from urllib.parse import quote
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import F
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import strip_tags
 
@@ -303,23 +304,35 @@ def _get_or_create_recipient(campaign: Campaign, subscriber: Optional[Subscriber
 
 
 def _create_email_message(campaign: Campaign, to_email: str, text_content: str, html_content: str):
-    """Create email message with headers"""
+    """
+    Build a multipart/alternative email: plain-text body + HTML alternative.
+    Email clients always prefer the HTML part; the text part is the fallback.
+    """
+    # X-Priority: 1=Urgent  2=High  3=Normal  4=Low  5=Very Low
+    priority_map = {'urgent': '1', 'high': '2', 'normal': '3', 'low': '5'}
+
     headers = {
-        'List-Unsubscribe': f'<{settings.SITE_URL}/newsletter/unsubscribe/>',
+        'List-Unsubscribe': (
+            f'<mailto:{settings.DEFAULT_FROM_EMAIL}?subject=unsubscribe>,'
+            f' <{settings.SITE_URL}/newsletter/unsubscribe/>'
+        ),
         'X-Campaign-ID': str(campaign.id),
-        'X-Mailer': 'Django-Newsletter/1.0',
-        'X-Priority': str(campaign.priority).upper(),
+        'X-Mailer': 'AnalyticsMeta-Newsletter/1.0',
+        'X-Priority': priority_map.get(campaign.priority, '3'),
+        'MIME-Version': '1.0',
     }
 
     message = EmailMultiAlternatives(
         subject=campaign.subject,
-        body=text_content,
+        body=text_content,                             # plain-text fallback
         from_email=campaign.from_email or settings.DEFAULT_FROM_EMAIL,
         to=[to_email],
         reply_to=[campaign.reply_to] if campaign.reply_to else None,
-        headers=headers
+        headers=headers,
     )
-    message.attach_alternative(html_content, "text/html")
+    # Attach the fully-rendered HTML as the preferred alternative.
+    # RFC 2046 §5.1.4: the LAST alternative is preferred by clients.
+    message.attach_alternative(html_content, 'text/html')
     return message
 
 
@@ -337,45 +350,46 @@ def _update_recipient_status(recipient: Optional[CampaignRecipient]):
 
 def _prepare_email_content(campaign: Campaign, subscriber: Optional[Subscriber]) -> tuple:
     """
-    Prepare HTML and plain text content with personalization and tracking
+    Render campaign content through the branded email template, then apply tracking.
     """
-    html_content = campaign.content_html
-    text_content = campaign.content_text or strip_tags(html_content)
+    unsubscribe_url = (
+        f"{settings.SITE_URL}/newsletter/unsubscribe/"
+        f"{subscriber.unsubscribe_token}/?campaign={campaign.id}"
+        if subscriber else "#"
+    )
+
+    context = {
+        'campaign': campaign,
+        'subscriber': subscriber,
+        'unsubscribe_url': unsubscribe_url,
+        'site_name': getattr(settings, 'SITE_NAME', 'Businessight'),
+        'site_url': getattr(settings, 'SITE_URL', '').rstrip('/'),
+        'support_email': getattr(settings, 'SUPPORT_EMAIL', ''),
+        'address': getattr(settings, 'ADDRESS', ''),
+    }
+
+    html_content = render_to_string(
+        'newsletter/email_templates/campaign_email.html', context
+    )
+    text_content = campaign.content_text or strip_tags(campaign.content_html)
+
+    if subscriber:
+        # Append plain-text unsubscribe footer
+        text_content += (
+            f"\n\n---\nTo unsubscribe visit: {unsubscribe_url}"
+        )
 
     if not subscriber:
         return html_content, text_content
 
-    # Add unsubscribe link
-    html_content, text_content = _add_unsubscribe_link(
-        html_content, text_content, campaign, subscriber
-    )
-
-    # Add tracking pixel
+    # Apply tracking after the full template is rendered
     if campaign.track_opens:
         html_content = _add_tracking_pixel(html_content, campaign, subscriber)
 
-    # Add click tracking
     if campaign.track_clicks:
         html_content = _add_click_tracking(html_content, campaign, subscriber)
 
     return html_content, text_content
-
-
-def _add_unsubscribe_link(html: str, text: str, campaign: Campaign, subscriber: Subscriber) -> tuple:
-    """Add unsubscribe link to email content"""
-    unsubscribe_url = f"{settings.SITE_URL}/newsletter/unsubscribe/{subscriber.unsubscribe_token}/?campaign={campaign.id}"
-    
-    unsubscribe_html = f'''
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
-            <p>
-                If you no longer wish to receive these emails, 
-                <a href="{unsubscribe_url}" style="color: #f68712; text-decoration: underline;">unsubscribe here</a>.
-            </p>
-        </div>
-    '''
-    unsubscribe_text = f"\n\n---\nTo unsubscribe: {unsubscribe_url}"
-    
-    return html + unsubscribe_html, text + unsubscribe_text
 
 
 def _add_tracking_pixel(html: str, campaign: Campaign, subscriber: Subscriber) -> str:
@@ -385,19 +399,42 @@ def _add_tracking_pixel(html: str, campaign: Campaign, subscriber: Subscriber) -
 
 
 def _add_click_tracking(html: str, campaign: Campaign, subscriber: Subscriber) -> str:
-    """Add click tracking to all links"""
+    """
+    Wrap all trackable links with the click-tracking redirect URL.
+
+    ClickLink records are created once per campaign/URL (not once per subscriber).
+    We use get_or_create and swallow IntegrityError to handle concurrent workers
+    attempting to insert the same URL hash simultaneously.
+    """
+    # Skip URLs that belong to our own tracking/unsubscribe infrastructure
+    _skip_prefixes = ('mailto:', '#', 'tel:')
+    _skip_contains = ('/newsletter/track/', '/newsletter/unsubscribe/')
+    site_url = settings.SITE_URL.rstrip('/')
+
     pattern = r'href="([^"]+)"'
-    
+
+    # First pass: collect all unique trackable URLs and ensure ClickLink rows exist
+    all_urls = set(re.findall(pattern, html))
+    for url in all_urls:
+        if url.startswith(_skip_prefixes):
+            continue
+        if any(s in url for s in _skip_contains):
+            continue
+        try:
+            ClickLink.objects.get_or_create(campaign=campaign, url=url)
+        except IntegrityError:
+            # Another worker already created it — safe to ignore
+            pass
+
+    # Second pass: rewrite the href values
     def replace_link(match):
         original_url = match.group(1)
-        
-        if original_url.startswith(('mailto:', '#', 'tel:')):
+        if original_url.startswith(_skip_prefixes):
             return match.group(0)
-
-        ClickLink.objects.get_or_create(campaign=campaign, url=original_url)
-        
+        if any(s in original_url for s in _skip_contains):
+            return match.group(0)
         tracking_url = (
-            f"{settings.SITE_URL}/newsletter/track/click/"
+            f"{site_url}/newsletter/track/click/"
             f"{campaign.id}/{subscriber.id}/?url={quote(original_url, safe='')}"
         )
         return f'href="{tracking_url}"'

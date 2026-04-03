@@ -443,21 +443,23 @@ class ClickLink(models.Model):
         related_name='links'
     )
     url = models.URLField(max_length=2000)
-    url_hash = models.CharField(max_length=64, unique=True, editable=False)
+    url_hash = models.CharField(max_length=64, editable=False)
     click_count = models.PositiveIntegerField(default=0)
-    
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     def save(self, *args, **kwargs):
         """Generate URL hash for tracking"""
         if not self.url_hash:
             self.url_hash = hashlib.sha256(self.url.encode()).hexdigest()
         super().save(*args, **kwargs)
-    
+
     class Meta:
+        # url_hash uniqueness is per-campaign — the same URL can appear in many campaigns
+        unique_together = [['campaign', 'url_hash']]
         indexes = [
-            models.Index(fields=['url_hash']),
+            models.Index(fields=['campaign', 'url_hash']),
             models.Index(fields=['campaign', '-click_count']),
         ]
 
