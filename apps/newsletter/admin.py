@@ -1,5 +1,5 @@
 # newsletter/admin.py
-from asyncio.log import logger
+import logging
 
 from django.contrib import admin
 from django import forms
@@ -12,7 +12,8 @@ from django.urls import reverse
 from django.utils import timezone
 import json
 from django.utils.safestring import mark_safe
-from requests import request
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     Subscriber, Campaign, List, EmailTemplate,
@@ -21,25 +22,6 @@ from .models import (
 )
 from . import tasks
 from .utils import export_subscribers_csv
-
-# ============================================================================
-# FORMS
-# ============================================================================
-
-class CampaignSendForm(forms.Form):
-    """Form for campaign sending actions"""
-    test_email = forms.EmailField(
-        required=False,
-        widget=forms.EmailInput(attrs={'class': 'vTextField', 'placeholder': 'test@example.com'}),
-        help_text="Send test email to this address"
-    )
-    confirm_send = forms.BooleanField(
-        required=True,
-        initial=True,
-        widget=forms.CheckboxInput(attrs={'class': 'vCheckbox'}),
-        label="I confirm I want to send this campaign"
-    )
-
 
 # ============================================================================
 # INLINES
@@ -467,113 +449,79 @@ class CampaignAdmin(admin.ModelAdmin):
     click_rate_display.short_description = "Click Rate"
     
     def send_test(self, request, queryset):
-        """Send test email action"""
+        """Send a test email — shows email input, then dispatches immediately."""
         if 'apply' in request.POST:
-            form = CampaignSendForm(request.POST)
-            if form.is_valid():
-                test_email = form.cleaned_data['test_email']
+            test_email = request.POST.get('test_email', '').strip()
+            if not test_email:
+                self.message_user(request, "Please enter a test email address.", level=messages.ERROR)
+            else:
                 for campaign in queryset:
-                    # FIXED: Using send_campaign_task.delay() instead of send_campaign.delay()
-                    tasks.send_campaign.delay(
-                        campaign.id,
-                        test_mode=True,
-                        test_email=test_email
-                    )
-                
-                # Return success template
-                return render(request, 'admin/newsletter/send_campaign_success.html', {
-                    'campaigns': queryset,
-                    'action': 'send_test',
-                    'test_email': test_email,
-                    'now': timezone.now(),
-                })
-        else:
-            form = CampaignSendForm()
-        
+                    tasks.send_campaign.delay(campaign.id, test_mode=True, test_email=test_email)
+                self.message_user(
+                    request,
+                    f"📧 Test email sent to {test_email}. Check your inbox.",
+                    level=messages.SUCCESS,
+                )
+                return redirect(reverse('admin:newsletter_campaign_changelist'))
+
         return render(request, 'admin/newsletter/send_campaign.html', {
             'campaigns': queryset,
-            'form': form,
             'action': 'send_test',
-            'title': 'Send Test Campaign',
             'opts': self.model._meta,
         })
     send_test.short_description = "📧 Send test email"
-    
+
     def send_campaign_action(self, request, queryset):
-        """Send campaign action with debugging"""
+        """Review campaign details, then queue for sending with one click."""
         if 'apply' in request.POST:
-            form = CampaignSendForm(request.POST)
-            if form.is_valid() and form.cleaned_data['confirm_send']:
-                sent_count = 0
-                error_count = 0
-            
-                for campaign in queryset.filter(status__in=['draft', 'scheduled']):
-                    try:
-                        # First check if campaign has lists
-                        if not campaign.lists.exists():
-                            self.message_user(
-                                request,
-                                f"❌ Campaign '{campaign.name}' has no lists assigned",
-                                level='ERROR'
-                            )
-                            error_count += 1
-                            continue
-                    
-                        # Check if lists have active subscribers
-                        active_subs = Subscriber.objects.filter(
-                            lists__in=campaign.lists.all(),
-                            status=Subscriber.Status.ACTIVE
-                        ).count()
-                    
-                        if active_subs == 0:
-                            self.message_user(
-                                request,
-                                f"⚠️ Campaign '{campaign.name}' has no active subscribers",
-                                level='WARNING'
-                            )
-                    
-                        # Update campaign status
-                        campaign.status = Campaign.Status.SENDING  # Changed to SENDING
-                        campaign.save()
-                    
-                        # Queue the task
-                        result = tasks.send_campaign.delay(campaign.id)
-                    
+            sent_count = 0
+            for campaign in queryset.filter(status__in=['draft', 'scheduled']):
+                try:
+                    if not campaign.lists.exists():
                         self.message_user(
                             request,
-                            f"✅ Campaign '{campaign.name}' queued with {active_subs} recipients (Task ID: {result.id})",
-                            level='SUCCESS'
+                            f"'{campaign.name}' has no lists assigned — skipped.",
+                            level=messages.ERROR,
                         )
-                        sent_count += 1
-                    
-                    except Exception as e:
-                        error_count += 1
-                        logger.error(f"Error queuing campaign '{campaign.name}': {str(e)}", exc_info=True)
-                        self.message_user(
-                            request,
-                            f"❌ Error with '{campaign.name}': {str(e)}",
-                            level='ERROR'
-                        )
-            
-                if sent_count > 0:
+                        continue
+
+                    active_subs = Subscriber.objects.filter(
+                        lists__in=campaign.lists.all(),
+                        status=Subscriber.Status.ACTIVE,
+                    ).count()
+
+                    campaign.status = Campaign.Status.SENDING
+                    campaign.save(update_fields=['status'])
+                    tasks.send_campaign.delay(campaign.id)
+
                     self.message_user(
                         request,
-                        f"✅ {sent_count} campaign(s) queued successfully. Check Celery logs for progress.",
-                        level='SUCCESS'
+                        f"✅ '{campaign.name}' queued — {active_subs} recipient(s).",
+                        level=messages.SUCCESS,
                     )
-            
-                return redirect(request.get_full_path())
-        else:
-            form = CampaignSendForm()
-    
-        return TemplateResponse(request, 'admin/newsletter/send_campaign.html', {
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"Error queuing '{campaign.name}': {e}", exc_info=True)
+                    self.message_user(request, f"❌ Error with '{campaign.name}': {e}", level=messages.ERROR)
+
+            return redirect(reverse('admin:newsletter_campaign_changelist'))
+
+        # Show review page before sending
+        campaigns_data = []
+        for campaign in queryset:
+            active_subs = Subscriber.objects.filter(
+                lists__in=campaign.lists.all(),
+                status=Subscriber.Status.ACTIVE,
+            ).distinct().count()
+            campaigns_data.append({'campaign': campaign, 'active_subs': active_subs})
+
+        return render(request, 'admin/newsletter/send_campaign.html', {
             'campaigns': queryset,
-            'form': form,
+            'campaigns_data': campaigns_data,
             'action': 'send_campaign_action',
-            'title': 'Send Campaign',
             'opts': self.model._meta,
         })
-    send_campaign_action.short_description = "✅ Send selected campaigns"
+    send_campaign_action.short_description = "🚀 Send selected campaigns"
 
 
 

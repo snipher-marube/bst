@@ -262,6 +262,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config("EMAIL_HOST_USER")  # Your email address
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")  # Your email password
+DEFAULT_FROM_EMAIL = config("EMAIL_HOST_USER")  # Must match the authenticated Gmail account
 
 
 SUPPORT_EMAIL = config('SUPPORT_EMAIL', default='support@businessight.com')

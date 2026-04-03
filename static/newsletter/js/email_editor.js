@@ -1,57 +1,48 @@
 /**
- * Jodit WYSIWYG editor for newsletter campaign HTML content.
- * Initialized on any textarea[data-editor="email-html"].
- * Provides full visual editing + raw HTML source toggle.
+ * Jodit WYSIWYG editor — newsletter campaign content field.
+ *
+ * Initialised on any <textarea data-editor="email-html">.
+ * Key behaviours:
+ *   - Preserves all inline styles (required for email clients).
+ *   - Allows raw HTML source editing via the </> button.
+ *   - Pastes HTML as-is (not stripped to plain text).
+ *   - Syncs value back to the hidden textarea on every change so
+ *     Django's form submission always receives the latest content.
  */
 (function () {
     "use strict";
 
     function initEditors() {
-        var targets = document.querySelectorAll('textarea[data-editor="email-html"]');
-        targets.forEach(function (textarea) {
-            if (textarea._joditInitialized) return;
-            textarea._joditInitialized = true;
+        document.querySelectorAll('textarea[data-editor="email-html"]').forEach(function (textarea) {
+            if (textarea._joditReady) { return; }
+            textarea._joditReady = true;
 
             var editor = Jodit.make(textarea, {
-                height: 550,
+                /* ── Layout ── */
+                height: 560,
+                minHeight: 300,
                 theme: "default",
                 language: "en",
-                useSplitMode: false,
                 toolbarSticky: true,
-                toolbarStickyOffset: 45,   // offset below Django admin header bar
+                toolbarStickyOffset: 46,   // clears the Django admin top bar
 
-                // Keep inline styles — critical for email HTML
-                cleanHTML: {
-                    fillEmptyParagraph: false,
-                    replaceNBSP: false,
-                    removeEmptyElements: false,
-                },
-                style: {
-                    "font-family": "Arial, sans-serif",
-                    "font-size": "16px",
-                },
-
-                // Email-safe toolbar (no iframes, no JS)
+                /* ── Toolbar: email-relevant controls only ── */
                 buttons: [
-                    "source",         // toggle raw HTML view
+                    "source",                             // ← raw HTML toggle (most important)
                     "|",
                     "bold", "italic", "underline", "strikethrough",
                     "|",
-                    "fontsize", "paragraph",
+                    "paragraph", "fontsize",
                     "|",
-                    "brush",          // text colour
+                    "brush",                              // text / background colour
                     "|",
                     "align",
                     "|",
                     "ul", "ol",
                     "|",
-                    "outdent", "indent",
-                    "|",
                     "link", "image",
                     "|",
-                    "hr", "table",
-                    "|",
-                    "copyformat",
+                    "table", "hr",
                     "|",
                     "undo", "redo",
                     "|",
@@ -62,41 +53,65 @@
                     "bold", "italic", "underline", "|",
                     "brush", "paragraph", "|",
                     "align", "ul", "ol", "|",
-                    "link", "image", "|",
-                    "undo", "redo", "|", "fullsize",
+                    "link", "image", "table", "|",
+                    "undo", "redo", "fullsize",
                 ],
-                buttonsSM: ["source", "bold", "italic", "link", "image", "fullsize"],
+                buttonsSM: ["source", "bold", "italic", "link", "fullsize"],
 
-                // Allow all HTML attributes so email tables / inline styles survive
+                /* ── HTML preservation ─────────────────────────────────────
+                 *  Email content relies heavily on inline styles and table
+                 *  layouts.  We disable every transformation that could
+                 *  silently strip or rewrite the markup.
+                 * ─────────────────────────────────────────────────────── */
+                cleanHTML: {
+                    fillEmptyParagraph: false,
+                    replaceNBSP: false,
+                    removeEmptyElements: false,
+                    denyTags: false,        // allow all tags (tables, td, tr, …)
+                },
+                allowedTags: false,         // false = allow everything
                 allowResizeTags: ["img", "table"],
-                allowedTags: false,   // false = allow everything
-                disablePlugins: "xpath,search",
 
-                // Prevent Jodit from stripping inline styles
+                /* ── Paste: keep HTML formatting, never strip to plain text ── */
+                askBeforePasteHTML: false,
+                askBeforePasteFromWord: false,
+                defaultActionOnPaste: "insert_as_html",
                 processPasteHTML: false,
-                defaultActionOnPaste: "insert_only_text",
+                processPasteFromWord: false,
 
-                events: {
-                    // Make the toolbar hint visible
-                    afterInit: function (joditInstance) {
-                        var hint = document.getElementById("editor-hint-" + textarea.id);
-                        if (hint) hint.style.display = "block";
-                    },
+                /* ── Disable plugins that can modify or break email HTML ── */
+                disablePlugins: "xpath,search,powered-by-jodit",
+
+                /* ── Editor body default font (visual only, not added to output) ── */
+                editorCssClass: "nl-editor-body",
+                style: {
+                    "font-family": "Arial, Helvetica, sans-serif",
+                    "font-size":   "15px",
+                    "color":       "#333333",
+                    "line-height": "1.6",
                 },
             });
 
-            // Sync back to original textarea on every change so Django form sees the value
-            editor.events.on("change", function (newValue) {
-                textarea.value = newValue;
+            /* Sync Jodit → textarea on every keystroke / toolbar action.
+             * This ensures Django's POST always contains the latest content
+             * even if the user submits without leaving the editor.            */
+            editor.events.on("change", function (html) {
+                textarea.value = html;
             });
+
+            /* Also sync on form submit as a safety net. */
+            var form = textarea.closest("form");
+            if (form) {
+                form.addEventListener("submit", function () {
+                    textarea.value = editor.value;
+                });
+            }
         });
     }
 
-    // Django admin loads scripts late — wait for DOMContentLoaded
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", initEditors);
     } else {
-        // Already loaded (e.g. deferred script)
         initEditors();
     }
-})();
+}());

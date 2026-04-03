@@ -147,24 +147,35 @@ Always send a test first (see §5). Check it in:
 
 ## 5. Sending a Campaign
 
-### Step 1 — Send a test
-1. Select the campaign in the list view (checkbox).
-2. Choose action **"📧 Send test email"** → enter an email address → Apply.
-3. Celery queues a single email to that address immediately.
-4. Check your inbox. If it lands in spam, adjust subject line or content.
+### The one-click flow (recommended)
 
-### Step 2 — Send to everyone
-1. Select the campaign.
-2. Choose action **"✅ Send selected campaigns"**.
-3. Tick the confirmation checkbox → Apply.
-4. The campaign status changes to **Sending** and Celery processes it in batches of 100.
+Open any campaign in the admin. At the bottom of the edit page you'll see a
+dark blue **Campaign Actions** bar with three buttons:
 
-### Scheduled sending
-Set **Scheduled For** to a future datetime and leave status as **Scheduled**.
-Run the management command on a cron:
+| Button | What it does |
+|---|---|
+| **🧪 Send Test** | Opens a small modal — enter an email → click Send Test. Done. |
+| **👁️ Preview** | Opens the campaign HTML in a new browser tab for visual review. |
+| **🚀 Send Now** | Opens a confirm modal showing list count + subject → click Confirm & Send. Done. |
+
+The bar only appears on **existing** campaigns (not when adding a new one).
+The **Send Now** button is hidden once the campaign status moves to Sending/Sent.
+
+**Recommended pre-send checklist:**
+1. Open campaign → click **Preview** — confirm it looks right in the browser.
+2. Click **Send Test** → enter your own email → check it in Gmail, Outlook, and on mobile.
+3. If it looks good, click **Send Now** → confirm.
+
+Celery picks it up immediately and sends in batches of 100. The campaign status
+updates to **Sending** and stats start appearing within seconds.
+
+### Scheduled sending (auto-send at a future time)
+
+Set the **Scheduled For** field to a future datetime, save, and leave the
+campaign status as **Scheduled**. A cron job dispatches it automatically:
 
 ```bash
-# Every 5 minutes
+# Run every 5 minutes
 */5 * * * * cd /path/to/project && python manage.py send_campaigns
 ```
 

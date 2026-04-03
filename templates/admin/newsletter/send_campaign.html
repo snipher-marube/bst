@@ -1,701 +1,236 @@
 {% extends "admin/base_site.html" %}
-{% load i18n static %}
+{% load i18n %}
 
 {% block extrastyle %}
 {{ block.super }}
 <style>
-    :root {
-        --primary-blue: #03466e;
-        --primary-orange: #f68712;
-        --primary-hover: #e07810;
-        --dark-blue: #022b44;
-    }
+  :root { --blue: #03466e; --orange: #f68712; --dark: #022b44; }
 
-    /* Container */
-    .send-campaign-container {
-        max-width: 800px;
-        margin: 30px auto;
-        background: #fff;
-        border-radius: 20px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-        overflow: hidden;
-    }
+  .nl-wrap {
+    max-width: 680px;
+    margin: 32px auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.1);
+    overflow: hidden;
+  }
 
-    /* Header */
-    .campaign-header {
-        background: linear-gradient(135deg, var(--primary-blue) 0%, var(--dark-blue) 100%);
-        padding: 30px;
-        text-align: center;
-        position: relative;
-        overflow: hidden;
-    }
+  /* Header */
+  .nl-head {
+    background: linear-gradient(135deg, var(--blue) 0%, var(--dark) 100%);
+    padding: 28px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .nl-head-icon { font-size: 28px; }
+  .nl-head h2  { margin: 0; font-size: 20px; font-weight: 700; color: #fff; }
+  .nl-head p   { margin: 4px 0 0; font-size: 14px; color: rgba(255,255,255,.75); }
 
-    .campaign-header::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-        animation: rotate 20s linear infinite;
-    }
+  /* Body */
+  .nl-body { padding: 28px 32px; }
 
-    .campaign-header h2 {
-        color: white;
-        font-size: 28px;
-        margin: 0 0 10px;
-        font-weight: 600;
-        position: relative;
-    }
+  /* Campaign row */
+  .nl-campaign {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+    background: #f6f8fa;
+    border: 1px solid #e4e8ee;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .nl-campaign-icon {
+    width: 40px; height: 40px; flex-shrink: 0;
+    background: var(--blue); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .nl-campaign-name    { font-weight: 700; color: var(--blue); font-size: 15px; margin: 0 0 2px; }
+  .nl-campaign-subject { color: #555; font-size: 13px; margin: 0 0 8px; }
+  .nl-campaign-pills   { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nl-pill {
+    font-size: 12px; padding: 2px 10px; border-radius: 20px;
+    font-weight: 600;
+  }
+  .nl-pill-blue   { background: #e8f0fe; color: var(--blue); }
+  .nl-pill-green  { background: #e8f5e9; color: #2e7d32; }
+  .nl-pill-orange { background: #fff3e0; color: #e65100; }
+  .nl-pill-grey   { background: #f0f0f0; color: #666; }
 
-    .campaign-header p {
-        color: rgba(255,255,255,0.9);
-        margin: 0;
-        font-size: 16px;
-        position: relative;
-    }
+  /* Alert */
+  .nl-alert {
+    padding: 12px 16px; border-radius: 6px; font-size: 13px;
+    margin-bottom: 20px; display: flex; gap: 10px; align-items: flex-start;
+    line-height: 1.5;
+  }
+  .nl-alert-warn  { background: #fff8e1; border: 1px solid #ffe082; color: #5c4000; }
+  .nl-alert-info  { background: #e3f2fd; border: 1px solid #90caf9; color: #0d47a1; }
 
-    .campaign-header i {
-        color: var(--primary-orange);
-        margin-right: 10px;
-    }
+  /* Test email input */
+  .nl-field label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: #333; margin-bottom: 6px;
+  }
+  .nl-field input[type="email"] {
+    width: 100%; padding: 10px 14px;
+    border: 2px solid #dde2e8; border-radius: 6px;
+    font-size: 14px; box-sizing: border-box;
+    transition: border-color .2s;
+  }
+  .nl-field input[type="email"]:focus {
+    outline: none; border-color: var(--orange);
+    box-shadow: 0 0 0 3px rgba(246,135,18,.15);
+  }
+  .nl-field .nl-help { font-size: 12px; color: #888; margin-top: 5px; }
 
-    /* Content */
-    .campaign-content {
-        padding: 40px;
-    }
+  /* Buttons */
+  .nl-actions { display: flex; gap: 12px; margin-top: 24px; }
+  .nl-btn {
+    flex: 1; padding: 12px 20px; border: none; border-radius: 7px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: opacity .15s, transform .15s;
+    text-decoration: none;
+  }
+  .nl-btn:hover { opacity: .88; transform: translateY(-1px); }
+  .nl-btn-primary  { background: var(--orange); color: #fff; }
+  .nl-btn-cancel   { background: #f0f0f0; color: #444; }
 
-    /* Campaign Cards */
-    .campaign-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-
-    .campaign-card {
-        background: #f8f9fa;
-        border-radius: 15px;
-        padding: 20px;
-        border: 1px solid #e9ecef;
-        transition: all 0.3s ease;
-    }
-
-    .campaign-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(3, 70, 110, 0.1);
-        border-color: var(--primary-orange);
-    }
-
-    .campaign-card.selected {
-        border: 2px solid var(--primary-orange);
-        background: #fff3e0;
-    }
-
-    .campaign-card-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 15px;
-    }
-
-    .campaign-icon {
-        width: 40px;
-        height: 40px;
-        background: var(--primary-blue);
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 12px;
-    }
-
-    .campaign-icon i {
-        color: white;
-        font-size: 20px;
-    }
-
-    .campaign-title {
-        font-weight: 600;
-        color: var(--primary-blue);
-        font-size: 16px;
-        margin: 0 0 5px;
-    }
-
-    .campaign-subject {
-        font-size: 14px;
-        color: #6c757d;
-        margin: 0;
-    }
-
-    .campaign-stats {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 15px;
-        padding-top: 15px;
-        border-top: 1px solid #dee2e6;
-    }
-
-    .stat-item {
-        text-align: center;
-    }
-
-    .stat-value {
-        font-weight: 700;
-        color: var(--primary-orange);
-        font-size: 18px;
-    }
-
-    .stat-label {
-        font-size: 12px;
-        color: #6c757d;
-    }
-
-    /* Form */
-    .campaign-form {
-        background: #f8f9fa;
-        border-radius: 15px;
-        padding: 30px;
-        margin: 20px 0;
-    }
-
-    .form-row {
-        margin-bottom: 20px;
-    }
-
-    .form-row label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
-        color: var(--primary-blue);
-        font-size: 14px;
-    }
-
-    .form-row label i {
-        color: var(--primary-orange);
-        margin-right: 8px;
-    }
-
-    .form-control {
-        width: 100%;
-        padding: 12px 16px;
-        border: 2px solid #e9ecef;
-        border-radius: 10px;
-        font-size: 15px;
-        transition: all 0.3s ease;
-    }
-
-    .form-control:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        box-shadow: 0 0 0 3px rgba(246, 135, 18, 0.1);
-    }
-
-    .checkbox-row {
-        display: flex;
-        align-items: center;
-    }
-
-    .checkbox-row input[type="checkbox"] {
-        width: 20px;
-        height: 20px;
-        margin-right: 10px;
-        accent-color: var(--primary-orange);
-    }
-
-    .checkbox-row label {
-        margin-bottom: 0;
-        cursor: pointer;
-    }
-
-    /* Help Text */
-    .help-text {
-        font-size: 12px;
-        color: #6c757d;
-        margin-top: 5px;
-    }
-
-    .help-text i {
-        color: var(--primary-orange);
-        margin-right: 5px;
-    }
-
-    /* Buttons */
-    .action-buttons {
-        display: flex;
-        gap: 15px;
-        margin-top: 30px;
-    }
-
-    .btn {
-        flex: 1;
-        padding: 14px 24px;
-        border: none;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        text-decoration: none;
-    }
-
-    .btn i {
-        margin-right: 8px;
-        font-size: 18px;
-    }
-
-    .btn-primary {
-        background: var(--primary-orange);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background: var(--primary-hover);
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(246, 135, 18, 0.3);
-    }
-
-    .btn-secondary {
-        background: #6c757d;
-        color: white;
-    }
-
-    .btn-secondary:hover {
-        background: #5a6268;
-        transform: translateY(-2px);
-    }
-
-    .btn-outline {
-        background: transparent;
-        border: 2px solid var(--primary-blue);
-        color: var(--primary-blue);
-    }
-
-    .btn-outline:hover {
-        background: var(--primary-blue);
-        color: white;
-    }
-
-    /* Summary */
-    .campaign-summary {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 15px;
-        padding: 20px;
-        margin: 20px 0;
-    }
-
-    .summary-title {
-        color: var(--primary-blue);
-        font-weight: 600;
-        margin-bottom: 15px;
-        display: flex;
-        align-items: center;
-    }
-
-    .summary-title i {
-        color: var(--primary-orange);
-        margin-right: 10px;
-    }
-
-    .summary-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 15px;
-    }
-
-    .summary-item {
-        text-align: center;
-    }
-
-    .summary-label {
-        font-size: 12px;
-        color: #6c757d;
-        margin-bottom: 5px;
-    }
-
-    .summary-value {
-        font-weight: 700;
-        color: var(--primary-blue);
-        font-size: 20px;
-    }
-
-    /* Warning */
-    .warning-box {
-        background: #fff3cd;
-        border: 1px solid #ffeeba;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 20px 0;
-        display: flex;
-        align-items: center;
-    }
-
-    .warning-box i {
-        color: #856404;
-        font-size: 24px;
-        margin-right: 15px;
-    }
-
-    .warning-text {
-        color: #856404;
-        font-size: 14px;
-    }
-
-    .warning-text strong {
-        color: #533f03;
-    }
-
-    /* Loading Spinner */
-    .spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255,255,255,.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    @keyframes rotate {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-        .campaign-content {
-            padding: 20px;
-        }
-        
-        .campaign-cards {
-            grid-template-columns: 1fr;
-        }
-        
-        .action-buttons {
-            flex-direction: column;
-        }
-        
-        .summary-grid {
-            grid-template-columns: 1fr 1fr;
-        }
-    }
-
-    /* Animations */
-    .fade-in {
-        animation: fadeIn 0.5s ease-out;
-    }
-
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Tooltip */
-    .tooltip {
-        position: relative;
-        display: inline-block;
-    }
-
-    .tooltip .tooltip-text {
-        visibility: hidden;
-        width: 200px;
-        background-color: var(--primary-blue);
-        color: #fff;
-        text-align: center;
-        padding: 5px 10px;
-        border-radius: 6px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -100px;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 12px;
-    }
-
-    .tooltip:hover .tooltip-text {
-        visibility: visible;
-        opacity: 1;
-    }
+  /* Spinner */
+  .nl-spinner {
+    display: none; width: 15px; height: 15px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff; border-radius: 50%;
+    animation: nlspin .6s linear infinite;
+  }
+  @keyframes nlspin { to { transform: rotate(360deg); } }
 </style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 {% endblock %}
 
 {% block content %}
-<div class="send-campaign-container fade-in">
-    <div class="campaign-header">
-        <h2>
-            <i class="fas fa-paper-plane"></i>
-            {% if action == 'send_test' %}
-                Send Test Campaign
-            {% else %}
-                Send Campaign
-            {% endif %}
-        </h2>
-        <p>Review and confirm your campaign before sending</p>
+<div class="nl-wrap">
+
+  {# ── Header ── #}
+  <div class="nl-head">
+    <div class="nl-head-icon">
+      {% if action == 'send_test' %}🧪{% else %}🚀{% endif %}
     </div>
-
-    <div class="campaign-content">
-        <!-- Campaign Cards -->
-        <div class="campaign-cards">
-            {% for campaign in campaigns %}
-            <div class="campaign-card {% if forloop.first %}selected{% endif %}">
-                <div class="campaign-card-header">
-                    <div class="campaign-icon">
-                        <i class="fas fa-envelope"></i>
-                    </div>
-                    <div>
-                        <h3 class="campaign-title">{{ campaign.name }}</h3>
-                        <p class="campaign-subject">{{ campaign.subject|truncatechars:40 }}</p>
-                    </div>
-                </div>
-                
-                <div class="campaign-stats">
-                    <div class="stat-item">
-                        <div class="stat-value">{{ campaign.lists.count }}</div>
-                        <div class="stat-label">Lists</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{{ campaign.total_recipients|default:"0" }}</div>
-                        <div class="stat-label">Recipients</div>
-                    </div>
-                    <div class="stat-item tooltip">
-                        <div class="stat-value">
-                            {% if campaign.scheduled_for %}
-                                <i class="fas fa-clock" style="color: var(--primary-orange);"></i>
-                            {% else %}
-                                <i class="fas fa-bolt" style="color: #28a745;"></i>
-                            {% endif %}
-                        </div>
-                        <div class="stat-label">
-                            {% if campaign.scheduled_for %}
-                                Scheduled
-                            {% else %}
-                                Immediate
-                            {% endif %}
-                        </div>
-                        {% if campaign.scheduled_for %}
-                        <span class="tooltip-text">
-                            Scheduled for: {{ campaign.scheduled_for|date:"Y-m-d H:i" }}
-                        </span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% empty %}
-            <div class="campaign-card">
-                <p>No campaigns selected</p>
-            </div>
-            {% endfor %}
-        </div>
-
-        <!-- Campaign Summary -->
-        <div class="campaign-summary">
-            <div class="summary-title">
-                <i class="fas fa-chart-bar"></i>
-                Campaign Summary
-            </div>
-            <div class="summary-grid">
-                <div class="summary-item">
-                    <div class="summary-label">Total Campaigns</div>
-                    <div class="summary-value">{{ campaigns|length }}</div>
-                </div>
-                
-                {% with first_campaign=campaigns.0 %}
-                <div class="summary-item">
-                    <div class="summary-label">Total Lists</div>
-                    <div class="summary-value">{{ first_campaign.lists.count|default:"0" }}</div>
-                </div>
-                
-                <div class="summary-item">
-                    <div class="summary-label">Est. Recipients</div>
-                    <div class="summary-value">{{ first_campaign.total_recipients|default:"0" }}</div>
-                </div>
-                {% endwith %}
-            </div>
-        </div>
-
-        <!-- Warning Box for Send Campaign -->
-        {% if action == 'send_campaign_action' %}
-        <div class="warning-box">
-            <i class="fas fa-exclamation-triangle"></i>
-            <div class="warning-text">
-                <strong>Warning:</strong> This will send the campaign to all active subscribers in the selected lists. 
-                This action cannot be undone. Please review carefully.
-            </div>
-        </div>
+    <div>
+      <h2>
+        {% if action == 'send_test' %}Send Test Email{% else %}Send Campaign{% endif %}
+      </h2>
+      <p>
+        {% if action == 'send_test' %}
+          Review the campaign, enter a recipient, and send a test copy.
+        {% else %}
+          Review the details below and click Send to dispatch to all subscribers.
         {% endif %}
-
-        <!-- Form -->
-        <form method="post" class="campaign-form" id="campaign-form">
-            {% csrf_token %}
-            
-            {% if action == 'send_test' %}
-            <div class="form-row">
-                <label for="test_email">
-                    <i class="fas fa-envelope"></i>
-                    Test Email Address
-                </label>
-                <input type="email" 
-                       name="test_email" 
-                       id="test_email" 
-                       class="form-control" 
-                       placeholder="Enter test email address"
-                       value="{{ request.user.email }}"
-                       required>
-                <div class="help-text">
-                    <i class="fas fa-info-circle"></i>
-                    Send a test email to this address before sending to all subscribers
-                </div>
-            </div>
-            {% endif %}
-
-            <div class="form-row checkbox-row">
-                <input type="checkbox" 
-                       name="confirm_send" 
-                       id="confirm_send" 
-                       required>
-                <label for="confirm_send">
-                    <strong>I confirm that I want to 
-                        {% if action == 'send_test' %}
-                            send a test email
-                        {% else %}
-                            send this campaign to all subscribers
-                        {% endif %}
-                    </strong>
-                </label>
-            </div>
-
-            <div class="help-text">
-                <i class="fas fa-shield-alt"></i>
-                By confirming, you agree to our email terms and confirm that this campaign complies with our anti-spam policy.
-            </div>
-
-            <!-- Hidden inputs -->
-            <input type="hidden" name="action" value="{{ action }}">
-            {% for campaign in campaigns %}
-            <input type="hidden" name="_selected_action" value="{{ campaign.pk }}">
-            {% endfor %}
-            <input type="hidden" name="select_across" value="0">
-            <input type="hidden" name="index" value="0">
-
-            <!-- Action Buttons -->
-            <div class="action-buttons">
-                <button type="submit" name="apply" class="btn btn-primary" id="submit-btn">
-                    <i class="fas fa-paper-plane"></i>
-                    <span class="btn-text">
-                        {% if action == 'send_test' %}
-                            Send Test Email
-                        {% else %}
-                            Send Campaign Now
-                        {% endif %}
-                    </span>
-                    <span class="spinner" style="display: none;"></span>
-                </button>
-                
-                <a href="{% url 'admin:newsletter_campaign_changelist' %}" class="btn btn-secondary">
-                    <i class="fas fa-times"></i>
-                    Cancel
-                </a>
-            </div>
-        </form>
-
-        <!-- Additional Info -->
-        <div style="margin-top: 20px; text-align: center; color: #6c757d; font-size: 13px;">
-            <i class="fas fa-clock"></i>
-            {% if action == 'send_test' %}
-                Test emails are sent immediately and won't be tracked in statistics
-            {% else %}
-                Campaigns are processed in the background. You'll be notified when complete.
-            {% endif %}
-        </div>
+      </p>
     </div>
+  </div>
+
+  <div class="nl-body">
+
+    {# ── Campaign cards ── #}
+    {% if campaigns_data %}
+      {% for item in campaigns_data %}
+      <div class="nl-campaign">
+        <div class="nl-campaign-icon">📧</div>
+        <div style="flex:1; min-width:0;">
+          <p class="nl-campaign-name">{{ item.campaign.name }}</p>
+          <p class="nl-campaign-subject">{{ item.campaign.subject }}</p>
+          <div class="nl-campaign-pills">
+            <span class="nl-pill nl-pill-blue">{{ item.campaign.lists.count }} list{{ item.campaign.lists.count|pluralize }}</span>
+            <span class="nl-pill nl-pill-green">{{ item.active_subs }} active subscriber{{ item.active_subs|pluralize }}</span>
+            <span class="nl-pill nl-pill-orange">{{ item.campaign.get_priority_display }} priority</span>
+            <span class="nl-pill nl-pill-grey">{{ item.campaign.get_status_display }}</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      {% for campaign in campaigns %}
+      <div class="nl-campaign">
+        <div class="nl-campaign-icon">📧</div>
+        <div style="flex:1; min-width:0;">
+          <p class="nl-campaign-name">{{ campaign.name }}</p>
+          <p class="nl-campaign-subject">{{ campaign.subject }}</p>
+          <div class="nl-campaign-pills">
+            <span class="nl-pill nl-pill-blue">{{ campaign.lists.count }} list{{ campaign.lists.count|pluralize }}</span>
+            <span class="nl-pill nl-pill-grey">{{ campaign.get_status_display }}</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% endif %}
+
+    {# ── Contextual alert ── #}
+    {% if action == 'send_campaign_action' %}
+    <div class="nl-alert nl-alert-warn">
+      <span>⚠️</span>
+      <span>This will email <strong>all active subscribers</strong> in the listed targets.
+        Make sure you've already sent a test and reviewed the content.</span>
+    </div>
+    {% else %}
+    <div class="nl-alert nl-alert-info">
+      <span>ℹ️</span>
+      <span>Test emails are delivered immediately but <strong>are not tracked</strong>
+        in campaign statistics.</span>
+    </div>
+    {% endif %}
+
+    {# ── Form ── #}
+    <form method="post" id="nl-form">
+      {% csrf_token %}
+
+      {# Required by Django's action machinery #}
+      {% for campaign in campaigns %}
+        <input type="hidden" name="_selected_action" value="{{ campaign.pk }}">
+      {% endfor %}
+      <input type="hidden" name="action" value="{{ action }}">
+      <input type="hidden" name="select_across" value="0">
+      {# This hidden field is what the action checks — never disabled, always submitted #}
+      <input type="hidden" name="apply" value="1">
+
+      {% if action == 'send_test' %}
+      <div class="nl-field" style="margin-bottom: 8px;">
+        <label for="id_test_email">Recipient email address</label>
+        <input type="email" name="test_email" id="id_test_email"
+               value="{{ request.user.email }}"
+               placeholder="you@example.com" required>
+        <p class="nl-help">Enter any email address — a test copy will be sent there only.</p>
+      </div>
+      {% endif %}
+
+      <div class="nl-actions">
+        <button type="submit" id="nl-submit" class="nl-btn nl-btn-primary">
+          <span id="nl-btn-label">
+            {% if action == 'send_test' %}Send Test{% else %}Send Campaign{% endif %}
+          </span>
+          <span class="nl-spinner" id="nl-spinner"></span>
+        </button>
+        <a href="{% url 'admin:newsletter_campaign_changelist' %}" class="nl-btn nl-btn-cancel">
+          Cancel
+        </a>
+      </div>
+    </form>
+
+  </div>{# /nl-body #}
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('campaign-form');
-    const submitBtn = document.getElementById('submit-btn');
-    const checkbox = document.getElementById('confirm_send');
-    
-    form.addEventListener('submit', function(e) {
-        if (!checkbox.checked) {
-            e.preventDefault();
-            alert('Please confirm that you want to send this campaign.');
-            return;
-        }
-        
-        // Show loading state
-        submitBtn.disabled = true;
-        submitBtn.querySelector('.btn-text').style.opacity = '0.7';
-        submitBtn.querySelector('.spinner').style.display = 'inline-block';
-        
-        // Prevent double submission
-        setTimeout(() => {
-            submitBtn.disabled = false;
-            submitBtn.querySelector('.btn-text').style.opacity = '1';
-            submitBtn.querySelector('.spinner').style.display = 'none';
-        }, 10000); // Re-enable after 10 seconds
-    });
-    
-    // Add click animation to campaign cards
-    const cards = document.querySelectorAll('.campaign-card');
-    cards.forEach(card => {
-        card.addEventListener('click', function() {
-            cards.forEach(c => c.classList.remove('selected'));
-            this.classList.add('selected');
-        });
-    });
-    
-    // Confirmation dialog
-    {% if action == 'send_campaign_action' %}
-    form.addEventListener('submit', function(e) {
-        if (checkbox.checked) {
-            const confirmed = confirm(
-                '⚠️ FINAL WARNING:\n\n' +
-                'This will send the campaign to ALL active subscribers.\n' +
-                'This action cannot be undone.\n\n' +
-                'Are you absolutely sure you want to proceed?'
-            );
-            
-            if (!confirmed) {
-                e.preventDefault();
-                submitBtn.disabled = false;
-                submitBtn.querySelector('.btn-text').style.opacity = '1';
-                submitBtn.querySelector('.spinner').style.display = 'none';
-            }
-        }
-    });
-    {% endif %}
-    
-    // Live email validation for test mode
-    {% if action == 'send_test' %}
-    const testEmail = document.getElementById('test_email');
-    testEmail.addEventListener('input', function() {
-        const email = this.value;
-        const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        
-        if (email && !isValid) {
-            this.style.borderColor = '#dc3545';
-        } else {
-            this.style.borderColor = '';
-        }
-    });
-    {% endif %}
+document.getElementById('nl-form').addEventListener('submit', function () {
+  var btn   = document.getElementById('nl-submit');
+  var label = document.getElementById('nl-btn-label');
+  var spin  = document.getElementById('nl-spinner');
+  // Style-only feedback — do NOT disable the button (disabled elements are excluded from POST)
+  btn.style.opacity  = '0.7';
+  btn.style.cursor   = 'not-allowed';
+  btn.style.pointerEvents = 'none';
+  label.textContent  = 'Sending…';
+  spin.style.display = 'inline-block';
 });
 </script>
 {% endblock %}
