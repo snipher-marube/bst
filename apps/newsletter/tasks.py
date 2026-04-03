@@ -3,6 +3,7 @@ import logging
 import re
 from typing import Optional, Dict, Any
 from functools import wraps
+from urllib.parse import quote
 
 from celery import shared_task
 from django.conf import settings
@@ -275,7 +276,8 @@ def _send_single_email(campaign: Campaign, subscriber: Subscriber, email: str):
     email_message = _create_email_message(campaign, email, text_content, html_content)
     
     # Add message ID for tracking
-    message_id = f"<{campaign.id}.{subscriber.id}.{timezone.now().timestamp()}@{settings.SITE_NAME}>"
+    sub_id = subscriber.id if subscriber else 'test'
+    message_id = f"<{campaign.id}.{sub_id}.{timezone.now().timestamp()}@{settings.SITE_NAME}>"
     email_message.extra_headers['Message-ID'] = message_id
     
     email_message.send(fail_silently=False)
@@ -396,7 +398,7 @@ def _add_click_tracking(html: str, campaign: Campaign, subscriber: Subscriber) -
         
         tracking_url = (
             f"{settings.SITE_URL}/newsletter/track/click/"
-            f"{campaign.id}/{subscriber.id}/?url={original_url}"
+            f"{campaign.id}/{subscriber.id}/?url={quote(original_url, safe='')}"
         )
         return f'href="{tracking_url}"'
 

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ campaign.subject }}</title>
+    {% if preview_mode %}
+    <style>
+        body { margin: 0; background: #f4f4f4; font-family: Arial, sans-serif; }
+        .preview-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            background: #03466e; color: #fff;
+            padding: 10px 20px; font-size: 13px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .preview-bar a { color: #f68712; text-decoration: none; font-weight: 600; }
+        .preview-wrap { margin-top: 48px; padding: 20px; }
+    </style>
+    {% endif %}
+</head>
+<body>
+    {% if preview_mode %}
+    <div class="preview-bar">
+        <span>
+            <strong>Preview Mode</strong> &mdash;
+            Campaign: <em>{{ campaign.name }}</em> &mdash;
+            Status: <em>{{ campaign.get_status_display }}</em>
+        </span>
+        <a href="{% url 'admin:newsletter_campaign_change' campaign.pk %}">&#8592; Back to Admin</a>
+    </div>
+    <div class="preview-wrap">
+    {% endif %}
+
+    {{ campaign.content_html|safe }}
+
+    {% if preview_mode %}
+    </div>
+    {% endif %}
+</body>
+</html>

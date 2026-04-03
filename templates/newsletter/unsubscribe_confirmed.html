@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Unsubscribed — {{ site_name }}{% endblock %}
+
+{% block content %}
+<div style="min-height: 60vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px;">
+    <div style="max-width: 480px; width: 100%; text-align: center; background: #fff; border-radius: 12px; padding: 48px 40px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);">
+
+        <!-- Icon -->
+        <div style="width: 64px; height: 64px; background: #f0f9f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#28a745" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+        </div>
+
+        <h1 style="font-size: 1.75rem; font-weight: 700; color: #1a1a2e; margin-bottom: 12px;">
+            You've been unsubscribed
+        </h1>
+
+        <p style="color: #555; font-size: 1rem; line-height: 1.6; margin-bottom: 8px;">
+            {% if subscriber.first_name %}
+                Sorry to see you go, <strong>{{ subscriber.first_name }}</strong>.
+            {% else %}
+                Sorry to see you go.
+            {% endif %}
+        </p>
+        <p style="color: #777; font-size: 0.9rem; line-height: 1.6; margin-bottom: 32px;">
+            <strong>{{ subscriber.email }}</strong> has been removed from our mailing list.
+            You will no longer receive newsletters from us.
+        </p>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div style="padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;
+                    background: {% if message.tags == 'success' %}#d4edda{% elif message.tags == 'warning' %}#fff3cd{% else %}#cce5ff{% endif %};
+                    color: {% if message.tags == 'success' %}#155724{% elif message.tags == 'warning' %}#856404{% else %}#004085{% endif %};">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <p style="color: #999; font-size: 0.85rem; margin-bottom: 28px;">
+            Changed your mind? You can re-subscribe at any time on our website.
+        </p>
+
+        <a href="/"
+           style="display: inline-block; padding: 12px 28px; background: #03466e; color: #fff;
+                  text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem;">
+            Back to Home
+        </a>
+    </div>
+</div>
+{% endblock %}

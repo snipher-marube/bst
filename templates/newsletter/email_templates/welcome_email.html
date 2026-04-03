@@ -1,27 +1,59 @@
-<!-- newsletter/templates/newsletter/email_templates/welcome_email.html -->
 {% extends "newsletter/email_templates/base_email.html" %}
 
-{% block subject %}Confirm Your Subscription{% endblock %}
+{% block subject %}Confirm Your Subscription — {{ site_name }}{% endblock %}
 
 {% block header_title %}Welcome to {{ site_name }}!{% endblock %}
 
+{% block header_subtitle %}
+<p style="margin: 8px 0 0 0; font-size: 15px; color: #a8d4f0;">
+  One quick step to get started
+</p>
+{% endblock %}
+
 {% block content %}
-<h2>Hello{% if subscriber.first_name %} {{ subscriber.first_name }}{% endif %},</h2>
-
-<p>Thank you for subscribing to our newsletter! We're excited to have you on board.</p>
-
-<p>Please confirm your email address by clicking the button below:</p>
-
-<p style="text-align: center; margin: 30px 0;">
-    <a href="{{ confirmation_url }}" class="button">Confirm Subscription</a>
+<p style="margin: 0 0 20px 0; font-size: 16px; color: #1a1a2e; font-weight: 600;">
+  Hello{% if subscriber.first_name %} {{ subscriber.first_name }}{% endif %},
 </p>
 
-<p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
-<p style="word-break: break-all;"><small>{{ confirmation_url }}</small></p>
+<p style="margin: 0 0 16px 0; font-size: 15px; color: #444444; line-height: 1.7;">
+  Thank you for subscribing to the <strong>{{ site_name }}</strong> newsletter.
+  We share insights on business analytics, platform updates, and tips to help you get
+  more value from your data — delivered straight to your inbox.
+</p>
 
-<p>This confirmation helps us ensure that you really want to receive our emails and that we have the correct email address.</p>
+<p style="margin: 0 0 28px 0; font-size: 15px; color: #444444; line-height: 1.7;">
+  Please confirm your email address by clicking the button below. This ensures we have
+  the right address and keeps your subscription secure.
+</p>
 
-<p>If you didn't sign up for this newsletter, you can safely ignore this email.</p>
+<!-- CTA button -->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+  <tr>
+    <td align="center" style="padding: 8px 0 32px 0;">
+      <a href="{{ confirmation_url }}"
+         style="display: inline-block; padding: 14px 36px;
+                background-color: #f68712; color: #ffffff;
+                text-decoration: none; border-radius: 6px;
+                font-size: 15px; font-weight: 700;
+                letter-spacing: 0.3px; mso-padding-alt: 14px 36px;">
+        Confirm My Subscription
+      </a>
+    </td>
+  </tr>
+</table>
 
-<p>Best regards,<br>The {{ site_name }} Team</p>
+<p style="margin: 0 0 8px 0; font-size: 13px; color: #888888;">
+  Button not working? Copy and paste this link into your browser:
+</p>
+<p style="margin: 0 0 28px 0; font-size: 12px; color: #03466e;
+          word-break: break-all; line-height: 1.5;">
+  {{ confirmation_url }}
+</p>
+
+<p style="margin: 0; font-size: 13px; color: #aaaaaa; line-height: 1.6;">
+  If you didn't sign up for this newsletter, you can safely ignore this email —
+  no action is needed on your part.
+</p>
 {% endblock %}
+
+{% block unsubscribe_link %}{{ confirmation_url }}{% endblock %}

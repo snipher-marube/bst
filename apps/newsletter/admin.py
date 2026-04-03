@@ -89,19 +89,25 @@ export_list_subscribers.short_description = "📥 Export subscribers from select
 
 def duplicate_campaign(modeladmin, request, queryset):
     """Duplicate selected campaigns"""
-    for campaign in queryset:
-        campaign.pk = None
-        campaign.name = f"{campaign.name} (Copy)"
-        campaign.status = Campaign.Status.DRAFT
-        campaign.scheduled_for = None
-        campaign.sent_at = None
-        campaign.save()
-        
-        # Copy lists (many-to-many)
-        if queryset.first():
-            campaign.lists.set(queryset.first().lists.all())
-    
-    modeladmin.message_user(request, f"📋 {queryset.count()} campaign(s) duplicated")
+    count = 0
+    for original in queryset:
+        original_lists = list(original.lists.all())
+        original.pk = None
+        original.name = f"{original.name} (Copy)"
+        original.status = Campaign.Status.DRAFT
+        original.scheduled_for = None
+        original.sent_at = None
+        original.total_recipients = 0
+        original.total_sent = 0
+        original.total_opens = 0
+        original.total_clicks = 0
+        original.total_bounces = 0
+        original.total_unsubscribes = 0
+        original.save()
+        original.lists.set(original_lists)
+        count += 1
+
+    modeladmin.message_user(request, f"📋 {count} campaign(s) duplicated")
 duplicate_campaign.short_description = "📋 Duplicate selected campaigns"
 
 
@@ -333,10 +339,28 @@ class CampaignAdmin(admin.ModelAdmin):
         })
     )
     
-    actions = ['send_test', 'send_campaign_action', 'duplicate_campaign']
-    
+    actions = ['send_test', 'send_campaign_action', duplicate_campaign]
+
     list_per_page = 25
     save_on_top = True
+
+    class Media:
+        css = {
+            'all': (
+                'https://cdnjs.cloudflare.com/ajax/libs/jodit/4.2.89/jodit.min.css',
+            )
+        }
+        js = (
+            'https://cdnjs.cloudflare.com/ajax/libs/jodit/4.2.89/jodit.min.js',
+            'newsletter/js/email_editor.js',
+        )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Mark the content_html textarea so the editor script can target it
+        widget = form.base_fields['content_html'].widget
+        widget.attrs.update({'data-editor': 'email-html', 'id': 'id_content_html'})
+        return form
     
     def name_display(self, obj):
         """Display name with icon"""
@@ -550,8 +574,6 @@ class CampaignAdmin(admin.ModelAdmin):
             'opts': self.model._meta,
         })
     send_campaign_action.short_description = "✅ Send selected campaigns"
-
-    duplicate_campaign.short_description = "📋 Duplicate selected campaigns"
 
 
 
