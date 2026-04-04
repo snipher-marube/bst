@@ -77,7 +77,7 @@ python-decouple==3.8
 python-json-logger==4.0.0
 pytokens==0.4.1
 redis==7.2.0
-requests==2.32.5
+requests==2.33.1
 service-identity==24.2.0
 six==1.17.0
 sqlparse==0.5.5
