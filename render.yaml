@@ -1,6 +1,3 @@
-## render.yaml — Render Blueprint for AnalyticsMeta
-## Docs: https://render.com/docs/blueprint-spec
-
 services:
   # ─────────────────────────────────────────────────────────────────────────────
   # Web Service  (Daphne ASGI — handles HTTP + WebSockets via Django Channels)
@@ -9,17 +6,15 @@ services:
     name: analyticsmeta
     runtime: python
     region: oregon
-    plan: starter
+    plan: free
 
-    buildCommand: |
+    buildCommand: >-
       pip install --upgrade pip &&
       pip install -r requirements.txt &&
       python manage.py collectstatic --noinput --settings=config.settings.production
 
-    # Runs after every successful build, before new instance starts
     preDeployCommand: python manage.py migrate --settings=config.settings.production
 
-    # Daphne serves ASGI (HTTP + WebSocket)
     startCommand: daphne -b 0.0.0.0 -p $PORT config.asgi:application
 
     healthCheckPath: /
@@ -28,22 +23,18 @@ services:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
 
-      # ── Security ──────────────────────────────────────────────────────────
       - key: SECRET_KEY
-        generateValue: true           # Render generates a random value on first deploy
+        generateValue: true
 
-      # Replace with your actual Render subdomain (and custom domain once added)
-      # e.g. analyticsmeta.onrender.com or analyticsmeta.com
       - key: ALLOWED_HOSTS
         value: analyticsmeta.onrender.com
 
       - key: SITE_URL
         value: https://analyticsmeta.onrender.com
 
-      # ── Postgres (from your existing Render DB) ────────────────────────────
-      # Paste the values from Render Dashboard → your DB → Connection
+      # ── Postgres ──────────────────────────────────────────────────────────
       - key: PG_DATABASE_NAME
-        sync: false                   # Fill in Render Dashboard
+        sync: false
 
       - key: PG_DATABASE_USER
         sync: false
@@ -58,18 +49,16 @@ services:
         value: "5432"
 
       # ── Redis (Upstash) ───────────────────────────────────────────────────
-      # Full Upstash URL e.g. rediss://:password@host:6380
       - key: REDIS_URL
-        sync: false                   # Fill in from Upstash Console
+        sync: false
 
-      # Used by CHANNEL_LAYERS in base.py — set from your Upstash credentials
       - key: REDIS_HOST
         sync: false
 
       - key: REDIS_PORT
         sync: false
 
-      # ── Email (Gmail SMTP) ────────────────────────────────────────────────
+      # ── Email ─────────────────────────────────────────────────────────────
       - key: EMAIL_HOST_USER
         sync: false
 
@@ -113,11 +102,10 @@ services:
       - key: MPESA_PASSKEY
         sync: false
 
-      # Must be a public HTTPS URL e.g. https://analyticsmeta.onrender.com/subscriptions/mpesa/callback/
       - key: MPESA_CALLBACK_URL
         sync: false
 
-      # ── Optional contact info ─────────────────────────────────────────────
+      # ── Optional ──────────────────────────────────────────────────────────
       - key: SUPPORT_EMAIL
         value: support@analyticsmeta.com
 
@@ -128,124 +116,123 @@ services:
         value: AnalyticsMeta
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # PAID WORKERS — uncomment when ready (Render starter plan, $7/month each)
+  # ─────────────────────────────────────────────────────────────────────────────
+
   # Celery Worker
-  # ─────────────────────────────────────────────────────────────────────────────
-  - type: worker
-    name: analyticsmeta-celery-worker
-    runtime: python
-    region: oregon
-    plan: starter
+  #- type: worker
+  #  name: analyticsmeta-celery-worker
+  #  runtime: python
+  #  region: oregon
+  #  plan: starter
+  #
+  #  buildCommand: >-
+  #    pip install --upgrade pip &&
+  #    pip install -r requirements.txt
+  #
+  #  startCommand: celery -A config.celery worker --loglevel=info --concurrency=2
+  #
+  #  envVars:
+  #    - key: DJANGO_SETTINGS_MODULE
+  #      value: config.settings.production
+  #
+  #    - key: SECRET_KEY
+  #      fromService:
+  #        name: analyticsmeta
+  #        type: web
+  #        envVarKey: SECRET_KEY
+  #
+  #    - key: REDIS_URL
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_NAME
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_USER
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_PASSWORD
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_HOST
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_PORT
+  #      value: "5432"
+  #
+  #    - key: MPESA_CONSUMER_KEY
+  #      sync: false
+  #
+  #    - key: MPESA_CONSUMER_SECRET
+  #      sync: false
+  #
+  #    - key: MPESA_SHORTCODE
+  #      sync: false
+  #
+  #    - key: MPESA_PASSKEY
+  #      sync: false
+  #
+  #    - key: MPESA_CALLBACK_URL
+  #      sync: false
+  #
+  #    - key: EMAIL_HOST_USER
+  #      sync: false
+  #
+  #    - key: EMAIL_HOST_PASSWORD
+  #      sync: false
 
-    buildCommand: |
-      pip install --upgrade pip &&
-      pip install -r requirements.txt
-
-    startCommand: celery -A config.celery worker --loglevel=info --concurrency=2
-
-    envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: config.settings.production
-
-      - key: SECRET_KEY
-        fromService:
-          name: analyticsmeta
-          type: web
-          envVarKey: SECRET_KEY
-
-      - key: REDIS_URL
-        sync: false
-
-      - key: PG_DATABASE_NAME
-        sync: false
-
-      - key: PG_DATABASE_USER
-        sync: false
-
-      - key: PG_DATABASE_PASSWORD
-        sync: false
-
-      - key: PG_DATABASE_HOST
-        sync: false
-
-      - key: PG_DATABASE_PORT
-        value: "5432"
-
-      - key: MPESA_CONSUMER_KEY
-        sync: false
-
-      - key: MPESA_CONSUMER_SECRET
-        sync: false
-
-      - key: MPESA_SHORTCODE
-        sync: false
-
-      - key: MPESA_PASSKEY
-        sync: false
-
-      - key: MPESA_CALLBACK_URL
-        sync: false
-
-      - key: EMAIL_HOST_USER
-        sync: false
-
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Celery Beat (scheduler)
-  # Only run ONE instance of this — never scale it above 1
-  # ─────────────────────────────────────────────────────────────────────────────
-  - type: worker
-    name: analyticsmeta-celery-beat
-    runtime: python
-    region: oregon
-    plan: starter
-
-    buildCommand: |
-      pip install --upgrade pip &&
-      pip install -r requirements.txt
-
-    startCommand: celery -A config.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-
-    envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: config.settings.production
-
-      - key: SECRET_KEY
-        fromService:
-          name: analyticsmeta
-          type: web
-          envVarKey: SECRET_KEY
-
-      - key: REDIS_URL
-        sync: false
-
-      - key: PG_DATABASE_NAME
-        sync: false
-
-      - key: PG_DATABASE_USER
-        sync: false
-
-      - key: PG_DATABASE_PASSWORD
-        sync: false
-
-      - key: PG_DATABASE_HOST
-        sync: false
-
-      - key: PG_DATABASE_PORT
-        value: "5432"
-
-      - key: MPESA_CONSUMER_KEY
-        sync: false
-
-      - key: MPESA_CONSUMER_SECRET
-        sync: false
-
-      - key: MPESA_PASSKEY
-        sync: false
-
-      - key: MPESA_SHORTCODE
-        sync: false
-
-      - key: MPESA_CALLBACK_URL
-        sync: false
+  # Celery Beat  (scheduler — keep at exactly 1 instance, never scale above 1)
+  #- type: worker
+  #  name: analyticsmeta-celery-beat
+  #  runtime: python
+  #  region: oregon
+  #  plan: starter
+  #
+  #  buildCommand: >-
+  #    pip install --upgrade pip &&
+  #    pip install -r requirements.txt
+  #
+  #  startCommand: celery -A config.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+  #
+  #  envVars:
+  #    - key: DJANGO_SETTINGS_MODULE
+  #      value: config.settings.production
+  #
+  #    - key: SECRET_KEY
+  #      fromService:
+  #        name: analyticsmeta
+  #        type: web
+  #        envVarKey: SECRET_KEY
+  #
+  #    - key: REDIS_URL
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_NAME
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_USER
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_PASSWORD
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_HOST
+  #      sync: false
+  #
+  #    - key: PG_DATABASE_PORT
+  #      value: "5432"
+  #
+  #    - key: MPESA_CONSUMER_KEY
+  #      sync: false
+  #
+  #    - key: MPESA_CONSUMER_SECRET
+  #      sync: false
+  #
+  #    - key: MPESA_PASSKEY
+  #      sync: false
+  #
+  #    - key: MPESA_SHORTCODE
+  #      sync: false
+  #
+  #    - key: MPESA_CALLBACK_URL
+  #      sync: false
