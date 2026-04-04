@@ -10,7 +10,6 @@ services:
     runtime: python
     region: oregon
     plan: starter
-    pythonVersion: "3.12"
 
     buildCommand: |
       pip install --upgrade pip &&
@@ -136,7 +135,6 @@ services:
     runtime: python
     region: oregon
     plan: starter
-    pythonVersion: "3.12"
 
     buildCommand: |
       pip install --upgrade pip &&
@@ -202,7 +200,6 @@ services:
     runtime: python
     region: oregon
     plan: starter
-    pythonVersion: "3.12"
 
     buildCommand: |
       pip install --upgrade pip &&
