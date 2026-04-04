@@ -15,8 +15,6 @@ updates:
       - python
     commit-message:
       prefix: "chore(deps)"
-    reviewers:
-      - Snipher-Marube
     ignore:
       # Pin Django major version — upgrade manually
       - dependency-name: "django"
@@ -41,5 +39,3 @@ updates:
       - github-actions
     commit-message:
       prefix: "chore(ci)"
-    reviewers:
-      - Snipher-Marube

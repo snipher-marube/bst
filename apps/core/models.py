@@ -86,7 +86,10 @@ class Testimonial(models.Model):
     
     class Meta:
         ordering = ['order', '-created_at']
-    
+        indexes = [
+            models.Index(fields=['is_active', 'featured']),
+        ]
+
     def __str__(self):
         return f"{self.name} - {self.company}"
 
@@ -116,6 +119,9 @@ class FAQ(models.Model):
         ordering = ['category', 'order']
         verbose_name = 'FAQ'
         verbose_name_plural = 'FAQs'
+        indexes = [
+            models.Index(fields=['category', 'is_active']),
+        ]
     
     def __str__(self):
         return self.question
@@ -227,7 +233,11 @@ class BlogPost(SEOMixin, models.Model):
     
     class Meta:
         ordering = ['-published_at']
-    
+        indexes = [
+            models.Index(fields=['is_published', 'published_at']),
+            models.Index(fields=['category', 'is_published']),
+        ]
+
     def __str__(self):
         return self.title
     
@@ -255,7 +265,10 @@ class ContactMessage(models.Model):
     
     class Meta:
         ordering = ['-created_at']
-    
+        indexes = [
+            models.Index(fields=['is_read', 'created_at']),
+        ]
+
     def __str__(self):
         return f"{self.name} - {self.subject}"
 
