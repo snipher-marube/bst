@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.workspaces',
     'apps.newsletter',
     'apps.insights',
+    'apps.reports',
 ]
 
 MIDDLEWARE = [

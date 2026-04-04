@@ -30,6 +30,7 @@ urlpatterns = [
     path('subscriptions/', include('apps.subscriptions.urls', namespace='subscriptions')),
     path('workspaces/', include('apps.workspaces.urls', namespace='workspaces')),
     path('exports/', include('apps.exports.urls', namespace='exports')),
+    path('reports/', include('apps.reports.urls', namespace='reports')),
     # Dashboard API URLs (legacy)
     path('api/', include('apps.dashboards.urls_api')),
     # REST API v1
