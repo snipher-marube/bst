@@ -1,6 +1,7 @@
 import json
 import pandas as pd
 import numpy as np
+from django.conf import settings
 from django.db import connection
 from django.core.cache import cache
 from django.utils import timezone
@@ -16,9 +17,9 @@ class QueryEngine:
     """
     Enhanced query engine that understands user-defined schemas
     """
-    
+
     def __init__(self):
-        self.cache_timeout = 300
+        self.cache_timeout = getattr(settings, 'WIDGET_CACHE_TTL', 300)
 
 
     def _generate_cache_key(self, widget):
@@ -154,9 +155,11 @@ class QueryEngine:
             if agg_type == 'count':
                 result[name] = queryset.count()
             elif agg_type in ['sum', 'avg', 'min', 'max'] and field:
-                # We need to aggregate JSON field - this is tricky
-                # For now, get all records and compute in Python
-                records = queryset.values_list('data', flat=True)[:10000]  # Limit for performance
+                # Aggregate JSON field values in Python (Postgres JSONB aggregate
+                # support requires raw SQL; this approach is simpler and safe up
+                # to QUERY_ENGINE_MAX_RECORDS rows).
+                max_records = getattr(settings, 'QUERY_ENGINE_MAX_RECORDS', 10000)
+                records = queryset.values_list('data', flat=True)[:max_records]
                 
                 values = []
                 for record_data in records:
@@ -342,7 +345,7 @@ class DataImportService:
         success_count = 0
         error_count = 0
         errors = []
-        BATCH_SIZE = 200
+        BATCH_SIZE = getattr(settings, 'IMPORT_BATCH_SIZE', 200)
 
         # Prepare all Record objects, collecting per-row errors
         pending = []
@@ -358,25 +361,27 @@ class DataImportService:
                 error_count += 1
                 errors.append(f"Row {row_num}: {str(e)}")
 
-        # Bulk-insert in batches; bulk_create bypasses Record.save() intentionally —
-        # we update record_count once after all batches finish.
-        for i in range(0, len(pending), BATCH_SIZE):
-            batch = pending[i:i + BATCH_SIZE]
-            try:
-                Record.objects.bulk_create(batch)
-                success_count += len(batch)
-            except Exception:
-                # Batch-level failure: fall back row-by-row to isolate bad rows
-                for rec in batch:
-                    try:
-                        rec.save()
-                        success_count += 1
-                    except Exception as row_exc:
-                        error_count += 1
-                        errors.append(str(row_exc))
-
-        # Update record_count exactly once after all inserts
+        # Bulk-insert in batches inside a single transaction so a mid-import
+        # failure never leaves partial data committed to the database.
+        # bulk_create bypasses Record.save() intentionally — we update
+        # record_count once after all batches finish.
         with transaction.atomic():
+            for i in range(0, len(pending), BATCH_SIZE):
+                batch = pending[i:i + BATCH_SIZE]
+                try:
+                    Record.objects.bulk_create(batch)
+                    success_count += len(batch)
+                except Exception:
+                    # Batch-level failure: fall back row-by-row to isolate bad rows
+                    for rec in batch:
+                        try:
+                            rec.save()
+                            success_count += 1
+                        except Exception as row_exc:
+                            error_count += 1
+                            errors.append(str(row_exc))
+
+            # Update record_count exactly once after all inserts
             table.record_count = table.records.filter(is_active=True).count()
             table.save(update_fields=['record_count'])
 
@@ -686,10 +691,10 @@ class WorkspaceInsightService:
         if not schema:
             return []
 
-        # Sample up to 1000 records for profiling
+        profile_sample = getattr(settings, 'QUERY_ENGINE_PROFILE_SAMPLE', 1000)
         sample = list(
             Record.objects.filter(table=table, is_active=True)
-            .values_list('data', flat=True)[:1000]
+            .values_list('data', flat=True)[:profile_sample]
         )
         if not sample:
             return []

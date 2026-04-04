@@ -3,7 +3,7 @@ import json
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db.models import JSONField
+from django.db.models import JSONField, F
 from django.utils import timezone
 import logging
 from apps.insights.tasks import broadcast_widget_update, notify_table_change
@@ -293,6 +293,10 @@ class Record(models.Model):
             models.Index(fields=['table', 'is_active']),
             models.Index(fields=['table', 'updated_at']),
             models.Index(fields=['table', 'created_by']),
+            # Composite index for the most common query pattern:
+            # filter(table=x, is_active=True).order_by('-created_at')
+            models.Index(fields=['table', 'is_active', 'created_at'],
+                         name='rec_tbl_active_created_idx'),
         ]
     
     def __str__(self):
@@ -304,27 +308,34 @@ class Record(models.Model):
             is_valid, errors = self.table.validate_record(self.data)
             if not is_valid:
                 raise ValidationError(f"Record validation failed: {', '.join(errors)}")
-        
+
         # Update version for optimistic locking
         if self.pk:
             self.version += 1
-        
+
+        is_new = self.pk is None
         super().save(*args, **kwargs)
-        
-        # Update table record count
-        self.table.record_count = self.table.records.filter(is_active=True).count()
-        self.table.save(update_fields=['record_count'])
-        
+
+        # Increment count with a single UPDATE … SET record_count = record_count + 1
+        # instead of a SELECT COUNT(*) + full model save on every row.
+        # Decrement happens in delete() below.
+        if is_new and self.is_active:
+            DataTable.objects.filter(pk=self.table_id).update(record_count=F('record_count') + 1)
+
         # Trigger real-time updates after save
         self._trigger_updates('saved')
 
     def delete(self, *args, **kwargs):
-        # Soft delete
+        # Soft-delete: update directly to avoid re-running save() validation
+        # and to decrement count atomically without an extra COUNT query.
+        Record.objects.filter(pk=self.pk).update(
+            is_active=False,
+            deleted_at=timezone.now(),
+            version=F('version') + 1,
+        )
         self.is_active = False
         self.deleted_at = timezone.now()
-        self.save()
-        
-        # Trigger updates
+        DataTable.objects.filter(pk=self.table_id).update(record_count=F('record_count') - 1)
         self._trigger_updates('deleted')
     
     def _trigger_updates(self, action):

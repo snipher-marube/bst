@@ -73,7 +73,25 @@ def notify_table_change(table_id, action):
         logger.error(f"Table notification failed: {str(e)}")
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def generate_default_dashboard(self, table_id):
+    """
+    Async task: build the auto-generated dashboard for a newly created DataTable.
+    Decoupled from the table-creation transaction so a dashboard failure never
+    rolls back the table itself.
+    """
+    try:
+        from apps.dashboards.models import DataTable
+        table = DataTable.objects.get(pk=table_id)
+        dashboard = table.generate_default_dashboard()
+        logger.info(f"Auto-dashboard created for table {table_id}: {dashboard.id}")
+        return {'status': 'completed', 'dashboard_id': str(dashboard.id)}
+    except Exception as exc:
+        logger.error(f"generate_default_dashboard failed for table {table_id}: {exc}")
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def run_async_import(self, import_job_id):
     """
     Celery task that processes a large CSV/Excel import asynchronously.

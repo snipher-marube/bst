@@ -373,13 +373,30 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
-        'user': '1000/hour'
+        'user': '1000/hour',
+        # Custom scopes defined in api_v1.py
+        'registration': '10/hour',   # account creation — strict to block mass sign-ups
+        'file_upload': '30/hour',    # import jobs per authenticated user
     }
 }
 
 # Session configuration - use Redis for sessions in production
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
+
+# ============================================================================
+# QUERY ENGINE TUNING
+# These values are read by apps/dashboards/services.py — adjust to match your
+# hardware and expected workspace sizes.
+# ============================================================================
+# Maximum records pulled into Python memory for JSON-field aggregations
+QUERY_ENGINE_MAX_RECORDS = int(config('QUERY_ENGINE_MAX_RECORDS', default=10000))
+# Number of records loaded when profiling / auto-detecting schema
+QUERY_ENGINE_PROFILE_SAMPLE = int(config('QUERY_ENGINE_PROFILE_SAMPLE', default=1000))
+# Batch size for bulk_create during CSV/Excel import
+IMPORT_BATCH_SIZE = int(config('IMPORT_BATCH_SIZE', default=200))
+# How long (seconds) widget query results are cached in Redis
+WIDGET_CACHE_TTL = int(config('WIDGET_CACHE_TTL', default=300))
 
 # ============================================================================
 # LOGGING CONFIGURATION

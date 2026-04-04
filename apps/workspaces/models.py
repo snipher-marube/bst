@@ -207,19 +207,37 @@ class Workspace(models.Model):
         ``dashboards``
             Number of Dashboard rows linked to this workspace.
         """
-        tables         = self.tables.all()
-        total_records  = sum(table.records.count() for table in tables)
-        total_storage  = sum(table.estimated_storage_bytes for table in tables)
+        from django.db.models import Sum, Count as DCount
+
+        # Single query: aggregate record_count (denormalised on DataTable) + storage
+        table_agg = self.tables.filter(is_active=True).aggregate(
+            total_tables=DCount('id'),
+            total_records=Sum('record_count'),
+            total_storage=Sum('record_count'),  # will be multiplied below
+        )
+        total_tables   = table_agg['total_tables'] or 0
+        total_records  = table_agg['total_records'] or 0
+        # estimated_storage_bytes = record_count * 1024 bytes per record
+        total_storage  = (table_agg['total_storage'] or 0) * 1024
+
+        # Single query for member + dashboard counts
+        workspace_agg = Workspace.objects.filter(pk=self.pk).annotate(
+            member_count=DCount('members', distinct=True),
+            dashboard_count=DCount('dashboards', filter=models.Q(dashboards__is_active=True)),
+        ).values('member_count', 'dashboard_count').first()
+
+        member_count    = (workspace_agg or {}).get('member_count', 0)
+        dashboard_count = (workspace_agg or {}).get('dashboard_count', 0)
 
         return {
-            'tables':        tables.count(),
+            'tables':        total_tables,
             'tables_limit':  self.max_tables,
             'records':       total_records,
             'records_limit': self.max_records_per_table * self.max_tables,
-            'members':       self.members.count(),
+            'members':       member_count,
             'members_limit': self.max_team_members,
             'storage_bytes': total_storage,
-            'dashboards':    self.dashboards.count(),
+            'dashboards':    dashboard_count,
         }
 
 

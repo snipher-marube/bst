@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -32,6 +33,20 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+# ---------------------------------------------------------------------------
+# Custom throttle scopes
+# ---------------------------------------------------------------------------
+
+class RegistrationThrottle(AnonRateThrottle):
+    """Strict rate limit for account registration — prevents mass account creation."""
+    scope = 'registration'
+
+
+class FileUploadThrottle(UserRateThrottle):
+    """Per-user limit on file upload / import operations."""
+    scope = 'file_upload'
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +70,7 @@ def _require_workspace(request):
 
 class RegisterAPIView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [RegistrationThrottle]
 
     def post(self, request):
         email = request.data.get('email', '').strip()
@@ -149,8 +165,16 @@ class TableListCreateAPIView(APIView):
 
     def get(self, request, workspace_id):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
-        tables = DataTable.objects.filter(workspace=ws, is_active=True).order_by('-updated_at')
-        return Response(DataTableSerializer(tables, many=True, context={'request': request}).data)
+        page = max(int(request.GET.get('page', 1)), 1)
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        offset = (page - 1) * limit
+        qs = DataTable.objects.filter(workspace=ws, is_active=True).order_by('-updated_at')
+        return Response({
+            'count': qs.count(),
+            'page': page,
+            'limit': limit,
+            'results': DataTableSerializer(qs[offset:offset + limit], many=True, context={'request': request}).data,
+        })
 
     def post(self, request, workspace_id):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
@@ -158,26 +182,29 @@ class TableListCreateAPIView(APIView):
             return Response({'error': 'Table limit reached for this workspace'}, status=400)
         serializer = DataTableSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
+        # Table creation is atomic on its own; dashboard generation is async so a
+        # dashboard failure never rolls back the committed table row.
         with transaction.atomic():
             table = serializer.save(workspace=ws, created_by=request.user)
-            dashboard = table.generate_default_dashboard()
         AuditLog.objects.create(
             workspace=ws, user=request.user, action='create',
             content_type='DataTable', object_id=table.id, object_repr=str(table),
             ip_address=request.META.get('REMOTE_ADDR'),
         )
+        from apps.insights.tasks import generate_default_dashboard as _gen_dashboard
+        task = _gen_dashboard.delay(str(table.id))
         return Response({
             **DataTableSerializer(table, context={'request': request}).data,
-            'auto_dashboard_id': str(dashboard.id),
+            'auto_dashboard_task_id': task.id,
         }, status=201)
 
 
 class TableDetailAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
 
-    def _get_table(self, pk, user):
-        ws = _workspace(user if hasattr(user, 'current_workspace') else user)
-        return get_object_or_404(DataTable, pk=pk, is_active=True)
+    def _get_table(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(DataTable, pk=pk, workspace=ws, is_active=True)
 
     def get(self, request, pk):
         table = self._get_table(pk, request)
@@ -216,7 +243,8 @@ class RecordListCreateAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
 
     def get(self, request, table_id):
-        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
+        ws = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         page = max(int(request.GET.get('page', 1)), 1)
         limit = min(int(request.GET.get('limit', 50)), 500)
         offset = (page - 1) * limit
@@ -233,7 +261,8 @@ class RecordListCreateAPIView(APIView):
         })
 
     def post(self, request, table_id):
-        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
+        ws = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         serializer = RecordSerializer(data={**request.data, 'table': table.id}, context={'request': request})
         serializer.is_valid(raise_exception=True)
         record = serializer.save(table=table, created_by=request.user)
@@ -243,14 +272,17 @@ class RecordListCreateAPIView(APIView):
 class RecordDetailAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
 
-    def _get_record(self, pk):
-        return get_object_or_404(Record, pk=pk, is_active=True)
+    def _get_record(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(Record, pk=pk, table__workspace=ws, is_active=True)
+
+    # Keep legacy signature so existing callers still work without breaking
 
     def get(self, request, pk):
-        return Response(RecordSerializer(self._get_record(pk), context={'request': request}).data)
+        return Response(RecordSerializer(self._get_record(pk, request), context={'request': request}).data)
 
     def put(self, request, pk):
-        record = self._get_record(pk)
+        record = self._get_record(pk, request)
         # Optimistic locking
         client_version = request.data.get('version')
         if client_version and int(client_version) != record.version:
@@ -261,7 +293,7 @@ class RecordDetailAPIView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
-        record = self._get_record(pk)
+        record = self._get_record(pk, request)
         record.is_active = False
         record.deleted_at = timezone.now()
         record.save()
@@ -277,8 +309,16 @@ class DashboardListCreateAPIView(APIView):
 
     def get(self, request, workspace_id):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
-        dashboards = Dashboard.objects.filter(workspace=ws, is_active=True).order_by('-updated_at')
-        return Response(DashboardSerializer(dashboards, many=True, context={'request': request}).data)
+        page = max(int(request.GET.get('page', 1)), 1)
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        offset = (page - 1) * limit
+        qs = Dashboard.objects.filter(workspace=ws, is_active=True).order_by('-updated_at')
+        return Response({
+            'count': qs.count(),
+            'page': page,
+            'limit': limit,
+            'results': DashboardSerializer(qs[offset:offset + limit], many=True, context={'request': request}).data,
+        })
 
     def post(self, request, workspace_id):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
@@ -291,21 +331,22 @@ class DashboardListCreateAPIView(APIView):
 class DashboardDetailAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
 
-    def _get_dashboard(self, pk):
-        return get_object_or_404(Dashboard, pk=pk, is_active=True)
+    def _get_dashboard(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(Dashboard, pk=pk, workspace=ws, is_active=True)
 
     def get(self, request, pk):
-        return Response(DashboardSerializer(self._get_dashboard(pk), context={'request': request}).data)
+        return Response(DashboardSerializer(self._get_dashboard(pk, request), context={'request': request}).data)
 
     def put(self, request, pk):
-        dashboard = self._get_dashboard(pk)
+        dashboard = self._get_dashboard(pk, request)
         serializer = DashboardSerializer(dashboard, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
 
     def delete(self, request, pk):
-        dashboard = self._get_dashboard(pk)
+        dashboard = self._get_dashboard(pk, request)
         dashboard.is_active = False
         dashboard.deleted_at = timezone.now()
         dashboard.save(update_fields=['is_active', 'deleted_at'])
@@ -320,12 +361,14 @@ class WidgetListCreateAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
 
     def get(self, request, dashboard_id):
-        dashboard = get_object_or_404(Dashboard, pk=dashboard_id, is_active=True)
+        ws = _require_workspace(request)
+        dashboard = get_object_or_404(Dashboard, pk=dashboard_id, workspace=ws, is_active=True)
         widgets = dashboard.widgets.select_related('table')
         return Response(WidgetSerializer(widgets, many=True, context={'request': request}).data)
 
     def post(self, request, dashboard_id):
-        dashboard = get_object_or_404(Dashboard, pk=dashboard_id, is_active=True)
+        ws = _require_workspace(request)
+        dashboard = get_object_or_404(Dashboard, pk=dashboard_id, workspace=ws, is_active=True)
         data = {**request.data, 'dashboard': dashboard.id}
         serializer = WidgetSerializer(data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -336,11 +379,12 @@ class WidgetListCreateAPIView(APIView):
 class WidgetDetailAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
 
-    def _get_widget(self, pk):
-        return get_object_or_404(Widget, pk=pk)
+    def _get_widget(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(Widget, pk=pk, dashboard__workspace=ws)
 
     def put(self, request, pk):
-        widget = self._get_widget(pk)
+        widget = self._get_widget(pk, request)
         serializer = WidgetSerializer(widget, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -350,7 +394,7 @@ class WidgetDetailAPIView(APIView):
         return Response(serializer.data)
 
     def delete(self, request, pk):
-        self._get_widget(pk).delete()
+        self._get_widget(pk, request).delete()
         return Response(status=204)
 
 
@@ -360,6 +404,7 @@ class WidgetDetailAPIView(APIView):
 
 class TableImportAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
+    throttle_classes = [FileUploadThrottle]
 
     def post(self, request, table_id):
         """Kick off an async import. Returns the ImportJob ID to poll."""
@@ -368,7 +413,8 @@ class TableImportAPIView(APIView):
         import pandas as pd
         import numpy as np
 
-        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
+        ws = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         uploaded = request.FILES.get('file')
         if not uploaded:
             return Response({'error': 'No file uploaded'}, status=400)
@@ -437,7 +483,9 @@ class TableExportAPIView(APIView):
 
     def get(self, request, table_id):
         from apps.exports.views import export_table as _export
-        # Delegate to the exports app view
+        ws = _require_workspace(request)
+        # Verify ownership before delegating to the exports view
+        get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         return _export(request, table_id)
 
 
@@ -462,7 +510,10 @@ class InsightsListAPIView(APIView):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
         try:
             from apps.insights.models import Insight
-            insights = Insight.objects.filter(workspace=ws).order_by('-created_at')
+            page = max(int(request.GET.get('page', 1)), 1)
+            limit = min(int(request.GET.get('limit', 50)), 200)
+            offset = (page - 1) * limit
+            qs = Insight.objects.filter(workspace=ws).order_by('-created_at')
             data = [
                 {
                     'id': str(i.id),
@@ -473,9 +524,9 @@ class InsightsListAPIView(APIView):
                     'source_table_name': i.source_table_name,
                     'created_at': i.created_at,
                 }
-                for i in insights
+                for i in qs[offset:offset + limit]
             ]
-            return Response(data)
+            return Response({'count': qs.count(), 'page': page, 'limit': limit, 'results': data})
         except Exception as e:
             logger.error(f"Error fetching insights: {e}")
             return Response({'error': str(e)}, status=500)
