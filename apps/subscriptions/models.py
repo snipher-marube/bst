@@ -399,6 +399,9 @@ class StripeWebhookEvent(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['processed', 'event_type']),
+        ]
 
     def __str__(self) -> str:
         return f"{self.event_type} ({self.stripe_event_id})"
