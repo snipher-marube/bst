@@ -116,123 +116,126 @@ services:
         value: AnalyticsMeta
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # PAID WORKERS — uncomment when ready (Render starter plan, $7/month each)
+  # Celery Worker  (background tasks)
+  # NOTE: Render does NOT offer a free tier for background workers.
+  # Minimum plan is "starter" ($7/month). Remove this service if not needed yet.
   # ─────────────────────────────────────────────────────────────────────────────
+  - type: worker
+    name: analyticsmeta-celery-worker
+    runtime: python
+    region: oregon
+    plan: starter
 
-  # Celery Worker
-  #- type: worker
-  #  name: analyticsmeta-celery-worker
-  #  runtime: python
-  #  region: oregon
-  #  plan: starter
-  #
-  #  buildCommand: >-
-  #    pip install --upgrade pip &&
-  #    pip install -r requirements.txt
-  #
-  #  startCommand: celery -A config.celery worker --loglevel=info --concurrency=2
-  #
-  #  envVars:
-  #    - key: DJANGO_SETTINGS_MODULE
-  #      value: config.settings.production
-  #
-  #    - key: SECRET_KEY
-  #      fromService:
-  #        name: analyticsmeta
-  #        type: web
-  #        envVarKey: SECRET_KEY
-  #
-  #    - key: REDIS_URL
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_NAME
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_USER
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_PASSWORD
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_HOST
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_PORT
-  #      value: "5432"
-  #
-  #    - key: MPESA_CONSUMER_KEY
-  #      sync: false
-  #
-  #    - key: MPESA_CONSUMER_SECRET
-  #      sync: false
-  #
-  #    - key: MPESA_SHORTCODE
-  #      sync: false
-  #
-  #    - key: MPESA_PASSKEY
-  #      sync: false
-  #
-  #    - key: MPESA_CALLBACK_URL
-  #      sync: false
-  #
-  #    - key: EMAIL_HOST_USER
-  #      sync: false
-  #
-  #    - key: EMAIL_HOST_PASSWORD
-  #      sync: false
+    buildCommand: >-
+      pip install --upgrade pip &&
+      pip install -r requirements.txt
 
-  # Celery Beat  (scheduler — keep at exactly 1 instance, never scale above 1)
-  #- type: worker
-  #  name: analyticsmeta-celery-beat
-  #  runtime: python
-  #  region: oregon
-  #  plan: starter
-  #
-  #  buildCommand: >-
-  #    pip install --upgrade pip &&
-  #    pip install -r requirements.txt
-  #
-  #  startCommand: celery -A config.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-  #
-  #  envVars:
-  #    - key: DJANGO_SETTINGS_MODULE
-  #      value: config.settings.production
-  #
-  #    - key: SECRET_KEY
-  #      fromService:
-  #        name: analyticsmeta
-  #        type: web
-  #        envVarKey: SECRET_KEY
-  #
-  #    - key: REDIS_URL
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_NAME
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_USER
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_PASSWORD
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_HOST
-  #      sync: false
-  #
-  #    - key: PG_DATABASE_PORT
-  #      value: "5432"
-  #
-  #    - key: MPESA_CONSUMER_KEY
-  #      sync: false
-  #
-  #    - key: MPESA_CONSUMER_SECRET
-  #      sync: false
-  #
-  #    - key: MPESA_PASSKEY
-  #      sync: false
-  #
-  #    - key: MPESA_SHORTCODE
-  #      sync: false
-  #
-  #    - key: MPESA_CALLBACK_URL
-  #      sync: false
+    startCommand: celery -A config.celery worker --loglevel=info --concurrency=2
+
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+
+      - key: SECRET_KEY
+        fromService:
+          name: analyticsmeta
+          type: web
+          envVarKey: SECRET_KEY
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: PG_DATABASE_NAME
+        sync: false
+
+      - key: PG_DATABASE_USER
+        sync: false
+
+      - key: PG_DATABASE_PASSWORD
+        sync: false
+
+      - key: PG_DATABASE_HOST
+        sync: false
+
+      - key: PG_DATABASE_PORT
+        value: "5432"
+
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+
+      - key: MPESA_SHORTCODE
+        sync: false
+
+      - key: MPESA_PASSKEY
+        sync: false
+
+      - key: MPESA_CALLBACK_URL
+        sync: false
+
+      - key: EMAIL_HOST_USER
+        sync: false
+
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Celery Beat  (scheduler — keep at exactly 1 instance)
+  # NOTE: Same as above — requires "starter" plan minimum.
+  # ─────────────────────────────────────────────────────────────────────────────
+  - type: worker
+    name: analyticsmeta-celery-beat
+    runtime: python
+    region: oregon
+    plan: starter
+
+    buildCommand: >-
+      pip install --upgrade pip &&
+      pip install -r requirements.txt
+
+    startCommand: celery -A config.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+
+      - key: SECRET_KEY
+        fromService:
+          name: analyticsmeta
+          type: web
+          envVarKey: SECRET_KEY
+
+      - key: REDIS_URL
+        sync: false
+
+      - key: PG_DATABASE_NAME
+        sync: false
+
+      - key: PG_DATABASE_USER
+        sync: false
+
+      - key: PG_DATABASE_PASSWORD
+        sync: false
+
+      - key: PG_DATABASE_HOST
+        sync: false
+
+      - key: PG_DATABASE_PORT
+        value: "5432"
+
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+
+      - key: MPESA_PASSKEY
+        sync: false
+
+      - key: MPESA_SHORTCODE
+        sync: false
+
+      - key: MPESA_CALLBACK_URL
+        sync: false
