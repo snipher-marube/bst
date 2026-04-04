@@ -4,168 +4,422 @@
 {% block content %}
 <style>
     :root {
-        --primary-dark: #03466e;
-        --primary-orange: #f68712;
-        --dark-gray: #2b2b2b;
-        --light-bg: #f8fafc;
+        --primary: #03466e;
+        --primary-mid: #025b8c;
+        --accent: #f68712;
+        --accent-hover: #e07810;
+        --body: #334155;
+        --muted: #64748b;
+        --bg-subtle: #f8fafc;
+        --border: #e2e8f0;
     }
 
-    .bg-primary-dark { background-color: var(--primary-dark); }
-    .bg-primary-orange { background-color: var(--primary-orange); }
-    .text-primary-dark { color: var(--primary-dark); }
-    .text-primary-orange { color: var(--primary-orange); }
-    .border-primary-orange { border-color: var(--primary-orange); }
-    
-    .hover-bg-primary-dark:hover { background-color: var(--primary-dark); }
-    .hover-bg-primary-orange:hover { background-color: var(--primary-orange); }
-    .hover-text-primary-dark:hover { color: var(--primary-dark); }
-    .hover-text-primary-orange:hover { color: var(--primary-orange); }
-    
-    .gradient-primary {
-        background: linear-gradient(135deg, var(--primary-dark) 0%, #025b8c 100%);
-    }
-    
-    .gradient-cta {
-        background: linear-gradient(135deg, var(--primary-orange) 0%, #f59e0b 100%);
-    }
-    
-    .card-hover {
-        transition: all 0.3s ease;
-    }
-    .card-hover:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 25px -5px rgba(3, 70, 110, 0.1), 0 10px 10px -5px rgba(3, 70, 110, 0.04);
-    }
-    
-    .video-wrapper {
+    /* ── Hero ── */
+    .hero-section {
+        background: linear-gradient(140deg, #03466e 0%, #012d4a 55%, #011e33 100%);
         position: relative;
-        padding-bottom: 56.25%; /* 16:9 aspect ratio */
-        height: 0;
         overflow: hidden;
-        border-radius: 1rem;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
     }
-    .video-wrapper iframe {
+    .hero-grid {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+        background-size: 48px 48px;
+        pointer-events: none;
+    }
+    .hero-glow {
+        position: absolute;
+        width: 700px; height: 700px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(246,135,18,0.12) 0%, transparent 70%);
+        top: -150px; right: -150px;
+        pointer-events: none;
+    }
+
+    /* ── Video Card ── */
+    .video-card {
         border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 32px 80px rgba(0,0,0,0.55);
+        background: #000;
+        position: relative;
     }
-    
-    .stat-card {
-        border-left: 4px solid var(--primary-orange);
+    .browser-bar {
+        background: #1e2736;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        padding: 0.5rem 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
     }
-    
-    .feature-icon-wrapper {
-        background: linear-gradient(135deg, rgba(246, 135, 18, 0.1) 0%, rgba(246, 135, 18, 0.05) 100%);
+    .b-dot { width: 11px; height: 11px; border-radius: 50%; }
+    .browser-bar .url {
+        flex: 1;
+        margin-left: 0.75rem;
+        background: rgba(255,255,255,0.06);
+        border-radius: 6px;
+        padding: 0.25rem 0.75rem;
+        font-size: 0.72rem;
+        color: rgba(255,255,255,0.35);
+        font-family: monospace;
+    }
+    .video-card video {
+        width: 100%;
+        display: block;
+        max-height: 400px;
+        object-fit: cover;
+    }
+    .play-overlay {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.3);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .play-overlay.gone { display: none; }
+    .play-overlay:hover { background: rgba(0,0,0,0.12); }
+    .play-ring {
+        width: 68px; height: 68px;
+        background: var(--accent);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 8px 32px rgba(246,135,18,0.5);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .play-overlay:hover .play-ring { transform: scale(1.1); box-shadow: 0 12px 40px rgba(246,135,18,0.6); }
+
+    /* ── Live badge ── */
+    .live-badge {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.14);
+        backdrop-filter: blur(8px);
+        color: #fff;
+        font-size: 0.8rem; font-weight: 500;
+        padding: 0.35rem 0.9rem;
+        border-radius: 9999px;
+        margin-bottom: 1.5rem;
+    }
+    .pulse-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent);
+        position: relative;
+    }
+    .pulse-dot::after {
+        content: '';
+        position: absolute; inset: -4px;
+        border-radius: 50%;
+        background: var(--accent);
+        opacity: 0.4;
+        animation: pulse-ring 1.6s infinite;
+    }
+    @keyframes pulse-ring {
+        0%   { transform: scale(0.6); opacity: 0.4; }
+        70%  { transform: scale(1.5); opacity: 0; }
+        100% { opacity: 0; }
+    }
+
+    /* ── Buttons ── */
+    .btn-accent {
+        display: inline-flex; align-items: center; gap: 0.45rem;
+        padding: 0.8rem 1.6rem;
+        font-weight: 700; font-size: 0.95rem;
+        border-radius: 0.6rem;
+        background: var(--accent); color: #fff;
+        border: 2px solid var(--accent);
+        box-shadow: 0 4px 16px rgba(246,135,18,0.35);
+        transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+        text-decoration: none; white-space: nowrap;
+    }
+    .btn-accent:hover {
+        background: var(--accent-hover); border-color: var(--accent-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(246,135,18,0.45);
+        color: #fff; text-decoration: none;
+    }
+    .btn-ghost-white {
+        display: inline-flex; align-items: center; gap: 0.45rem;
+        padding: 0.8rem 1.6rem;
+        font-weight: 600; font-size: 0.95rem;
+        border-radius: 0.6rem;
+        background: transparent; color: #fff;
+        border: 2px solid rgba(255,255,255,0.28);
+        transition: background 0.2s, border-color 0.2s;
+        text-decoration: none; white-space: nowrap;
+    }
+    .btn-ghost-white:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.55); color: #fff; text-decoration: none; }
+    .btn-dark {
+        display: inline-flex; align-items: center; gap: 0.45rem;
+        padding: 0.8rem 1.6rem;
+        font-weight: 700; font-size: 0.95rem;
+        border-radius: 0.6rem;
+        background: var(--primary); color: #fff;
+        border: 2px solid var(--primary);
+        transition: background 0.2s, transform 0.15s;
+        text-decoration: none; white-space: nowrap;
+    }
+    .btn-dark:hover { background: var(--primary-mid); border-color: var(--primary-mid); color: #fff; transform: translateY(-2px); text-decoration: none; }
+
+    /* ── Section labels ── */
+    .section-label {
+        display: block; font-size: 0.72rem; font-weight: 700;
+        letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--accent); margin-bottom: 0.6rem;
+    }
+    .section-title {
+        font-size: clamp(1.75rem, 3vw, 2.5rem);
+        font-weight: 800; line-height: 1.2;
+        letter-spacing: -0.02em; color: var(--primary);
+    }
+
+    /* ── Stats ── */
+    .stat-pill { border-left: 3px solid var(--accent); padding-left: 1rem; }
+
+    /* ── Feature cards ── */
+    .feat-card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+        padding: 1.75rem;
+        transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+    }
+    .feat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 40px rgba(3,70,110,0.08);
+        border-color: rgba(246,135,18,0.35);
+    }
+    .feat-icon {
+        width: 50px; height: 50px;
+        border-radius: 0.75rem;
+        background: linear-gradient(135deg, rgba(246,135,18,0.12), rgba(246,135,18,0.04));
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 1.1rem;
+    }
+
+    /* ── How it works ── */
+    .step-num {
+        width: 76px; height: 76px;
+        border-radius: 1.25rem;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.6rem; font-weight: 800;
+        margin: 0 auto 1.25rem;
+        position: relative; z-index: 10;
+    }
+    .step-connector {
+        position: absolute;
+        top: 38px;
+        left: calc(50% + 38px);
+        right: calc(-50% + 38px);
+        height: 1px;
+        background: linear-gradient(90deg, rgba(246,135,18,0.4), rgba(226,232,240,0.6));
+    }
+
+    /* ── Demo section ── */
+    .demo-wrap {
+        border-radius: 1.25rem; overflow: hidden;
+        box-shadow: 0 0 0 1px var(--border), 0 32px 80px rgba(3,70,110,0.1);
+        background: #000;
+    }
+    .demo-bar {
+        background: #f1f5f9;
+        border-bottom: 1px solid var(--border);
+        padding: 0.6rem 1rem;
+        display: flex; align-items: center; gap: 0.4rem;
+    }
+    .demo-dot { width: 11px; height: 11px; border-radius: 50%; }
+    .demo-url {
+        flex: 1; margin-left: 0.75rem;
+        background: #fff; border: 1px solid var(--border);
+        border-radius: 6px; padding: 0.2rem 0.75rem;
+        font-size: 0.72rem; color: var(--muted); font-family: monospace;
+    }
+    .demo-wrap video { width: 100%; display: block; }
+
+    /* ── Testimonials ── */
+    .testi-card {
+        background: #fff; border: 1px solid var(--border);
+        border-radius: 1rem; padding: 1.75rem;
+        transition: box-shadow 0.25s;
+    }
+    .testi-card:hover { box-shadow: 0 12px 32px rgba(3,70,110,0.08); }
+
+    /* ── Blog ── */
+    .blog-card {
+        border-radius: 1rem; overflow: hidden;
+        border: 1px solid var(--border); background: #fff;
+        transition: transform 0.25s, box-shadow 0.25s;
+    }
+    .blog-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(3,70,110,0.08); }
+
+    /* ── FAQ ── */
+    .faq-row { border-bottom: 1px solid var(--border); }
+
+    /* ── Pricing CTA ── */
+    .cta-orange { background: linear-gradient(135deg, var(--accent) 0%, #f59e0b 100%); }
+
+    /* ── Final CTA ── */
+    .cta-dark { background: linear-gradient(135deg, var(--primary) 0%, #012d4a 100%); }
+
+    /* ── Scroll indicator ── */
+    .scroll-cue {
+        position: absolute; bottom: 1.5rem; left: 50%;
+        transform: translateX(-50%);
+        display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+        color: rgba(255,255,255,0.3); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+        animation: bob 2s ease-in-out infinite;
+    }
+    @keyframes bob {
+        0%,100% { transform: translateX(-50%) translateY(0); }
+        50%      { transform: translateX(-50%) translateY(6px); }
+    }
+
+    /* ── Floating hero badges ── */
+    .hero-badge {
+        position: absolute;
+        background: #fff; border-radius: 0.875rem;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        padding: 0.7rem 1rem;
+        display: flex; align-items: center; gap: 0.6rem;
+    }
+    .hb-icon {
+        width: 36px; height: 36px; border-radius: 0.5rem;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+
+    /* ── Fade-up on scroll ── */
+    .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 0.55s ease, transform 0.55s ease; }
+    .fade-up.in { opacity: 1; transform: translateY(0); }
+
+    /* ── Scroll indicator ── */
+    .tag-chip {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        background: rgba(246,135,18,0.08);
+        border: 1px solid rgba(246,135,18,0.2);
+        color: var(--accent);
+        font-size: 0.72rem; font-weight: 700;
+        letter-spacing: 0.06em; text-transform: uppercase;
+        padding: 0.25rem 0.7rem; border-radius: 9999px;
     }
 </style>
 
-<!-- Hero Section with Video -->
-<section class="relative gradient-primary overflow-hidden">
-    <!-- Animated background pattern -->
-    <div class="absolute inset-0 opacity-10">
-        <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                    <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
-                </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)"/>
-        </svg>
-    </div>
-    
-    <div class="relative container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20">
-        <div class="grid lg:grid-cols-2 gap-12 items-center">
-            <!-- Left Content -->
-            <div class="text-center lg:text-left">
-                <div class="inline-flex items-center bg-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-medium mb-6 border border-white/20">
-                    <span class="relative flex h-2 w-2 mr-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f68712] opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-[#f68712]"></span>
-                    </span>
-                    Introducing MetaAnalytics 1.0
-                </div>
-                
-                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6">
-                    Build Your Own
-                    <span class="text-[#f68712]">
-                        Analytics Platform
-                    </span>
-                </h1>
-                
-                <p class="text-xl text-white/80 mb-8 max-w-2xl mx-auto lg:mx-0">
-                    Create custom tracking systems without code. Define your categories, set up formulas, and get automatic visualizations. Perfect for SMEs, agriculture, and personal use.
-                </p>
-                
-                <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                    <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-6 py-3 border-2 border-[#f68712] text-base font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                        Start Free Trial
-                        <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                        </svg>
-                    </a>
-                    <a href="{% url 'core:features' %}" class="inline-flex items-center justify-center px-6 py-3 border-2 border-white/30 text-base font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200">
-                        See Features
-                        <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </a>
-                </div>
-                
-                <div class="mt-8 flex items-center justify-center lg:justify-start space-x-6">
-                    <div class="flex -space-x-2">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/women/44.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/men/46.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/women/68.jpg" alt="Customer avatar">
-                        <img class="inline-block h-8 w-8 rounded-full ring-2 ring-white/50" src="https://randomuser.me/api/portraits/men/75.jpg" alt="Customer avatar">
+<!-- ════════════════════════════════════════════
+     HERO
+════════════════════════════════════════════ -->
+<section class="hero-section">
+    <div class="hero-grid"></div>
+    <div class="hero-glow"></div>
+
+    <div class="relative flex-1 flex items-center">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
+            <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+                <!-- Copy -->
+                <div class="text-center lg:text-left">
+                    <div class="live-badge">
+                        <span class="pulse-dot"></span>
+                        Now live — AnalyticsMeta 1.0
                     </div>
-                    <div class="text-sm text-white/80">
-                        <span class="font-bold text-white">10,000+</span> businesses trust us
+
+                    <h1 style="font-size:clamp(2.4rem,5vw,3.8rem);font-weight:800;line-height:1.1;letter-spacing:-0.03em;color:#fff;margin-bottom:1.25rem;">
+                        Your Business Data,<br>
+                        <span style="color:var(--accent);">Visualised Instantly</span>
+                    </h1>
+
+                    <p style="font-size:1.1rem;color:rgba(255,255,255,0.68);line-height:1.7;margin-bottom:2rem;max-width:480px;" class="mx-auto lg:mx-0">
+                        Build custom data tables, get auto-generated dashboards, and let AI surface insights — no code, no engineers. Built for Kenyan SMEs.
+                    </p>
+
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-10">
+                        <a href="{% url 'account_signup' %}" class="btn-accent">
+                            Start Free — No Card Required
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        </a>
+                        <a href="#demo" class="btn-ghost-white">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            Watch Demo
+                        </a>
+                    </div>
+
+                    <!-- Social proof -->
+                    <div class="flex items-center gap-4 justify-center lg:justify-start">
+                        <div class="flex -space-x-2.5">
+                            <div class="w-8 h-8 rounded-full ring-2 ring-white/20 bg-orange-400 flex items-center justify-center text-white text-xs font-bold">JM</div>
+                            <div class="w-8 h-8 rounded-full ring-2 ring-white/20 bg-blue-500 flex items-center justify-center text-white text-xs font-bold">AK</div>
+                            <div class="w-8 h-8 rounded-full ring-2 ring-white/20 bg-emerald-500 flex items-center justify-center text-white text-xs font-bold">NW</div>
+                            <div class="w-8 h-8 rounded-full ring-2 ring-white/20 bg-purple-500 flex items-center justify-center text-white text-xs font-bold">+</div>
+                        </div>
+                        <p class="text-sm text-white/55"><span class="text-white font-semibold">10,000+</span> businesses tracking smarter</p>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Right Content - Video -->
-            <div class="relative">
-                <div class="absolute inset-0 bg-[#f68712] rounded-3xl blur-3xl opacity-20"></div>
-                <div class="relative rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
-                    <div class="video-wrapper">
-                        <iframe 
-                            src="{% static 'video/analytics.mp4' %}" 
-                            title="Business Sight Technologies Analytics Demo"
-                            frameborder="0" 
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; loop" 
-                            allowfullscreen>
-                        </iframe>   
+
+                <!-- Hero Video -->
+                <div class="relative">
+                    <div class="absolute -inset-6 rounded-3xl blur-3xl opacity-[0.12]" style="background:var(--accent);"></div>
+                    <div class="video-card relative">
+                        <div class="browser-bar">
+                            <span class="b-dot" style="background:#ff5f57"></span>
+                            <span class="b-dot" style="background:#febc2e"></span>
+                            <span class="b-dot" style="background:#28c840"></span>
+                            <span class="url">app.analyticsmeta.io/dashboard</span>
+                        </div>
+                        <video id="heroVideo" src="{% static 'video/analytics.mp4' %}" muted playsinline loop preload="metadata"></video>
+                        <div class="play-overlay" id="heroPlayBtn">
+                            <div class="play-ring">
+                                <svg class="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            </div>
+                        </div>
                     </div>
-                    <!-- Play button overlay (optional) -->
-                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div class="w-20 h-20 bg-[#f68712] rounded-full flex items-center justify-center shadow-2xl opacity-90">
-                            <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
+
+                    <!-- Floating stat badges (desktop only) -->
+                    <div class="hero-badge max-md:hidden" style="bottom:-1rem;left:-1.5rem;">
+                        <div class="hb-icon bg-green-50">
+                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-400 font-medium leading-none mb-0.5">Revenue Trend</p>
+                            <p class="text-sm font-bold text-gray-900 leading-none">+24.5% this month</p>
+                        </div>
+                    </div>
+                    <div class="hero-badge max-md:hidden" style="top:-1rem;right:-1.5rem;">
+                        <div class="hb-icon" style="background:rgba(246,135,18,0.08)">
+                            <svg class="w-4 h-4" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-400 font-medium leading-none mb-0.5">Dashboard updated</p>
+                            <p class="text-sm font-bold text-gray-900 leading-none">Real-time live</p>
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
     </div>
+
+    <div class="scroll-cue">
+        <span>Scroll</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+    </div>
 </section>
 
-<!-- Stats Section with Orange Accent -->
+<!-- ════════════════════════════════════════════
+     STATS
+════════════════════════════════════════════ -->
 {% if stats %}
-<section class="bg-white py-12 border-y border-gray-100">
+<section class="bg-white py-14 border-b border-gray-100">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
             {% for stat in stats %}
-            <div class="text-center stat-card pl-4">
-                <div class="text-3xl md:text-4xl font-bold text-[#03466e] mb-2">
+            <div class="text-center stat-pill fade-up">
+                <p class="text-4xl font-extrabold tracking-tight mb-1" style="color:var(--primary)">
                     {{ stat.prefix }}<span class="stat-value" data-value="{{ stat.value }}">0</span>{{ stat.suffix }}
-                </div>
-                <div class="text-sm text-[#2b2b2b]/70">{{ stat.label }}</div>
+                </p>
+                <p class="text-sm font-medium" style="color:var(--muted)">{{ stat.label }}</p>
             </div>
             {% endfor %}
         </div>
@@ -173,128 +427,239 @@
 </section>
 {% endif %}
 
-<!-- Features Section -->
-<section class="py-20 bg-[#f8fafc]">
+<!-- ════════════════════════════════════════════
+     WHAT WE'VE BUILT
+════════════════════════════════════════════ -->
+<section class="py-24" style="background:var(--bg-subtle)">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Features</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Everything You Need to Track Your Data
-            </h2>
-            <p class="text-xl text-[#2b2b2b]/80">
-                No coding required. Just define your data structure and we handle the rest.
-            </p>
+        <div class="text-center max-w-2xl mx-auto mb-16 fade-up">
+            <span class="section-label">What's Inside</span>
+            <h2 class="section-title mb-4">Everything to Run Your Data Operation</h2>
+            <p class="text-lg" style="color:var(--muted)">All the tools your business needs — configured by you, not a developer.</p>
         </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {% for feature in features %}
-            <div class="bg-white rounded-xl p-8 shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 card-hover">
-                <div class="feature-icon-wrapper w-14 h-14 rounded-xl flex items-center justify-center mb-6">
-                    <i class="{{ feature.icon }} text-3xl text-[#f68712]"></i>
-                </div>
-                <h3 class="text-xl font-semibold text-[#03466e] mb-3">{{ feature.title }}</h3>
-                <p class="text-[#2b2b2b]/70 mb-4">{{ feature.short_description }}</p>
-                <a href="{{ feature.get_absolute_url }}" class="text-[#f68712] font-medium hover:text-[#e07810] inline-flex items-center group">
-                    Learn more
-                    <svg class="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+            <!-- 1. Custom Data Tables -->
+            <div class="feat-card fade-up">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
                     </svg>
-                </a>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Custom Data Tables</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    Design tables with 10 field types — text, number, date, currency, percentage, boolean, email, phone, URL and more. Your schema, your rules.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">10 field types</span>
+                    <span class="tag-chip">CSV import</span>
+                    <span class="tag-chip">Bulk records</span>
+                </div>
             </div>
-            {% endfor %}
+
+            <!-- 2. Auto-Generated Dashboards -->
+            <div class="feat-card fade-up" style="transition-delay:0.05s">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Auto-Generated Dashboards</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    Create a table and a smart dashboard appears instantly — KPI cards, line charts, bar charts, pie charts, and gauges wired to your data automatically.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">KPI cards</span>
+                    <span class="tag-chip">Line & bar charts</span>
+                    <span class="tag-chip">Gauges</span>
+                </div>
+            </div>
+
+            <!-- 3. AI Insights -->
+            <div class="feat-card fade-up" style="transition-delay:0.1s">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">AI-Powered Insights</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    The system automatically surfaces trends, anomalies, summaries, comparisons, and predictions from your workspace data — no analyst needed.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">Trend detection</span>
+                    <span class="tag-chip">Anomalies</span>
+                    <span class="tag-chip">Predictions</span>
+                </div>
+            </div>
+
+            <!-- 4. Real-Time Collaboration -->
+            <div class="feat-card fade-up" style="transition-delay:0.15s">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Team Workspaces</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    Invite your team with role-based access — Owner, Admin, Editor, or Viewer. Dashboards update live via WebSockets so everyone sees the same numbers.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">4 roles</span>
+                    <span class="tag-chip">Live updates</span>
+                    <span class="tag-chip">Invitations</span>
+                </div>
+            </div>
+
+            <!-- 5. Export & Reports -->
+            <div class="feat-card fade-up" style="transition-delay:0.2s">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Export & PDF Reports</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    Export any table to CSV or Excel in one click. Generate polished PDF reports on demand — ready to share with clients, investors, or your accountant.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">CSV / Excel</span>
+                    <span class="tag-chip">PDF reports</span>
+                    <span class="tag-chip">One click</span>
+                </div>
+            </div>
+
+            <!-- 6. M-Pesa Billing -->
+            <div class="feat-card fade-up" style="transition-delay:0.25s">
+                <div class="feat-icon">
+                    <svg class="w-6 h-6" style="color:var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Pay with M-Pesa</h3>
+                <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">
+                    Upgrade your plan directly from your phone using Safaricom M-Pesa STK Push. No international card required — built for the Kenyan market from day one.
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                    <span class="tag-chip">Daraja STK Push</span>
+                    <span class="tag-chip">Instant activation</span>
+                    <span class="tag-chip">4 plans</span>
+                </div>
+            </div>
+
         </div>
     </div>
 </section>
 
-<!-- How It Works -->
-<section class="py-20 bg-white">
+<!-- ════════════════════════════════════════════
+     DEMO VIDEO
+════════════════════════════════════════════ -->
+<section class="py-24 bg-white" id="demo">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Process</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Get Started in Minutes
-            </h2>
-            <p class="text-xl text-[#2b2b2b]/80">
-                Three simple steps to your custom analytics dashboard.
-            </p>
+        <div class="text-center max-w-2xl mx-auto mb-12 fade-up">
+            <span class="section-label">Live Demo</span>
+            <h2 class="section-title mb-4">See It in Action</h2>
+            <p class="text-lg" style="color:var(--muted)">From creating a table to a live dashboard — watch the whole flow in under two minutes.</p>
         </div>
-        
+
+        <div class="max-w-4xl mx-auto fade-up">
+            <div class="demo-wrap">
+                <div class="demo-bar">
+                    <span class="demo-dot" style="background:#ff5f57"></span>
+                    <span class="demo-dot" style="background:#febc2e"></span>
+                    <span class="demo-dot" style="background:#28c840"></span>
+                    <span class="demo-url">app.analyticsmeta.io/demo</span>
+                </div>
+                <video
+                    id="demoVideo"
+                    src="{% static 'video/analytics.mp4' %}"
+                    controls
+                    preload="metadata"
+                    class="w-full"
+                ></video>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     HOW IT WORKS
+════════════════════════════════════════════ -->
+<section class="py-24" style="background:var(--bg-subtle)">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-2xl mx-auto mb-16 fade-up">
+            <span class="section-label">Getting Started</span>
+            <h2 class="section-title mb-4">From Sign-Up to Live Dashboard in Minutes</h2>
+            <p class="text-lg" style="color:var(--muted)">No setup fee. No developers. No waiting.</p>
+        </div>
+
         <div class="grid md:grid-cols-3 gap-8 relative">
-            <!-- Connecting lines (visible on desktop) -->
-            <div class="hidden md:block absolute top-24 left-1/4 right-1/4 h-0.5 bg-gray-200 -z-10"></div>
-            
-            <div class="text-center">
-                <div class="w-20 h-20 bg-[#03466e] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
-                    1
-                </div>
-                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Create Your Categories</h3>
-                <p class="text-[#2b2b2b]/70">Define what you want to track - expenses, sales, crops, or anything else.</p>
+            <div class="hidden md:block step-connector" style="left:calc(16.7% + 38px);right:calc(16.7% + 38px);top:38px;"></div>
+
+            <div class="text-center fade-up">
+                <div class="step-num shadow-lg" style="background:var(--primary);color:#fff;">1</div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Create a Workspace</h3>
+                <p class="text-sm leading-relaxed" style="color:var(--muted)">Sign up, name your workspace, and invite your team. Each workspace is fully isolated with its own data, dashboards, and billing.</p>
             </div>
-            
-            <div class="text-center">
-                <div class="w-20 h-20 bg-[#f68712] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
-                    2
-                </div>
-                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Set Up Your Fields</h3>
-                <p class="text-[#2b2b2b]/70">Add the fields you need, create formulas, and define relationships.</p>
+
+            <div class="text-center fade-up" style="transition-delay:0.1s">
+                <div class="step-num shadow-lg" style="background:var(--accent);color:#fff;">2</div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Design Your Table</h3>
+                <p class="text-sm leading-relaxed" style="color:var(--muted)">Add columns, pick field types, import existing CSV data. A fully configured dashboard is generated for you the moment you save.</p>
             </div>
-            
-            <div class="text-center">
-                <div class="w-20 h-20 bg-[#03466e] text-white rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto mb-6 relative z-10 shadow-lg">
-                    3
-                </div>
-                <h3 class="text-xl font-semibold text-[#03466e] mb-3">Start Tracking Daily</h3>
-                <p class="text-[#2b2b2b]/70">Enter data daily and watch your dashboard come to life automatically.</p>
+
+            <div class="text-center fade-up" style="transition-delay:0.2s">
+                <div class="step-num shadow-lg" style="background:var(--primary);color:#fff;">3</div>
+                <h3 class="text-base font-bold mb-2" style="color:var(--primary)">Track, Analyse & Export</h3>
+                <p class="text-sm leading-relaxed" style="color:var(--muted)">Enter records daily. AI insights surface automatically. Export to PDF or Excel. Pay with M-Pesa when you need more capacity.</p>
             </div>
+        </div>
+
+        <div class="text-center mt-12 fade-up">
+            <a href="{% url 'account_signup' %}" class="btn-accent">
+                Create Your Workspace — Free
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
         </div>
     </div>
 </section>
 
-<!-- Testimonials with Orange Quote Marks -->
+<!-- ════════════════════════════════════════════
+     TESTIMONIALS
+════════════════════════════════════════════ -->
 {% if testimonials %}
-<section class="py-20 bg-[#f8fafc]">
+<section class="py-24 bg-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Testimonials</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Loved by Businesses Everywhere
-            </h2>
-            <p class="text-xl text-[#2b2b2b]/80">
-                See what our customers have to say about MetaAnalytics.
-            </p>
+        <div class="text-center max-w-2xl mx-auto mb-16 fade-up">
+            <span class="section-label">Real Customers</span>
+            <h2 class="section-title mb-4">Businesses That Switched to AnalyticsMeta</h2>
         </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {% for testimonial in testimonials %}
-            <div class="bg-white rounded-xl p-8 shadow-sm border border-gray-100 relative">
-                <div class="absolute top-4 right-4 text-6xl text-[#f68712] opacity-10">"</div>
-                <div class="flex items-center mb-4">
-                    {% if testimonial.avatar %}
-                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-12 h-12 rounded-full mr-4 ring-2 ring-[#f68712]/20">
-                    {% else %}
-                    <div class="w-12 h-12 rounded-full bg-[#f68712]/10 flex items-center justify-center mr-4">
-                        <span class="text-[#f68712] font-semibold">{{ testimonial.name|first }}</span>
-                    </div>
-                    {% endif %}
-                    <div>
-                        <h4 class="font-semibold text-[#03466e]">{{ testimonial.name }}</h4>
-                        <p class="text-sm text-[#2b2b2b]/70">{{ testimonial.title }}, {{ testimonial.company }}</p>
-                    </div>
-                </div>
-                <div class="flex mb-4">
+            <div class="testi-card fade-up">
+                <div class="flex gap-1 mb-4">
                     {% for i in "12345"|make_list %}
                         {% if forloop.counter <= testimonial.rating %}
-                        <svg class="w-5 h-5 text-[#f68712]" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                        </svg>
+                        <svg class="w-4 h-4" style="color:var(--accent)" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
                         {% else %}
-                        <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                        </svg>
+                        <svg class="w-4 h-4 text-gray-200" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
                         {% endif %}
                     {% endfor %}
                 </div>
-                <p class="text-[#2b2b2b]/80 relative z-10">"{{ testimonial.content }}"</p>
+                <p class="text-sm leading-relaxed mb-5" style="color:var(--body)">"{{ testimonial.content }}"</p>
+                <div class="flex items-center gap-3">
+                    {% if testimonial.avatar %}
+                    <img src="{{ testimonial.avatar.url }}" alt="{{ testimonial.name }}" class="w-9 h-9 rounded-full object-cover" style="ring:2px solid rgba(246,135,18,0.2)">
+                    {% else %}
+                    <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold" style="background:rgba(246,135,18,0.1);color:var(--accent)">{{ testimonial.name|first }}</div>
+                    {% endif %}
+                    <div>
+                        <p class="text-sm font-semibold" style="color:var(--primary)">{{ testimonial.name }}</p>
+                        <p class="text-xs" style="color:var(--muted)">{{ testimonial.title }}, {{ testimonial.company }}</p>
+                    </div>
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -302,67 +667,59 @@
 </section>
 {% endif %}
 
-<!-- Pricing Teaser with Gradient -->
-<section class="py-20 gradient-cta text-white">
+<!-- ════════════════════════════════════════════
+     PRICING CTA
+════════════════════════════════════════════ -->
+<section class="cta-orange py-20">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <span class="text-white/80 font-semibold text-sm uppercase tracking-wider mb-2 block">Start Free</span>
-        <h2 class="text-3xl md:text-4xl font-bold mb-4">
-            Start Your Free Trial Today
-        </h2>
-        <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            No credit card required. Get started with our free plan and upgrade as you grow.
-        </p>
-        <div class="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center px-8 py-4 text-lg font-medium rounded-lg text-[#03466e] bg-white hover:bg-gray-100 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                Get Started Free
-                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                </svg>
-            </a>
-            <a href="{% url 'core:pricing' %}" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-lg font-medium rounded-lg text-white hover:bg-white/10 transition-all duration-200">
-                View Pricing
-            </a>
+        <div class="fade-up">
+            <span class="inline-block text-white/70 text-xs font-bold uppercase tracking-widest mb-3">Pricing</span>
+            <h2 class="text-3xl md:text-4xl font-extrabold text-white mb-3 tracking-tight">Free to Start. M-Pesa to Grow.</h2>
+            <p class="text-xl text-white/85 mb-8 max-w-lg mx-auto">
+                Free plan includes 5 tables and 1,000 records. Upgrade from <strong>KES 2,500/mo</strong> — paid via M-Pesa STK Push.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                <a href="{% url 'account_signup' %}" class="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-bold rounded-xl bg-white text-[#03466e] hover:bg-gray-50 transition-all shadow-xl hover:-translate-y-0.5 transform">
+                    Get Started Free
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                </a>
+                <a href="{% url 'core:pricing' %}" class="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold rounded-xl border-2 border-white/40 text-white hover:bg-white/10 hover:border-white/70 transition-all">
+                    Compare Plans
+                </a>
+            </div>
         </div>
     </div>
 </section>
 
-<!-- Blog Posts -->
+<!-- ════════════════════════════════════════════
+     BLOG
+════════════════════════════════════════════ -->
 {% if blog_posts %}
-<section class="py-20 bg-white">
+<section class="py-24 bg-white">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Blog</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Latest from Our Blog
-            </h2>
-            <p class="text-xl text-[#2b2b2b]/80">
-                Insights, tips, and updates from the MetaAnalytics team.
-            </p>
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-12 fade-up">
+            <div>
+                <span class="section-label">Blog</span>
+                <h2 class="section-title">Latest from the Team</h2>
+            </div>
+            <a href="#" class="text-sm font-semibold inline-flex items-center gap-1 whitespace-nowrap" style="color:var(--accent)">
+                All posts <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </a>
         </div>
-        
-        <div class="grid md:grid-cols-3 gap-8">
+        <div class="grid md:grid-cols-3 gap-5">
             {% for post in blog_posts %}
-            <article class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 card-hover">
+            <article class="blog-card fade-up">
                 <a href="{{ post.get_absolute_url }}" class="block">
-                    <div class="relative overflow-hidden h-48">
-                        <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500">
-                        <div class="absolute top-4 left-4 bg-[#f68712] text-white text-xs font-semibold px-2 py-1 rounded">
-                            {{ post.read_time }} min read
-                        </div>
+                    <div class="relative overflow-hidden" style="height:188px">
+                        <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-full object-cover hover:scale-105 transition-transform duration-500">
+                        <span class="absolute top-3 left-3 text-white text-xs font-bold px-2.5 py-1 rounded-lg" style="background:var(--accent)">{{ post.read_time }} min read</span>
                     </div>
-                    <div class="p-6">
-                        <div class="flex items-center text-sm text-[#2b2b2b]/60 mb-3">
-                            <span>{{ post.published_at|date:"M d, Y" }}</span>
-                        </div>
-                        <h3 class="text-xl font-semibold text-[#03466e] mb-3 hover:text-[#f68712] transition-colors duration-200">
-                            {{ post.title }}
-                        </h3>
-                        <p class="text-[#2b2b2b]/70 mb-4">{{ post.excerpt|truncatewords:20 }}</p>
-                        <span class="text-[#f68712] font-medium inline-flex items-center group">
-                            Read more
-                            <svg class="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
+                    <div class="p-5">
+                        <p class="text-xs mb-2" style="color:var(--muted)">{{ post.published_at|date:"M d, Y" }}</p>
+                        <h3 class="text-base font-bold mb-2 leading-snug transition-colors" style="color:var(--primary)">{{ post.title }}</h3>
+                        <p class="text-sm leading-relaxed mb-4" style="color:var(--muted)">{{ post.excerpt|truncatewords:18 }}</p>
+                        <span class="text-sm font-semibold inline-flex items-center gap-1 group" style="color:var(--accent)">
+                            Read more <svg class="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                         </span>
                     </div>
                 </a>
@@ -373,68 +730,67 @@
 </section>
 {% endif %}
 
-<!-- FAQ Section -->
+<!-- ════════════════════════════════════════════
+     FAQ
+════════════════════════════════════════════ -->
 {% if faqs %}
-<section class="py-20 bg-[#f8fafc]">
+<section class="py-24" style="background:var(--bg-subtle)">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Support</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Frequently Asked Questions
-            </h2>
-            <p class="text-xl text-[#2b2b2b]/80">
-                Got questions? We've got answers.
-            </p>
+        <div class="text-center max-w-2xl mx-auto mb-14 fade-up">
+            <span class="section-label">FAQ</span>
+            <h2 class="section-title mb-3">Common Questions</h2>
+            <p class="text-lg" style="color:var(--muted)">Quick answers so you can get started without second-guessing.</p>
         </div>
-        
-        <div class="max-w-3xl mx-auto divide-y divide-gray-200">
+        <div class="max-w-2xl mx-auto">
             {% for faq in faqs %}
-            <div class="py-6" x-data="{ open: false }">
-                <button @click="open = !open" class="flex justify-between items-center w-full text-left group">
-                    <span class="text-lg font-medium text-[#03466e] group-hover:text-[#f68712] transition-colors duration-200">{{ faq.question }}</span>
-                    <svg class="w-5 h-5 text-[#f68712] transform transition-transform duration-300" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="faq-row fade-up" x-data="{ open: false }">
+                <button @click="open = !open" class="w-full flex justify-between items-start py-5 text-left group">
+                    <span class="text-sm font-semibold pr-4 group-hover:text-[#f68712] transition-colors" style="color:var(--primary)">{{ faq.question }}</span>
+                    <svg class="w-5 h-5 shrink-0 mt-0.5 transform transition-transform duration-300" style="color:var(--accent)" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
-                <div x-show="open" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform -translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform -translate-y-2" class="mt-4 text-[#2b2b2b]/70 leading-relaxed">
+                <div x-show="open"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     class="pb-5 text-sm leading-relaxed" style="color:var(--muted)">
                     {{ faq.answer|linebreaks }}
                 </div>
             </div>
             {% endfor %}
-        </div>
-        
-        <div class="text-center mt-12">
-            <p class="text-[#2b2b2b]/70 mb-4">Still have questions?</p>
-            <a href="{% url 'core:contact' %}" class="inline-flex items-center px-6 py-3 text-base font-medium rounded-lg text-white bg-[#03466e] hover:bg-[#023a58] transition-all duration-200 shadow-md hover:shadow-lg">
-                Contact Support
-                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                </svg>
-            </a>
+            <div class="pt-8 text-center fade-up">
+                <p class="text-sm mb-3" style="color:var(--muted)">Still have questions?</p>
+                <a href="{% url 'core:contact' %}" class="btn-dark text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Contact Support
+                </a>
+            </div>
         </div>
     </div>
 </section>
 {% endif %}
 
-<!-- Final CTA -->
-<section class="py-20 bg-white">
+<!-- ════════════════════════════════════════════
+     FINAL CTA
+════════════════════════════════════════════ -->
+<section class="cta-dark py-24">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="max-w-4xl mx-auto text-center">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Get Started</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-[#03466e] mb-4">
-                Ready to Transform Your Data?
+        <div class="max-w-3xl mx-auto text-center fade-up">
+            <span class="section-label" style="color:rgba(246,135,18,0.75)">Get Started</span>
+            <h2 style="font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.025em;color:#fff;margin-bottom:1rem;line-height:1.15;">
+                Your Data Has a Story.<br>Let AnalyticsMeta Tell It.
             </h2>
-            <p class="text-xl text-[#2b2b2b]/80 mb-8">
-                Join thousands of businesses that use MetaAnalytics to track what matters.
+            <p class="text-lg mb-10" style="color:rgba(255,255,255,0.6)">
+                Join thousands of Kenyan businesses that ditched spreadsheets and built real dashboards — in minutes.
             </p>
-            <a href="{% url 'account_signup' %}" class="inline-flex items-center px-8 py-4 text-lg font-medium rounded-lg text-white bg-[#03466e] hover:bg-[#023a58] transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                Get Started Now
-                <svg class="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                </svg>
+            <a href="{% url 'account_signup' %}" class="btn-accent" style="font-size:1.05rem;padding:0.95rem 2rem;">
+                Create Your Free Workspace
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
             </a>
-            <p class="text-sm text-[#2b2b2b]/60 mt-4">
-                No credit card required • Free plan included • Cancel anytime
+            <p class="mt-5 text-xs tracking-wide" style="color:rgba(255,255,255,0.3)">
+                Free plan included &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Pay with M-Pesa when you're ready
             </p>
         </div>
     </div>
@@ -443,66 +799,50 @@
 
 {% block extra_scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Animate stats counting
-        const stats = document.querySelectorAll('.stat-value');
-        stats.forEach(stat => {
-            const value = parseInt(stat.getAttribute('data-value'));
-            if (!isNaN(value)) {
-                animateValue(stat, 0, value, 2000);
-            }
-        });
+document.addEventListener('DOMContentLoaded', function () {
 
-        // Video play button click handler (optional)
-        const videoWrapper = document.querySelector('.video-wrapper');
-        const playButton = document.querySelector('.absolute.inset-0.flex.items-center.justify-center');
-        
-        if (playButton && videoWrapper) {
-            playButton.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const iframe = videoWrapper.querySelector('iframe');
-                const src = iframe.src;
-                iframe.src = src + (src.includes('?') ? '&' : '?') + 'autoplay=1';
-                playButton.style.display = 'none';
-            });
-        }
-    });
-    
-    function animateValue(element, start, end, duration) {
-        const range = end - start;
-        const increment = range / (duration / 10);
-        let current = start;
-        
-        const timer = setInterval(() => {
-            current += increment;
-            if (current >= end) {
-                current = end;
-                clearInterval(timer);
-            }
-            element.textContent = Math.round(current).toLocaleString();
-        }, 10);
+    /* ── Hero video autoplay ── */
+    const heroVideo = document.getElementById('heroVideo');
+    const heroBtn   = document.getElementById('heroPlayBtn');
+    if (heroVideo && heroBtn) {
+        heroVideo.play().then(() => heroBtn.classList.add('gone')).catch(() => {});
+        heroBtn.addEventListener('click', () => {
+            heroVideo.play();
+            heroBtn.classList.add('gone');
+        });
+        heroVideo.addEventListener('pause', () => {
+            if (!heroVideo.ended) heroBtn.classList.remove('gone');
+        });
     }
 
-    // Intersection Observer for fade-in animations
-    const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
-    };
-
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.style.opacity = '1';
-                entry.target.style.transform = 'translateY(0)';
-            }
-        });
-    }, observerOptions);
-
-    document.querySelectorAll('.card-hover, .stat-card, .text-center > div').forEach(el => {
-        el.style.opacity = '0';
-        el.style.transform = 'translateY(20px)';
-        el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-        observer.observe(el);
+    /* ── Animated stat counters ── */
+    document.querySelectorAll('.stat-value').forEach(el => {
+        const end = parseInt(el.dataset.value);
+        if (isNaN(end)) return;
+        const step = end / 200;
+        let cur = 0;
+        const t = setInterval(() => {
+            cur = Math.min(cur + step, end);
+            el.textContent = Math.round(cur).toLocaleString();
+            if (cur >= end) clearInterval(t);
+        }, 10);
     });
+
+    /* ── Fade-up on scroll ── */
+    const io = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+            if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+        });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.fade-up').forEach(el => io.observe(el));
+
+    /* ── Smooth scroll #demo ── */
+    document.querySelectorAll('a[href="#demo"]').forEach(a => {
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
+        });
+    });
+});
 </script>
 {% endblock %}
