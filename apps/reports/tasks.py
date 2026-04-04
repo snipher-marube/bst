@@ -52,9 +52,9 @@ def generate_pdf_report(self, report_job_id: str) -> str:
         widgets_with_data = []
         for widget in widgets:
             try:
-                engine = QueryEngine(widget.table) if widget.table else None
-                if engine:
-                    data = engine.execute_widget_query(widget.query_config or {})
+                if widget.table:
+                    engine = QueryEngine(widget.table)
+                    data = engine.execute_widget_query(widget)
                 else:
                     data = {}
             except Exception as exc:

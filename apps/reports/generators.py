@@ -347,8 +347,14 @@ def _build_widget_section(widget, widget_data: Any, rl: dict, styles: dict) -> l
     viz   = widget.viz_config or {}
 
     if wtype == 'metric':
-        val    = widget_data.get('val', widget_data.get('value', widget_data.get('count', ''))) \
-                 if isinstance(widget_data, dict) else ''
+        val = ''
+        if isinstance(widget_data, dict):
+            for key in ('val', 'value', 'count'):
+                candidate = widget_data.get(key)
+                # scalar result is a number; skip if it's a nested grouped dict
+                if candidate is not None and not isinstance(candidate, dict):
+                    val = candidate
+                    break
         prefix = viz.get('prefix', '')
         suffix = viz.get('suffix', '')
         color  = WIDGET_COLOR_MAP.get(viz.get('color', ''), KPI_COLORS[0])
@@ -515,8 +521,13 @@ def build_dashboard_pdf(
     kpi_widgets = []
     for widget, data in widgets_with_data:
         if widget.widget_type == 'metric':
-            val    = data.get('val', data.get('value', data.get('count', ''))) \
-                     if isinstance(data, dict) else ''
+            val = ''
+            if isinstance(data, dict):
+                for key in ('val', 'value', 'count'):
+                    candidate = data.get(key)
+                    if candidate is not None and not isinstance(candidate, dict):
+                        val = candidate
+                        break
             prefix = (widget.viz_config or {}).get('prefix', '')
             suffix = (widget.viz_config or {}).get('suffix', '')
             color  = (widget.viz_config or {}).get('color', '')

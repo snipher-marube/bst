@@ -177,27 +177,59 @@ def render_kpi_card(
 
 def extract_chart_data(widget_data: dict) -> tuple[list, list]:
     """
-    Pull labels/values from the widget query result dict.
-    Handles {'labels': [...], 'values': [...]} and [{'label':..., 'value':...}] formats.
-    Returns (labels, values) — both lists, possibly empty.
+    Pull labels/values from a widget query result.
+
+    The QueryEngine returns charts as:
+        {'val': {'Jan': 100, 'Feb': 200, ...}}   ← grouped dict under agg name
+    It may also return:
+        {'labels': [...], 'values': [...]}        ← explicit lists
+        [{'category': 'A', 'val': 30}, ...]       ← list of row dicts
     """
     if not widget_data:
         return [], []
+
     if isinstance(widget_data, dict):
+        # Explicit lists format
         if 'labels' in widget_data and 'values' in widget_data:
             return widget_data['labels'], widget_data['values']
-        if 'data' in widget_data:
+
+        # Recurse into 'data' wrapper
+        if 'data' in widget_data and isinstance(widget_data['data'], dict):
             return extract_chart_data(widget_data['data'])
-        # flat dict → single-item
-        return list(widget_data.keys()), list(widget_data.values())
+
+        # QueryEngine grouped-dict format: {'val': {'Jan': 100, ...}, ...}
+        # Find the first key whose value is itself a dict (label→number map)
+        for key in ('val', 'value', 'count'):
+            inner = widget_data.get(key)
+            if isinstance(inner, dict) and inner:
+                labels, values = [], []
+                for lbl, v in inner.items():
+                    labels.append(str(lbl))
+                    try:
+                        values.append(float(v))
+                    except (TypeError, ValueError):
+                        values.append(0.0)
+                return labels, values
+
+        # Fallback: any value that is a non-empty dict
+        for v in widget_data.values():
+            if isinstance(v, dict) and v:
+                labels, values = [], []
+                for lbl, num in v.items():
+                    labels.append(str(lbl))
+                    try:
+                        values.append(float(num))
+                    except (TypeError, ValueError):
+                        values.append(0.0)
+                return labels, values
+
     if isinstance(widget_data, list) and widget_data:
         first = widget_data[0]
         if isinstance(first, dict):
-            key_candidates = [k for k in first if k not in ('val', 'value', 'count')]
-            val_candidates = [k for k in ('val', 'value', 'count') if k in first]
-            if key_candidates and val_candidates:
-                lk = key_candidates[0]
-                vk = val_candidates[0]
+            val_keys = [k for k in ('val', 'value', 'count') if k in first]
+            lbl_keys = [k for k in first if k not in ('val', 'value', 'count')]
+            if lbl_keys and val_keys:
+                lk, vk = lbl_keys[0], val_keys[0]
                 labels = [str(row.get(lk, '')) for row in widget_data]
                 values = []
                 for row in widget_data:
@@ -206,4 +238,5 @@ def extract_chart_data(widget_data: dict) -> tuple[list, list]:
                     except (TypeError, ValueError):
                         values.append(0.0)
                 return labels, values
+
     return [], []
