@@ -1,30 +1,107 @@
-# Documentation Gaps Audit - AnalyticsMeta
+# Documentation Gaps — AnalyticsMeta
 
-This document identifies missing or incomplete information in the current project documentation.
+Tracks what was missing and what has been written to close each gap.
+Last updated: 2026-04-04
+
+---
+
+## Status key
+
+- ✅ **Closed** — documentation written
+- ⚠️ **Partial** — documented but needs expansion over time
+- ❌ **Open** — not yet documented
+
+---
 
 ## 1. Environment Configuration
-- **Missing Variables**: The `README.md` and `.env.example` do not list all required environment variables for development (e.g., `PG_DATABASE_NAME_DEV`, `PG_DATABASE_USER_DEV`, etc.).
-- **OIDC/Social Auth**: While Google and LinkedIn are mentioned, more detailed setup instructions for these providers (like callback URLs) are missing.
+
+| Item | Status | Location |
+|---|---|---|
+| `.env.example` was empty | ✅ Closed | `.env.example` — all variables with inline guidance |
+| Dev vs prod variable naming (`_DEV` suffix) | ✅ Closed | `.env.example` — clearly split into dev/prod sections |
+| New `ADMIN_NAME` / `ADMIN_EMAIL` vars added to production.py | ✅ Closed | `.env.example` |
+| Google OAuth redirect URIs | ✅ Closed | `docs/oauth-setup.md` |
+| LinkedIn OAuth redirect URIs | ✅ Closed | `docs/oauth-setup.md` |
+| Django admin social app setup (sites framework) | ✅ Closed | `docs/oauth-setup.md` |
+
+---
 
 ## 2. API Documentation
-- **Endpoints**: No comprehensive list of available API endpoints is provided.
-- **Authentication**: JWT authentication is mentioned but there are no examples of how to obtain and use the token.
-- **Request/Response Formats**: No schemas or examples for common API requests (like creating a record or updating a dashboard).
 
-## 3. Advanced Features
-- **Formulas**: The `formulas` app is mentioned in the project structure, but there is no documentation on how to use them within a `DataTable`.
-- **Integrations**: No details on which third-party services are currently supported or how to add new ones.
-- **Custom Field Types**: Instructions on how to add or customize field types in `apps/fields` are missing.
+| Item | Status | Location |
+|---|---|---|
+| README said "JWT" but API uses DRF Token auth | ✅ Closed | `docs/api-authentication.md` |
+| How to obtain and use an API token | ✅ Closed | `docs/api-authentication.md` |
+| Request/response examples for common endpoints | ✅ Closed | `docs/api-authentication.md` |
+| Full endpoint list | ⚠️ Partial | `README.md` has routes; no OpenAPI/Swagger schema yet |
+| OpenAPI / Swagger / drf-spectacular schema | ❌ Open | Not yet set up |
+
+---
+
+## 3. Real-Time / WebSocket
+
+| Item | Status | Location |
+|---|---|---|
+| WebSocket endpoints undocumented | ✅ Closed | `docs/websockets.md` |
+| Message types (client → server) | ✅ Closed | `docs/websockets.md` |
+| Message types (server → client) | ✅ Closed | `docs/websockets.md` |
+| Close codes (4001 unauthenticated, 4003 forbidden) | ✅ Closed | `docs/websockets.md` |
+| How automatic widget refresh is triggered | ✅ Closed | `docs/websockets.md` |
+
+---
 
 ## 4. Deployment
-- **Docker**: There is no mention of Docker or Docker Compose for local development or production deployment, which is common in modern web projects.
-- **Celery & Redis**: Production-grade configuration for Celery and Redis is not fully covered.
 
-## 5. Development Guide
-- **Testing**: While the `test` command is provided, there is no information on how to add new tests or what the testing strategy is.
-- **Frontend**: The use of Alpine.js and HTMX is inferred from templates, but there is no explicit documentation on the frontend architecture.
-- **Template Tags**: Custom template tags (like `dashboard_filters`) are not documented.
+| Item | Status | Location |
+|---|---|---|
+| Docker dev setup | ✅ Closed | `README.md` — Docker Setup section |
+| Production Dockerfile | ✅ Closed | `Dockerfile.prod` — multi-stage, non-root user |
+| docker-compose.prod.yml | ✅ Closed | `docker-compose.prod.yml` — 6 services with health checks |
+| entrypoint.sh | ✅ Closed | `entrypoint.sh` — waits for Postgres, migrates, collects static |
+| Nginx config | ✅ Closed | `docker/nginx/nginx.conf` — rate limiting, security headers, WebSocket proxy |
+| Render.com deployment | ✅ Closed | `docs/render-deployment.md` + `render.yaml` |
+| Celery & Redis production config | ✅ Closed | `config/settings/production.py` — Upstash TLS, channel layers |
+| Production environment variables for Render | ✅ Closed | `docs/render-deployment.md` — table with every var and where to find it |
 
-## 6. Automated Insights Engine
-- **Algorithm**: The logic used by `WorkspaceInsightService` to discover KPIs and categorical insights is not documented.
-- **Widget Configuration**: There are no docs explaining how the `viz_config` maps to Chart.js options or how users can manually customize auto-generated widgets.
+---
+
+## 5. Widget & Dashboard Configuration
+
+| Item | Status | Location |
+|---|---|---|
+| `query_config` schema (aggregations, filters, limit) | ✅ Closed | `docs/widget-configuration.md` |
+| `viz_config` schema per widget type | ✅ Closed | `docs/widget-configuration.md` |
+| `created_at_date` virtual group-by field | ✅ Closed | `docs/widget-configuration.md` |
+| Auto-generated dashboard logic | ⚠️ Partial | Covered at high level in `README.md` architecture section |
+
+---
+
+## 6. Development Guide
+
+| Item | Status | Location |
+|---|---|---|
+| Debug toolbar setup | ✅ Closed | Added to `development.py` + `urls.py`; access at `/__debug__/` |
+| Testing strategy and how to add tests | ❌ Open | No test documentation yet |
+| Frontend architecture (Alpine.js + HTMX patterns) | ❌ Open | Not yet documented |
+| Custom template tags (`dashboard_filters`) | ❌ Open | Not yet documented |
+
+---
+
+## 7. Newsletter System
+
+| Item | Status | Location |
+|---|---|---|
+| Newsletter subscription flow | ⚠️ Partial | `NEWSLETTER.md` exists — review for completeness |
+| Campaign creation and sending | ⚠️ Partial | `NEWSLETTER.md` |
+| Webhook event processing (bounce/complaint handling) | ❌ Open | Not documented |
+| A/B test campaign setup | ❌ Open | Not documented |
+
+---
+
+## Remaining open items (priority order)
+
+1. **OpenAPI schema** — Add `drf-spectacular` to generate `/api/v1/schema/` and a Swagger UI at `/api/v1/docs/`
+2. **Testing guide** — Document how to run tests, what factories exist (`factory-boy`), how to write new tests
+3. **Newsletter webhook processing** — Document how bounce/complaint webhooks map to `WebhookEvent` → `process_webhook_event` Celery task
+4. **Frontend patterns** — Document Alpine.js store structure and HTMX partial URL conventions
+5. **Custom template tags** — Document `dashboard_filters.py` filter reference
