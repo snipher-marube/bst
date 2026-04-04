@@ -138,6 +138,29 @@ SITE_ID = 1
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ============================================================================
+# SECURITY HARDENING
+# ============================================================================
+
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+
+# Upload limits — prevent DoS via oversized uploads
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+
+# Session hardening
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_AGE = 1_209_600  # 2 weeks in seconds
+
+# CSRF hardening
+CSRF_COOKIE_HTTPONLY = False    # Must be False for JS CSRF tokens to work
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_USE_SESSIONS = False       # Cookie-based (default)
+
 # ---------------------------------------------------------------------------
 # M-Pesa Daraja API (Safaricom)
 # Defaults below are Safaricom's PUBLIC sandbox test credentials — safe for
@@ -196,7 +219,7 @@ ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = True  # Log out user after password change
 LOGIN_URL = "account_login"
 LOGIN_REDIRECT_URL = "/dashboard/analytics/"  # Redirect after login to dashboard
 LOGOUT_REDIRECT_URL = "/"  # Redirect after logout to home
-ACCOUNT_LOGOUT_ON_GET = True  # Logout via GET request
+ACCOUNT_LOGOUT_ON_GET = False  # POST required to prevent CSRF-triggered logouts
 
 # Advanced features
 ACCOUNT_LOGIN_BY_CODE_ENABLED = True  # Magic link login [citation:9]
@@ -292,11 +315,13 @@ CACHES = {
     }
 }
 
-# Add a second cache for session storage if needed
+# Session cache — uses same Redis DB but isolated via KEY_PREFIX.
+# Upstash free tier only provides a single DB (0), so we rely on the prefix.
 CACHES['sessions'] = {
     'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-    'LOCATION': f'{REDIS_URL}/1',
+    'LOCATION': REDIS_URL,
     'KEY_PREFIX': 'sessions',
+    'TIMEOUT': SESSION_COOKIE_AGE,
 }
 
 # Celery Configuration

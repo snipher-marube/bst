@@ -16,6 +16,17 @@ A multi-tenant business intelligence SaaS platform built with Django. Teams can 
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
+## Detailed Docs
+
+| Topic | File |
+|---|---|
+| Render deployment | [docs/render-deployment.md](docs/render-deployment.md) |
+| Google & LinkedIn OAuth setup | [docs/oauth-setup.md](docs/oauth-setup.md) |
+| API authentication & token examples | [docs/api-authentication.md](docs/api-authentication.md) |
+| WebSocket events reference | [docs/websockets.md](docs/websockets.md) |
+| Widget query\_config & viz\_config | [docs/widget-configuration.md](docs/widget-configuration.md) |
+| Documentation gaps tracker | [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md) |
+
 ---
 
 ## Features
