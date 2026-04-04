@@ -399,6 +399,15 @@ IMPORT_BATCH_SIZE = int(config('IMPORT_BATCH_SIZE', default=200))
 WIDGET_CACHE_TTL = int(config('WIDGET_CACHE_TTL', default=300))
 
 # ============================================================================
+# WEBSOCKET / CHANNELS TUNING
+# ============================================================================
+# Sliding-window rate limit for WebSocket messages per connection
+WS_RATE_LIMIT_WINDOW   = int(config('WS_RATE_LIMIT_WINDOW',   default=10))   # seconds
+WS_RATE_LIMIT_MAX_MSGS = int(config('WS_RATE_LIMIT_MAX_MSGS', default=30))   # per window
+# Idle timeout — server closes connection after this many seconds with no ping
+WS_HEARTBEAT_TIMEOUT   = int(config('WS_HEARTBEAT_TIMEOUT',   default=90))   # seconds
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # ============================================================================
 LOGGING = {

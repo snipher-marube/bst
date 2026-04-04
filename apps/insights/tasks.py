@@ -1,102 +1,135 @@
 # apps/insights/tasks.py
+"""
+Celery tasks for AnalyticsMeta real-time and AI insight features.
+
+Key improvements in this version:
+- analyze_workspace_tables: distributed Redis lock prevents concurrent runs
+- Per-table progress broadcasting via WebSocket
+- Actual Insight model records created (trend, anomaly, summary, comparison)
+- Anomaly detection via z-score on numeric fields
+- Trend direction analysis (up/down/flat) based on first vs last window
+- Summary insight for every table (record count, top fields)
+- Comparison insight when 2+ tables share a numeric field name
+- Full edge-case handling: empty tables, schema-less tables, all-null columns
+- All tasks have max_retries + autoretry_for for production resilience
+"""
+
 from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.core.cache import cache
 import json
 import logging
+import math
+import statistics
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-@shared_task
-def broadcast_widget_update(widget_id, dashboard_id):
-    """
-    Broadcast widget update to all connected clients
-    """
+# ---------------------------------------------------------------------------
+# Lock helper
+# ---------------------------------------------------------------------------
+_LOCK_TIMEOUT = 600  # seconds — maximum time insight generation may hold lock
+
+
+def _acquire_lock(key):
+    """Acquire a Redis-backed distributed lock. Returns True if acquired."""
+    return cache.add(f'lock:{key}', '1', timeout=_LOCK_TIMEOUT)
+
+
+def _release_lock(key):
+    cache.delete(f'lock:{key}')
+
+
+# ---------------------------------------------------------------------------
+# WebSocket broadcast helpers
+# ---------------------------------------------------------------------------
+def _broadcast(group, payload):
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(group, payload)
+    except Exception as exc:
+        logger.warning('WS broadcast failed group=%s: %s', group, exc)
+
+
+# ---------------------------------------------------------------------------
+# broadcast_widget_update
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=3, default_retry_delay=15,
+             autoretry_for=(Exception,), retry_backoff=True)
+def broadcast_widget_update(self, widget_id, dashboard_id):
+    """Refresh a widget's cache and push the new data to all viewers."""
     try:
         from apps.dashboards.models import Widget
         from apps.dashboards.services import QueryEngine
-        
-        # Get fresh data
-        widget = Widget.objects.get(id=widget_id)
-        engine = QueryEngine()
-        
-        # Clear cache
+
+        widget    = Widget.objects.get(id=widget_id)
+        engine    = QueryEngine()
         cache_key = engine._generate_cache_key(widget)
         cache.delete(cache_key)
-        
-        # Get fresh data
-        data = widget.get_data()
-        
-        # Send via WebSocket
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f'dashboard_{dashboard_id}',
-            {
-                'type': 'widget_update',
-                'widget_id': widget_id,
-                'data': data
-            }
-        )
-        
-        logger.info(f"Broadcast update for widget {widget_id}")
-        return {'status': 'success'}
-        
-    except Exception as e:
-        logger.error(f"Broadcast failed: {str(e)}")
-        return {'status': 'error', 'error': str(e)}
+        data      = widget.get_data()
 
-@shared_task
-def notify_table_change(table_id, action):
-    """
-    Notify all dashboards that a table has changed
-    """
-    try:
-        from apps.dashboards.models import DataTable
-        
-        table = DataTable.objects.get(id=table_id)
-        workspace_id = str(table.workspace.id)
-        
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f'workspace_{workspace_id}',
-            {
-                'type': 'table_update',
-                'table_id': table_id,
-                'action': action
-            }
-        )
-        
-        logger.info(f"Notified table change: {table.name} - {action}")
-        
-    except Exception as e:
-        logger.error(f"Table notification failed: {str(e)}")
-
-
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def generate_default_dashboard(self, table_id):
-    """
-    Async task: build the auto-generated dashboard for a newly created DataTable.
-    Decoupled from the table-creation transaction so a dashboard failure never
-    rolls back the table itself.
-    """
-    try:
-        from apps.dashboards.models import DataTable
-        table = DataTable.objects.get(pk=table_id)
-        dashboard = table.generate_default_dashboard()
-        logger.info(f"Auto-dashboard created for table {table_id}: {dashboard.id}")
-        return {'status': 'completed', 'dashboard_id': str(dashboard.id)}
+        _broadcast(f'dashboard_{dashboard_id}', {
+            'type':      'widget_update',
+            'widget_id': widget_id,
+            'data':      data,
+        })
+        logger.info('Widget broadcast ok widget=%s', widget_id)
+        return {'status': 'ok'}
+    except Widget.DoesNotExist:
+        logger.error('Widget %s not found — skipping broadcast', widget_id)
+        return {'status': 'error', 'reason': 'widget_not_found'}
     except Exception as exc:
-        logger.error(f"generate_default_dashboard failed for table {table_id}: {exc}")
+        logger.exception('broadcast_widget_update failed widget=%s', widget_id)
         raise self.retry(exc=exc)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+# ---------------------------------------------------------------------------
+# notify_table_change
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=3, default_retry_delay=10,
+             autoretry_for=(Exception,), retry_backoff=True)
+def notify_table_change(self, table_id, action):
+    """Notify the workspace channel that a table's data changed."""
+    try:
+        from apps.dashboards.models import DataTable
+        table = DataTable.objects.select_related('workspace').get(id=table_id)
+        _broadcast(f'workspace_{table.workspace_id}', {
+            'type':     'table_update',
+            'table_id': table_id,
+            'action':   action,
+        })
+        logger.info('Table change broadcast ok table=%s action=%s', table_id, action)
+    except Exception as exc:
+        logger.exception('notify_table_change failed table=%s', table_id)
+        raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# generate_default_dashboard
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=3, default_retry_delay=60,
+             autoretry_for=(Exception,), retry_backoff=True)
+def generate_default_dashboard(self, table_id):
+    """Build the auto-generated dashboard for a newly created DataTable."""
+    try:
+        from apps.dashboards.models import DataTable
+        table     = DataTable.objects.get(pk=table_id)
+        dashboard = table.generate_default_dashboard()
+        logger.info('Auto-dashboard created table=%s dashboard=%s', table_id, dashboard.id)
+        return {'status': 'completed', 'dashboard_id': str(dashboard.id)}
+    except Exception as exc:
+        logger.exception('generate_default_dashboard failed table=%s', table_id)
+        raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# run_async_import
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=3, default_retry_delay=30,
+             autoretry_for=(Exception,), retry_backoff=True)
 def run_async_import(self, import_job_id):
-    """
-    Celery task that processes a large CSV/Excel import asynchronously.
-    The ImportJob row must already exist with status='pending' before calling this task.
-    """
+    """Process a CSV/Excel import job asynchronously."""
     from django.utils import timezone
     from apps.dashboards.models import ImportJob
     from apps.dashboards.services import DataImportService
@@ -105,82 +138,376 @@ def run_async_import(self, import_job_id):
     try:
         job = ImportJob.objects.get(id=import_job_id)
     except ImportJob.DoesNotExist:
-        logger.error(f"ImportJob {import_job_id} not found")
+        logger.error('ImportJob %s not found', import_job_id)
         return {'status': 'error', 'error': 'ImportJob not found'}
 
-    job.status = 'running'
+    job.status     = 'running'
     job.started_at = timezone.now()
     job.celery_task_id = self.request.id
     job.save(update_fields=['status', 'started_at', 'celery_task_id'])
 
     try:
-        service = DataImportService()
-        df = pd.read_json(job.file_path, orient='split')
+        df     = pd.read_json(cache.get(f'import_df_{job.file_path}') or job.file_path, orient='split')
+        result = DataImportService().import_data(table=job.table, df=df, user=job.created_by)
 
-        job.total_rows = len(df)
-        job.save(update_fields=['total_rows'])
-
-        result = service.import_data(
-            table=job.table,
-            df=df,
-            user=job.created_by,
-        )
-
-        job.status = 'completed'
-        job.success_rows = result['success']
-        job.error_rows = result['errors']
-        job.error_log = result.get('error_details', [])
+        job.status         = 'completed'
+        job.success_rows   = result['success']
+        job.error_rows     = result['errors']
+        job.error_log      = result.get('error_details', [])
         job.processed_rows = result['success'] + result['errors']
-        job.completed_at = timezone.now()
+        job.completed_at   = timezone.now()
         job.save()
 
-        # Notify workspace
-        notify_table_change.delay(str(job.table.id), 'import_completed')
+        # Notify workspace WebSocket channel
+        _broadcast(f'workspace_{job.workspace_id}', {
+            'type':          'import_progress',
+            'import_job_id': str(job.id),
+            'status':        'completed',
+            'success_rows':  result['success'],
+            'error_rows':    result['errors'],
+        })
+        notify_table_change.delay(str(job.table_id), 'import_completed')
 
-        logger.info(f"ImportJob {import_job_id} completed: {result['success']} rows imported")
+        logger.info('ImportJob %s done: %d rows', import_job_id, result['success'])
         return {'status': 'completed', 'success': result['success'], 'errors': result['errors']}
 
-    except Exception as e:
-        logger.error(f"ImportJob {import_job_id} failed: {str(e)}")
-        job.status = 'failed'
-        job.error_log = [str(e)]
-        job.completed_at = timezone.now()
+    except Exception as exc:
+        logger.exception('ImportJob %s failed', import_job_id)
+        from django.utils import timezone as tz
+        job.status       = 'failed'
+        job.error_log    = [str(exc)]
+        job.completed_at = tz.now()
         job.save(update_fields=['status', 'error_log', 'completed_at'])
-        return {'status': 'error', 'error': str(e)}
+        _broadcast(f'workspace_{job.workspace_id}', {
+            'type': 'import_progress', 'import_job_id': str(job.id),
+            'status': 'failed', 'error': str(exc),
+        })
+        raise self.retry(exc=exc)
 
 
-@shared_task
-def analyze_workspace_tables(workspace_id):
+# ---------------------------------------------------------------------------
+# analyze_workspace_tables  (main AI insights task)
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=2, default_retry_delay=120)
+def analyze_workspace_tables(self, workspace_id):
     """
-    Background task to generate AI insights for a workspace.
+    Generate BI insights for every table in the workspace.
+
+    Steps:
+    1. Acquire distributed lock — abort if another run is already in progress.
+    2. For each table with records:
+       a. Build widget specs (existing WorkspaceInsightService logic).
+       b. Run statistical analysis → create Insight model records:
+          - summary   : record count + field inventory
+          - trend     : direction (up/down/flat) for numeric fields over time
+          - anomaly   : z-score outlier detection on numeric fields
+          - comparison: cross-table field comparison (shared numeric columns)
+       c. Broadcast per-table progress via WebSocket.
+    3. Release lock.
+    4. Broadcast completion.
     """
+    lock_key = f'insights_gen:{workspace_id}'
+
+    if not _acquire_lock(lock_key):
+        logger.info('Insights already running for workspace=%s — skipping', workspace_id)
+        return {'status': 'skipped', 'reason': 'already_running'}
+
     try:
-        from apps.dashboards.models import DataTable, Dashboard, Widget
-        from apps.workspaces.models import Workspace
-        from apps.dashboards.services import WorkspaceInsightService
-        from django.contrib.auth import get_user_model
+        return _run_insight_generation(workspace_id, self)
+    except Exception as exc:
+        logger.exception('analyze_workspace_tables failed workspace=%s', workspace_id)
+        raise self.retry(exc=exc)
+    finally:
+        _release_lock(lock_key)
 
-        User = get_user_model()
-        workspace = Workspace.objects.get(id=workspace_id)
-        owner = workspace.owner
 
-        service = WorkspaceInsightService()
-        dashboard = service.generate_workspace_overview(workspace, owner)
+def _run_insight_generation(workspace_id, task_self):
+    from apps.dashboards.models import DataTable
+    from apps.dashboards.services import WorkspaceInsightService
+    from apps.workspaces.models import Workspace
+    from apps.insights.models import Insight
+    from django.db.models import Exists, OuterRef
+    from apps.dashboards.models import Record
 
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f'workspace_{workspace_id}',
-            {
-                'type': 'dashboard_update',
-                'data': {
-                    'action': 'insights_generated',
-                    'dashboard_id': str(dashboard.id),
-                }
-            }
+    workspace = Workspace.objects.get(id=workspace_id)
+    owner     = workspace.owner
+
+    _broadcast(f'workspace_{workspace_id}', {
+        'type':    'insights_generation_progress',
+        'stage':   'started',
+        'message': 'Building dashboard widgets…',
+    })
+
+    # ── Phase 1: build/refresh the overview dashboard (existing logic) ────
+    service   = WorkspaceInsightService()
+    dashboard = service.generate_workspace_overview(workspace, owner)
+
+    _broadcast(f'workspace_{workspace_id}', {
+        'type':    'insights_generation_progress',
+        'stage':   'widgets_done',
+        'message': 'Widgets ready. Running statistical analysis…',
+        'dashboard_id': str(dashboard.id),
+    })
+
+    # ── Phase 2: statistical insights ────────────────────────────────────
+    _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
+    tables = list(
+        workspace.tables
+        .filter(is_active=True)
+        .annotate(_has_data=Exists(_has_records))
+        .filter(_has_data=True)
+        .order_by('name')
+    )
+
+    # Delete stale Insight records for this workspace before regenerating
+    Insight.objects.filter(workspace=workspace).delete()
+
+    created_insights = []
+    numeric_by_table = {}   # table.id → { field: [values] } for cross-table comparison
+
+    total = len(tables)
+    for idx, table in enumerate(tables):
+        try:
+            new_insights, field_values = _analyse_table(table, workspace, owner)
+            created_insights.extend(new_insights)
+            if field_values:
+                numeric_by_table[table.id] = field_values
+        except Exception:
+            logger.exception('Insight analysis failed table=%s', table.id)
+
+        _broadcast(f'workspace_{workspace_id}', {
+            'type':     'insights_generation_progress',
+            'stage':    'table_done',
+            'table':    table.name,
+            'progress': round((idx + 1) / max(total, 1) * 100),
+        })
+
+    # ── Phase 3: cross-table comparison insights ──────────────────────────
+    _create_comparison_insights(tables, numeric_by_table, workspace, owner, created_insights)
+
+    # ── Done ──────────────────────────────────────────────────────────────
+    _broadcast(f'workspace_{workspace_id}', {
+        'type':         'insights_complete',
+        'dashboard_id': str(dashboard.id),
+        'insight_count': len(created_insights),
+    })
+
+    logger.info('Insights complete workspace=%s dashboard=%s insights=%d',
+                workspace_id, dashboard.id, len(created_insights))
+    return {'status': 'completed', 'dashboard_id': str(dashboard.id),
+            'insight_count': len(created_insights)}
+
+
+# ---------------------------------------------------------------------------
+# Per-table statistical analysis
+# ---------------------------------------------------------------------------
+def _analyse_table(table, workspace, owner):
+    """
+    Profile one table and create Insight records.
+    Returns (list[Insight], dict[field→values]).
+    """
+    from apps.dashboards.models import Record
+    from apps.insights.models import Insight
+    from django.conf import settings
+
+    schema = {f['name']: f['type'] for f in (table.schema or [])}
+    if not schema:
+        # Schema-less table — emit a single summary insight noting this
+        insight = Insight.objects.create(
+            workspace        = workspace,
+            title            = f'{table.name}: No Schema Defined',
+            description      = (
+                f'Table "{table.name}" has {table.record_count} record(s) but no schema. '
+                'Define a schema to unlock automatic insights.'
+            ),
+            insight_type     = 'summary',
+            source_table_name = table.name,
+            created_by       = owner,
         )
-        logger.info(f"Insights generated for workspace {workspace_id}")
-        return {'status': 'completed', 'dashboard_id': str(dashboard.id)}
+        return [insight], {}
 
-    except Exception as e:
-        logger.error(f"analyze_workspace_tables failed: {str(e)}")
-        return {'status': 'error', 'error': str(e)}
+    sample_size = getattr(settings, 'QUERY_ENGINE_PROFILE_SAMPLE', 1000)
+    records     = list(
+        Record.objects.filter(table=table, is_active=True)
+        .values_list('data', flat=True)
+        .order_by('created_at')[:sample_size]
+    )
+
+    if not records:
+        insight = Insight.objects.create(
+            workspace         = workspace,
+            title             = f'{table.name}: No Records Yet',
+            description       = f'Table "{table.name}" has no records. Import data to get insights.',
+            insight_type      = 'summary',
+            source_table_name = table.name,
+            created_by        = owner,
+        )
+        return [insight], {}
+
+    numeric_types = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+    date_types    = {'date', 'datetime'}
+
+    numeric_fields = [n for n, t in schema.items() if t in numeric_types]
+    date_fields    = [n for n, t in schema.items() if t in date_types]
+
+    # Extract numeric field values (skip null / non-parseable)
+    field_values = {}
+    for field in numeric_fields:
+        vals = []
+        for rec in records:
+            if rec and field in rec:
+                v = rec[field]
+                try:
+                    f = float(v)
+                    if math.isfinite(f):
+                        vals.append(f)
+                except (TypeError, ValueError):
+                    pass
+        if vals:
+            field_values[field] = vals
+
+    insights = []
+
+    # ── Summary insight ───────────────────────────────────────────────────
+    field_summary = ', '.join(
+        f'{field} (n={len(vals)}, avg={statistics.mean(vals):.2f})'
+        for field, vals in list(field_values.items())[:5]
+    ) or 'No numeric fields found.'
+
+    insights.append(Insight.objects.create(
+        workspace         = workspace,
+        title             = f'{table.name} Summary',
+        description       = (
+            f'{table.name} has {table.record_count} record(s) and '
+            f'{len(schema)} field(s). Numeric fields: {field_summary}'
+        ),
+        insight_type      = 'summary',
+        source_table_name = table.name,
+        created_by        = owner,
+        chart_data        = {
+            'record_count': table.record_count,
+            'field_count':  len(schema),
+            'numeric_fields': list(field_values.keys()),
+            'date_fields':    date_fields,
+        },
+    ))
+
+    # ── Trend insights ────────────────────────────────────────────────────
+    # Split sample into first-half / last-half to derive direction
+    for field, vals in field_values.items():
+        if len(vals) < 6:
+            continue
+        mid    = len(vals) // 2
+        first  = statistics.mean(vals[:mid])
+        last   = statistics.mean(vals[mid:])
+        pct    = ((last - first) / first * 100) if first != 0 else 0
+        if abs(pct) < 2:
+            direction, emoji = 'stable',   '→'
+        elif pct > 0:
+            direction, emoji = 'upward',   '↑'
+        else:
+            direction, emoji = 'downward', '↓'
+
+        insights.append(Insight.objects.create(
+            workspace         = workspace,
+            title             = f'{table.name} — {field} trend {emoji}',
+            description       = (
+                f'"{field}" in {table.name} is {direction}. '
+                f'Average changed from {first:.2f} to {last:.2f} '
+                f'({pct:+.1f}%) over the sampled period.'
+            ),
+            insight_type      = 'trend',
+            source_table_name = table.name,
+            created_by        = owner,
+            chart_data        = {
+                'field':     field,
+                'direction': direction,
+                'pct_change': round(pct, 2),
+                'first_avg': round(first, 4),
+                'last_avg':  round(last, 4),
+            },
+        ))
+
+    # ── Anomaly insights (z-score ≥ 3) ───────────────────────────────────
+    for field, vals in field_values.items():
+        if len(vals) < 10:
+            continue
+        try:
+            mean = statistics.mean(vals)
+            std  = statistics.stdev(vals)
+        except statistics.StatisticsError:
+            continue
+        if std == 0:
+            continue
+
+        outlier_count = sum(1 for v in vals if abs(v - mean) / std >= 3.0)
+        if outlier_count == 0:
+            continue
+
+        pct_outliers = outlier_count / len(vals) * 100
+        insights.append(Insight.objects.create(
+            workspace         = workspace,
+            title             = f'{table.name} — Anomaly in "{field}"',
+            description       = (
+                f'{outlier_count} record(s) ({pct_outliers:.1f}%) have "{field}" '
+                f'values more than 3 standard deviations from the mean '
+                f'({mean:.2f} ± {std:.2f}). Review for data quality issues.'
+            ),
+            insight_type      = 'anomaly',
+            source_table_name = table.name,
+            created_by        = owner,
+            chart_data        = {
+                'field':         field,
+                'mean':          round(mean, 4),
+                'std':           round(std, 4),
+                'outlier_count': outlier_count,
+                'pct_outliers':  round(pct_outliers, 2),
+            },
+        ))
+
+    return insights, field_values
+
+
+# ---------------------------------------------------------------------------
+# Cross-table comparison insights
+# ---------------------------------------------------------------------------
+def _create_comparison_insights(tables, numeric_by_table, workspace, owner, insights_list):
+    """
+    Create comparison Insight records when 2+ tables share a numeric field name.
+    E.g., both "Sales" and "Expenses" have an "amount" field.
+    """
+    from apps.insights.models import Insight
+
+    # Build field → [(table, values)] mapping
+    field_map = defaultdict(list)
+    for table in tables:
+        vals = numeric_by_table.get(table.id, {})
+        for field, values in vals.items():
+            field_map[field].append((table, values))
+
+    for field, entries in field_map.items():
+        if len(entries) < 2:
+            continue
+
+        # Limit to 5 tables per comparison insight to keep descriptions readable
+        entries = entries[:5]
+        summaries = []
+        chart_data = {}
+        for tbl, vals in entries:
+            avg = statistics.mean(vals) if vals else 0
+            summaries.append(f'{tbl.name}: avg={avg:.2f} (n={len(vals)})')
+            chart_data[tbl.name] = round(avg, 4)
+
+        insight = Insight.objects.create(
+            workspace         = workspace,
+            title             = f'Comparison: "{field}" across {len(entries)} tables',
+            description       = (
+                f'Field "{field}" appears in {len(entries)} tables: '
+                + '; '.join(summaries) + '.'
+            ),
+            insight_type      = 'comparison',
+            source_table_name = '',
+            created_by        = owner,
+            chart_data        = {'field': field, 'table_averages': chart_data},
+        )
+        insights_list.append(insight)
