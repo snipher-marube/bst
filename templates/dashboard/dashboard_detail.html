@@ -289,6 +289,14 @@ function initGrid() {
     resizable: { handles: 'e,se,s,sw,w' },
   });
   grid.on('change', () => saveLayout());
+
+  // When the user resizes a widget, Plotly must be told about the new size.
+  grid.on('resizestop', (_e, el) => {
+    const wId = el.getAttribute('data-id');
+    if (!wId) return;
+    const pd = plotlyDivs.get(wId);
+    if (pd && typeof Plotly !== 'undefined') Plotly.Plots.resize(pd);
+  });
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -314,11 +322,33 @@ function renderWidgets() {
   sorted.forEach(w => addWidgetToGrid(w));
 }
 
+// Track Plotly chart divs so we can resize them when the grid cell resizes
+const plotlyDivs = new Map();  // widgetId → plotly div
+
 function addWidgetToGrid(widget) {
   const pos = widget.position || {x:0, y:0, w:4, h:3};
   grid.addWidget(buildWidgetHTML(widget), { x:pos.x, y:pos.y, w:pos.w, h:pos.h });
   widgetMap.set(widget.id, widget);
-  setTimeout(() => renderWidgetContent(widget), 60);
+
+  // GridStack animates placement over ~300 ms.  60 ms is too short — Plotly
+  // renders into a 0-height container and produces an invisible chart.
+  // Wait for the animation to complete before drawing.
+  waitForHeight(`widget-${widget.id}`, () => renderWidgetContent(widget));
+}
+
+/**
+ * Poll the widget body until it has a non-zero height, then invoke cb.
+ * Falls back to a hard 500 ms cap so we never loop forever.
+ */
+function waitForHeight(elId, cb) {
+  const deadline = Date.now() + 600;
+  function check() {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (el.offsetHeight > 10 || Date.now() > deadline) { cb(); return; }
+    requestAnimationFrame(check);
+  }
+  requestAnimationFrame(check);
 }
 
 function buildWidgetHTML(widget) {
@@ -362,11 +392,11 @@ function renderWidgetContent(widget) {
   }
 
   switch (widget.widget_type) {
-    case 'metric':    renderKPI(el, widget, data);    break;
-    case 'table':     renderTable(el, data);           break;
-    case 'line_chart':renderChart(el, data, 'scatter', widget); break;
-    case 'bar_chart': renderChart(el, data, 'bar',     widget); break;
-    case 'pie_chart': renderChart(el, data, 'pie',     widget); break;
+    case 'metric':     renderKPI(el, widget, data);           break;
+    case 'table':      renderTable(el, data);                 break;
+    case 'line_chart': renderChart(el, data, 'scatter', widget); break;
+    case 'bar_chart':  renderChart(el, data, 'bar',     widget); break;
+    case 'pie_chart':  renderChart(el, data, 'pie',     widget); break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
   }
@@ -491,6 +521,8 @@ function renderChart(el, data, chartType, widget) {
   div.style.cssText = 'width:100%;height:100%';
   el.appendChild(div);
   Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+  // Register for resize events triggered by GridStack
+  if (widget?.id) plotlyDivs.set(widget.id, div);
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -674,27 +706,30 @@ document.addEventListener('DOMContentLoaded', () => {
 // ───────────────────────────────────────────────────────────────
 //  ADD WIDGET  (schema-aware query_config building)
 // ───────────────────────────────────────────────────────────────
+// Colour palette cycled for metric widgets added manually
+const METRIC_COLORS = ['blue', 'green', 'orange', 'purple'];
+const METRIC_ICONS  = ['fa-chart-bar', 'fa-coins', 'fa-percent', 'fa-database'];
+
 async function addWidget() {
   const wType = document.getElementById('widgetType').value;
   const tId   = document.getElementById('widgetTable').value;
   const title = document.getElementById('widgetTitle').value.trim() || 'New Widget';
 
-  if (!tId) { alert('Please select a table'); return; }
+  if (!tId) { showToast('Please select a table', 'warning'); return; }
 
-  const schema  = getSelectedSchema();
+  const schema   = getSelectedSchema();
   const numericF = schemaFields(schema, NUMERIC_TYPES);
   const dateF    = schemaFields(schema, DATE_TYPES);
   const textF    = schemaFields(schema, TEXT_TYPES);
 
-  // Read user selections from dropdowns (may be empty/auto)
   const chosenNumeric = document.getElementById('numericField')?.value  || numericF[0] || null;
   const chosenGroupBy = document.getElementById('groupByField')?.value  || null;
   const chosenAgg     = document.getElementById('aggregationType')?.value || 'sum';
 
-  // Build query_config from schema context
   const query_config = buildQueryConfig(wType, chosenNumeric, chosenGroupBy, chosenAgg, numericF, dateF, textF);
   const viz_config   = buildVizConfig(wType, chosenNumeric, chosenGroupBy || autoGroupBy(wType, dateF, textF), numericF);
 
+  // Stack new widget below all existing ones
   let yPos = 0;
   widgetMap.forEach(w => { const y = (w.position?.y || 0) + (w.position?.h || 2); if (y > yPos) yPos = y; });
 
@@ -710,21 +745,42 @@ async function addWidget() {
     position: { x: 0, y: yPos, w: defaultW, h: defaultH },
   };
 
+  // Loading state on button
+  const btn = document.querySelector('[onclick="addWidget()"]') ||
+              document.querySelector('.modal-foot .btn-primary');
+  const origLabel = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Creating…'; }
+
   try {
     const res = await fetch(`/api/dashboards/${window.DASHBOARD_ID}/widgets/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      credentials: 'same-origin',
       body: JSON.stringify(body),
     });
     if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to create widget'); }
+
     const widget = await res.json();
+
+    // If the server didn't return widget_data, fetch it now so the chart can render
+    if (!widget.widget_data || widget.widget_data.error) {
+      try {
+        const dr = await fetch(`/api/widgets/${widget.id}/data/`, { credentials: 'same-origin' });
+        const dj = await dr.json();
+        widget.widget_data = Object.prototype.hasOwnProperty.call(dj, 'data') ? dj.data : dj;
+      } catch (_) { /* render with whatever we have */ }
+    }
+
     closeModal();
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('dashboard-grid').style.display = '';
     addWidgetToGrid(widget);
     setTimeout(saveLayout, 400);
+    showToast(`"${title}" added`, 'success');
   } catch (err) {
-    alert('Error: ' + err.message);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }
 }
 
@@ -756,9 +812,17 @@ function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF
 
 function buildVizConfig(wType, numericField, groupByField, numericF) {
   if (wType === 'metric') {
-    return { icon: 'fa-chart-bar', color: 'blue', prefix: '', suffix: '' };
+    const idx   = widgetMap.size % METRIC_COLORS.length;
+    const schema = getSelectedSchema();
+    const ft     = schema.find(f => f.name === numericField)?.type || '';
+    return {
+      icon:   METRIC_ICONS[idx],
+      color:  METRIC_COLORS[idx],
+      prefix: ft === 'currency'   ? '$'  : '',
+      suffix: ft === 'percentage' ? '%'  : '',
+    };
   }
-  return { x_axis: groupByField, y_axis: 'val' };
+  return { x_axis: groupByField || null, y_axis: 'val' };
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -770,9 +834,13 @@ async function refreshWidget(id) {
   const el = document.getElementById(`widget-${id}`);
   if (el) el.innerHTML = `<div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4"></i></div>`;
   try {
-    const res = await fetch(`/api/widgets/${id}/data/`);
+    const res = await fetch(`/api/widgets/${id}/data/`, { credentials: 'same-origin' });
     const json = await res.json();
-    if (json.data) { w.widget_data = json.data; renderWidgetContent(w); }
+    // WidgetDataAPIView wraps data in { data: ... }
+    // Accept both wrapped and bare payloads
+    const payload = Object.prototype.hasOwnProperty.call(json, 'data') ? json.data : json;
+    w.widget_data = payload;
+    waitForHeight(`widget-${id}`, () => renderWidgetContent(w));
   } catch (_) {
     if (el) el.innerHTML = `<div class="state-center"><i class="fas fa-exclamation-circle" style="color:#ef4444"></i><p>Refresh failed</p></div>`;
   }
@@ -781,16 +849,37 @@ async function refreshWidget(id) {
 async function deleteWidget(id) {
   if (!confirm('Delete this widget?')) return;
   try {
-    const res = await fetch(`/api/widgets/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': csrf() } });
+    const res = await fetch(`/api/widgets/${id}/`, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': csrf() },
+      credentials: 'same-origin',
+    });
     if (res.ok) {
       const el = document.querySelector(`.grid-stack-item[data-id="${id}"]`);
-      if (el && grid) { grid.removeWidget(el); widgetMap.delete(id); }
+      if (el && grid) { grid.removeWidget(el); }
+      widgetMap.delete(id);
+      plotlyDivs.delete(id);
       if (!widgetMap.size) {
         document.getElementById('emptyState').style.display = 'block';
         document.getElementById('dashboard-grid').style.display = 'none';
       }
     }
   } catch (_) {}
+}
+
+function showToast(message, type = 'info') {
+  const colors = { info: '#03466e', success: '#10b981', warning: '#f59e0b', error: '#ef4444' };
+  const icons  = { info: 'fa-info-circle', success: 'fa-check-circle', warning: 'fa-exclamation-triangle', error: 'fa-times-circle' };
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.25rem;right:1.25rem;z-index:9999;
+    display:flex;align-items:center;gap:.5rem;
+    padding:.625rem 1rem;border-radius:.625rem;
+    background:${colors[type] || colors.info};color:#fff;
+    font-size:.8125rem;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.18);
+    animation:slideUp .2s ease-out;`;
+  t.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${esc(message)}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, 3200);
 }
 
 // ───────────────────────────────────────────────────────────────
