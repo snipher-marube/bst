@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: analyticsmeta_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/analyticsmeta_test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      EMAIL_HOST_USER: ci@test.com
+      EMAIL_HOST_PASSWORD: ci-password
+      SUPPORT_EMAIL: support@test.com
+      SALES_EMAIL: sales@test.com
+      MPESA_CONSUMER_KEY: test-key
+      MPESA_CONSUMER_SECRET: test-secret
+      MPESA_SHORTCODE: "600000"
+      MPESA_PASSKEY: test-passkey
+      MPESA_CALLBACK_URL: http://localhost:8000/subscriptions/mpesa/callback/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: python manage.py migrate --no-input
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=apps --cov-report=term-missing --cov-fail-under=70 -v
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage

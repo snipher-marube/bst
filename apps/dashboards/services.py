@@ -57,8 +57,12 @@ class QueryEngine:
                 queryset = queryset.filter(**{f'data__{field}__icontains': value})
             elif operator == 'gt':
                 queryset = queryset.filter(**{f'data__{field}__gt': value})
+            elif operator == 'gte':
+                queryset = queryset.filter(**{f'data__{field}__gte': value})
             elif operator == 'lt':
                 queryset = queryset.filter(**{f'data__{field}__lt': value})
+            elif operator == 'lte':
+                queryset = queryset.filter(**{f'data__{field}__lte': value})
         return queryset
 
     def _execute_table_query(self, widget, limit):
@@ -105,11 +109,11 @@ class QueryEngine:
                 return cached
             
             # Execute based on widget type
-            if widget.widget_type == 'metric':
+            if widget.widget_type in ('metric', 'number', 'gauge'):
                 data = self._execute_metric_query(widget, limit)
             elif widget.widget_type == 'table':
                 data = self._execute_table_query(widget, limit)
-            elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart']:
+            elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap']:
                 data = self._execute_chart_query(widget, limit)
             else:
                 data = {"error": f"Unknown widget type: {widget.widget_type}"}

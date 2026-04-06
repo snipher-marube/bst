@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from rest_framework import permissions, serializers, status
+from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
@@ -54,7 +55,22 @@ class FileUploadThrottle(UserRateThrottle):
 # ---------------------------------------------------------------------------
 
 def _workspace(request):
-    return getattr(request.user, 'current_workspace', None)
+    """Resolve the active workspace for this request.
+
+    Resolution order:
+    1. current_workspace set by CurrentWorkspaceMiddleware (session/HTML flow)
+    2. X-Workspace-ID header (API/token-auth flow where middleware runs before auth)
+    """
+    ws = getattr(request.user, 'current_workspace', None)
+    if ws:
+        return ws
+    workspace_id = request.headers.get('X-Workspace-ID')
+    if workspace_id and request.user.is_authenticated:
+        try:
+            return Workspace.objects.get(id=workspace_id, members=request.user)
+        except Workspace.DoesNotExist:
+            return None
+    return None
 
 
 def _require_workspace(request):
@@ -82,7 +98,8 @@ class RegisterAPIView(APIView):
         if User.objects.filter(email=email).exists():
             return Response({'error': 'Email already registered'}, status=400)
         user = User.objects.create_user(username=email, email=email, password=password)
-        return Response({'id': user.id, 'email': user.email}, status=201)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'id': user.id, 'email': user.email, 'token': token.key}, status=201)
 
 
 class ProfileAPIView(APIView):
@@ -180,7 +197,7 @@ class TableListCreateAPIView(APIView):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
         if not ws.can_add_table():
             return Response({'error': 'Table limit reached for this workspace'}, status=400)
-        serializer = DataTableSerializer(data=request.data, context={'request': request})
+        serializer = DataTableSerializer(data=request.data, context={'request': request, 'workspace': ws})
         serializer.is_valid(raise_exception=True)
         # Table creation is atomic on its own; dashboard generation is async so a
         # dashboard failure never rolls back the committed table row.
@@ -321,10 +338,14 @@ class DashboardListCreateAPIView(APIView):
         })
 
     def post(self, request, workspace_id):
+        from django.db import IntegrityError
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
         serializer = DashboardSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        dashboard = serializer.save(workspace=ws, created_by=request.user)
+        try:
+            dashboard = serializer.save(workspace=ws, created_by=request.user)
+        except IntegrityError:
+            return Response({'error': 'A dashboard with this slug already exists in this workspace.'}, status=400)
         return Response(DashboardSerializer(dashboard, context={'request': request}).data, status=201)
 
 

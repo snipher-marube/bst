@@ -8,7 +8,7 @@
   .input-field:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(3,70,110,.1); }
 </style>
 
-{% block page_heading %}{% if form.instance.pk %}Edit Dashboard{% else %}New Dashboard{% endblock %}
+{% block page_heading %}{% if form.instance.pk %}Edit Dashboard{% else %}New Dashboard{% endif %}{% endblock %}
 
 <div class="max-w-2xl mx-auto px-4 sm:px-6 py-8">
   <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">

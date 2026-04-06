@@ -78,6 +78,7 @@ pyjwt==2.11.0
 pyopenssl==25.3.0
 pytest==9.0.2
 pytest-cov==7.1.0
+pytest-django==4.12.0
 python-dateutil==2.9.0.post0
 python-decouple==3.8
 python-json-logger==4.1.0

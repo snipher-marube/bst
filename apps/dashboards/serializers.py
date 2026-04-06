@@ -31,9 +31,9 @@ class DataTableSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'workspace', 'created_at', 'updated_at', 'record_count']
     
     def validate(self, data):
-        # Check workspace limits
-        workspace = self.context['request'].user.current_workspace
-        if not workspace.can_add_table() and not self.instance:
+        # Check workspace limits (workspace passed via context by the view)
+        workspace = self.context.get('workspace')
+        if workspace and not self.instance and not workspace.can_add_table():
             raise serializers.ValidationError("Workspace has reached maximum table limit")
         return data
 

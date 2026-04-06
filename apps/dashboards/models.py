@@ -309,11 +309,14 @@ class Record(models.Model):
             if not is_valid:
                 raise ValidationError(f"Record validation failed: {', '.join(errors)}")
 
-        # Update version for optimistic locking
-        if self.pk:
+        # UUID fields are set before save(), so use _state.adding instead of
+        # checking pk is None (which is always False for UUIDField defaults).
+        is_new = self._state.adding
+
+        # Update version for optimistic locking on updates
+        if not is_new:
             self.version += 1
 
-        is_new = self.pk is None
         super().save(*args, **kwargs)
 
         # Increment count with a single UPDATE … SET record_count = record_count + 1
@@ -550,4 +553,4 @@ class ImportJob(models.Model):
     def progress_pct(self):
         if self.total_rows == 0:
             return 0
-        return int((self.processed_rows / self.total_rows) * 100)
+        return min(100, int((self.processed_rows / self.total_rows) * 100))
