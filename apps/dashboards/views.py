@@ -693,7 +693,7 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
     """Delete a dashboard"""
     model = Dashboard
     template_name = 'dashboard/dashboard_confirm_delete.html'
-    success_url = reverse_lazy('dashboard:dashboards')
+    success_url = reverse_lazy('dashboard:home')
     
     def get_queryset(self):
         workspace = self.request.user.current_workspace

@@ -121,14 +121,13 @@ def health_check(request):
         'platform': platform.platform(),
         'django_version': __import__('django').get_version(),
         'environment': os.environ.get('DJANGO_SETTINGS_MODULE', 'unknown'),
-        'debug': __import__('django.conf').settings.DEBUG,
+        'debug': settings.DEBUG,
     }
     
     # 5. Application version (if available)
     try:
-        from django.conf import settings
         health_data['system']['site_name'] = getattr(settings, 'SITE_NAME', 'AnalyticsMeta')
-    except:
+    except Exception:
         pass
     
     # 6. Celery status (optional - checks if celery worker is responsive)

@@ -348,7 +348,7 @@ class MpesaTransaction(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"M-Pesa {self.phone_number} → KES {self.amount} ({self.status})"
+        return f"M-Pesa {self.phone_number} → KES {self.amount} ({self.status}) [{self.workspace}]"
 
 
 # ---------------------------------------------------------------------------
