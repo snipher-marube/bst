@@ -16,7 +16,7 @@ from django.utils.html import strip_tags
 logger = logging.getLogger(__name__)
 
 SITE_URL = getattr(settings, 'SITE_URL', 'http://localhost:8000')
-FROM_EMAIL = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@analyticsmeta.com')
+FROM_EMAIL = getattr(settings, 'DEFAULT_FROM_EMAIL')
 
 # Map notif_type → template name
 TYPE_TEMPLATES = {
