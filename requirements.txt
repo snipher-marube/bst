@@ -29,7 +29,7 @@ django-allauth==65.14.3
 django-debug-toolbar==6.3.0
 django-extensions==4.1
 django-ratelimit==4.1.0
-djangorestframework==3.16.1
+djangorestframework==3.17.1
 et-xmlfile==2.0.0
 executing==2.2.1
 factory-boy==3.3.3
