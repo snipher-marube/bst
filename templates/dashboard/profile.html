@@ -91,6 +91,80 @@
     </div>
   </div>
 
+  <!-- Notification preferences -->
+  <div class="section-card">
+    <div class="section-header">
+      <h2 class="font-semibold text-gray-900"><i class="fas fa-bell mr-2 text-[#03466e]"></i>Email Notifications</h2>
+    </div>
+    <div class="section-body">
+      <p class="text-sm text-gray-500 mb-5">Choose which events you want to be notified about by email.</p>
+      <form method="post" class="space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_notification_prefs">
+
+        <label class="flex items-center justify-between p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+          <div>
+            <p class="text-sm font-medium text-gray-800">Team invitations</p>
+            <p class="text-xs text-gray-500">When someone invites you to a workspace</p>
+          </div>
+          <div class="relative shrink-0">
+            <input type="checkbox" name="email_invites" {% if notif_prefs.email_invites %}checked{% endif %}
+                   class="sr-only peer">
+            <div class="w-10 h-6 bg-gray-200 peer-checked:bg-[#03466e] rounded-full transition peer-focus:ring-2 peer-focus:ring-[#03466e]/30"></div>
+            <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+
+        <label class="flex items-center justify-between p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+          <div>
+            <p class="text-sm font-medium text-gray-800">Import completed</p>
+            <p class="text-xs text-gray-500">When a CSV/Excel import finishes processing</p>
+          </div>
+          <div class="relative shrink-0">
+            <input type="checkbox" name="email_imports" {% if notif_prefs.email_imports %}checked{% endif %}
+                   class="sr-only peer">
+            <div class="w-10 h-6 bg-gray-200 peer-checked:bg-[#03466e] rounded-full transition peer-focus:ring-2 peer-focus:ring-[#03466e]/30"></div>
+            <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+
+        <label class="flex items-center justify-between p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+          <div>
+            <p class="text-sm font-medium text-gray-800">New AI insights</p>
+            <p class="text-xs text-gray-500">When AnalyticsMeta finds trends or anomalies in your data</p>
+          </div>
+          <div class="relative shrink-0">
+            <input type="checkbox" name="email_insights" {% if notif_prefs.email_insights %}checked{% endif %}
+                   class="sr-only peer">
+            <div class="w-10 h-6 bg-gray-200 peer-checked:bg-[#f68712] rounded-full transition peer-focus:ring-2 peer-focus:ring-[#f68712]/30"></div>
+            <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+
+        <label class="flex items-center justify-between p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+          <div>
+            <p class="text-sm font-medium text-gray-800">System & account alerts</p>
+            <p class="text-xs text-gray-500">Important notices about your account or workspace</p>
+          </div>
+          <div class="relative shrink-0">
+            <input type="checkbox" name="email_system" {% if notif_prefs.email_system %}checked{% endif %}
+                   class="sr-only peer">
+            <div class="w-10 h-6 bg-gray-200 peer-checked:bg-[#03466e] rounded-full transition peer-focus:ring-2 peer-focus:ring-[#03466e]/30"></div>
+            <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+
+        <div class="flex justify-end pt-2">
+          <button type="submit"
+            class="px-5 py-2.5 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition"
+            style="background:var(--primary)">
+            Save Preferences
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Connected accounts -->
   <div class="section-card">
     <div class="section-header">

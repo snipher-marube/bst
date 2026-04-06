@@ -1,0 +1,33 @@
+{% extends 'notifications/email/base.html' %}
+
+{% block icon_bg %}#f68712{% endblock %}
+{% block icon_emoji %}💡{% endblock %}
+{% block heading %}New Insight Ready{% endblock %}
+{% block subheading %}AI analysis of your workspace data{% endblock %}
+{% block cta_label %}View Insights Dashboard{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+  AnalyticsMeta has finished analyzing your workspace data and surfaced new insights.
+</p>
+
+<div style="background-color:#fff7ed;border-left:4px solid #f68712;border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:20px;">
+  <p style="margin:0;color:#374151;font-size:14px;line-height:1.6;font-style:italic;">
+    "{{ notification.message }}"
+  </p>
+</div>
+
+{% with meta=notification.metadata %}
+{% if meta.tables_analyzed %}
+<p style="margin:0 0 8px;color:#6b7280;font-size:13px;">
+  <strong style="color:#374151;">{{ meta.tables_analyzed }}</strong> table{{ meta.tables_analyzed|pluralize }} analyzed
+  {% if meta.insights_count %}&nbsp;·&nbsp;<strong style="color:#374151;">{{ meta.insights_count }}</strong> insight{{ meta.insights_count|pluralize }} found{% endif %}
+</p>
+{% endif %}
+{% endwith %}
+
+<p style="margin:16px 0 0;color:#9ca3af;font-size:13px;">
+  You're receiving this because you have insight notifications enabled.
+  You can turn these off in your <a href="{{ unsubscribe_url }}" style="color:#f68712;text-decoration:none;">notification preferences</a>.
+</p>
+{% endblock %}

@@ -64,8 +64,8 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ---
 
-### [ ] 3. Email Notifications Wired Up
-**Status:** Not Started  
+### [x] 3. Email Notifications Wired Up
+**Status:** Done (2026-04-06)  
 **Impact:** Notification model has 7 types but zero email delivery. Users never know when imports finish or insights are ready.  
 **Effort:** Low
 
@@ -303,7 +303,7 @@ Mark status as `[x]` when done, `[~]` when in progress.
 |---|---------|----------|--------|--------|
 | 1 | Onboarding wizard + sample data | P0 | Done | Medium |
 | 2 | Real AI/LLM integration | P0 | Not Started | Medium |
-| 3 | Email notifications | P0 | Not Started | Low |
+| 3 | Email notifications | P0 | Done | Low |
 | 4 | Public dashboard viewer | P1 | Not Started | Low |
 | 5 | Data alerts & thresholds | P1 | Not Started | Medium |
 | 6 | Test suite (70% coverage) | P1 | Not Started | High |

@@ -75,7 +75,7 @@ STATIC_ROOT = BASE_DIR / '../staticfiles'
 # ─────────────────────────────────────────────────────────────────────────────
 EMAIL_BACKEND = os.environ.get(
     'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend',
+    'django.core.mail.backends.smtp.EmailBackend',
 )
 
 # ─────────────────────────────────────────────────────────────────────────────

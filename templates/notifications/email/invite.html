@@ -1,0 +1,36 @@
+{% extends 'notifications/email/base.html' %}
+
+{% block icon_bg %}#03466e{% endblock %}
+{% block icon_emoji %}👋{% endblock %}
+{% block heading %}You've been invited{% endblock %}
+{% block subheading %}Join a workspace on AnalyticsMeta{% endblock %}
+{% block cta_label %}Accept Invitation{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+  You've been invited to join
+  <strong style="color:#03466e;">{{ notification.workspace.name }}</strong>
+  on AnalyticsMeta.
+</p>
+<p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
+  {{ notification.message }}
+</p>
+<div style="background-color:#f8fafc;border-radius:10px;padding:16px 20px;margin-bottom:8px;">
+  <table cellpadding="0" cellspacing="0" width="100%">
+    <tr>
+      <td style="color:#6b7280;font-size:13px;">Workspace</td>
+      <td style="color:#111827;font-size:13px;font-weight:600;text-align:right;">{{ notification.workspace.name }}</td>
+    </tr>
+    <tr><td colspan="2" style="height:8px;"></td></tr>
+    <tr>
+      <td style="color:#6b7280;font-size:13px;">Your role</td>
+      <td style="color:#111827;font-size:13px;font-weight:600;text-align:right;">
+        {{ notification.metadata.role|default:"Editor"|capfirst }}
+      </td>
+    </tr>
+  </table>
+</div>
+<p style="margin:16px 0 0;color:#9ca3af;font-size:13px;">
+  This invitation expires in 7 days. If you weren't expecting this, you can safely ignore it.
+</p>
+{% endblock %}

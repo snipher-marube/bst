@@ -922,6 +922,37 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     """User profile settings"""
     template_name = 'dashboard/profile.html'
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from apps.notifications.models import NotificationPreference
+        prefs, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
+        context['notif_prefs'] = prefs
+        return context
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get('action')
+
+        if action == 'update_profile':
+            request.user.first_name = request.POST.get('first_name', '').strip()
+            request.user.last_name  = request.POST.get('last_name', '').strip()
+            request.user.save(update_fields=['first_name', 'last_name'])
+            messages.success(request, 'Profile updated successfully.')
+            return redirect('dashboard:profile')
+
+        if action == 'update_notification_prefs':
+            from apps.notifications.models import NotificationPreference
+            prefs, _ = NotificationPreference.objects.get_or_create(user=request.user)
+            prefs.email_invites  = 'email_invites'  in request.POST
+            prefs.email_imports  = 'email_imports'  in request.POST
+            prefs.email_insights = 'email_insights' in request.POST
+            prefs.email_system   = 'email_system'   in request.POST
+            prefs.save()
+            messages.success(request, 'Notification preferences saved.')
+            return redirect('dashboard:profile')
+
+        messages.error(request, 'Unknown action.')
+        return redirect('dashboard:profile')
+
 
 class TableExportView(LoginRequiredMixin, TemplateView):
     """Proxy to the exports app – supports ?format=csv|json|excel"""
