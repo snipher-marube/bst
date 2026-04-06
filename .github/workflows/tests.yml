@@ -53,11 +53,6 @@ jobs:
       GOOGLE_CLIENT_SECRET: dummy-google-client-secret-for-ci
       LINKEDIN_CLIENT_ID: dummy-linkedin-client-is-for-ci
       LINKEDIN_CLIENT_SECRET: dummy-linkedin-client-secret-for-ci
-      PG_DATABASE_NAME_DEV: analyticsmeta
-      PG_DATABASE_USER_DEV: postgres
-      PG_DATABASE_HOST_DEV: localhost
-      PG_DATABASE_PORT_DEV: 5432
-      PG_DATABASE_PASSWORD_DEV: postgres
 
     steps:
       - uses: actions/checkout@v4
