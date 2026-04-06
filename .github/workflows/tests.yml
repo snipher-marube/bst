@@ -49,6 +49,8 @@ jobs:
       MPESA_SHORTCODE: "600000"
       MPESA_PASSKEY: test-passkey
       MPESA_CALLBACK_URL: http://localhost:8000/subscriptions/mpesa/callback/
+      GOOGLE_CLIENT_ID: dummy-google-client-id-for-ci
+      GOOGLE_CLIENT_SECRET: dummy-google-client-secret-for-ci
 
     steps:
       - uses: actions/checkout@v4
