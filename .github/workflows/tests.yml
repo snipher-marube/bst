@@ -39,13 +39,13 @@ jobs:
       DJANGO_SETTINGS_MODULE: config.settings.development
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/analyticsmeta_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: ci-test-secret-key-not-for-production
-      EMAIL_HOST_USER: ci@test.com
-      EMAIL_HOST_PASSWORD: ci-password
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      EMAIL_HOST_USER: ${{ secrets.EMAIL_HOST_USER }}
+      EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
       SUPPORT_EMAIL: support@test.com
       SALES_EMAIL: sales@test.com
-      MPESA_CONSUMER_KEY: test-key
-      MPESA_CONSUMER_SECRET: test-secret
+      MPESA_CONSUMER_KEY: ${{ secrets.MPESA_CONSUMER_KEY }}
+      MPESA_CONSUMER_SECRET: ${{ secrets.MPESA_CONSUMER_SECRET }}
       MPESA_SHORTCODE: "600000"
       MPESA_PASSKEY: test-passkey
       MPESA_CALLBACK_URL: http://localhost:8000/subscriptions/mpesa/callback/
