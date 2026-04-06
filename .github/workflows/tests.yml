@@ -57,6 +57,7 @@ jobs:
       PG_DATABASE_USER_DEV: dummyuser
       PG_DATABASE_HOST_DEV: dummyhost
       PG_DATABASE_PORT_DEV: 5432
+      PG_DATABASE_PASSWORD_DEV: dummy_password
 
     steps:
       - uses: actions/checkout@v4
