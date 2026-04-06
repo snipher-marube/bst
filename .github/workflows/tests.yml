@@ -51,6 +51,12 @@ jobs:
       MPESA_CALLBACK_URL: http://localhost:8000/subscriptions/mpesa/callback/
       GOOGLE_CLIENT_ID: dummy-google-client-id-for-ci
       GOOGLE_CLIENT_SECRET: dummy-google-client-secret-for-ci
+      LINKEDIN_CLIENT_ID: dummy-linkedin-client-is-for-ci
+      LINKEDIN_CLIENT_SECRET: dummy-linkedin-client-secret-for-ci
+      PG_DATABASE_NAME_DEV: dummydb
+      PG_DATABASE_USER_DEV: dummyuser
+      PG_DATABASE_HOST_DEV: dummyhost
+      PG_DATABASE_PORT_DEV: 5432
 
     steps:
       - uses: actions/checkout@v4

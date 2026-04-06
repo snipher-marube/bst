@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
-    #'allauth.socialaccount.providers.linkedin_oauth2',
+    'allauth.socialaccount.providers.linkedin_oauth2',
     'rest_framework',
     'rest_framework.authtoken',
 
@@ -264,6 +264,19 @@ SOCIALACCOUNT_PROVIDERS = {
         'VERIFIED_EMAIL': True,  # Treat email as verified if provider says so
         'EMAIL_AUTHENTICATION': True,  # Auto-connect if email matches
     },
+    "openid_connect": {
+        "APPS": [
+            {
+                "provider_id": "linkedin",
+                "name": "LinkedIn",
+                "client_id": config("LINKEDIN_CLIENT_ID"),
+                "secret": config("LINKEDIN_CLIENT_SECRET"),
+                "settings": {
+                    "server_url": "https://www.linkedin.com/oauth",
+                },
+            }
+        ]
+    }
     
 }
 
