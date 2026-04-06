@@ -6,14 +6,119 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .models import Workspace, WorkspaceMembership, WorkspaceInvitation
+from .onboarding import OnboardingService, INDUSTRY_LABELS
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+# ---------------------------------------------------------------------------
+# Onboarding wizard
+# ---------------------------------------------------------------------------
+
+@login_required
+def onboarding_wizard(request, workspace_id):
+    """
+    3-step onboarding wizard shown immediately after workspace creation.
+    GET  → render wizard template
+    """
+    workspace = get_object_or_404(
+        Workspace, id=workspace_id, owner=request.user, is_active=True
+    )
+    if workspace.onboarding_completed:
+        return redirect('dashboard:home')
+
+    industries = [
+        {'key': k, 'label': v} for k, v in INDUSTRY_LABELS.items()
+    ]
+    return render(request, 'workspaces/onboarding.html', {
+        'workspace': workspace,
+        'industries': industries,
+    })
+
+
+@login_required
+@require_POST
+def onboarding_seed(request, workspace_id):
+    """
+    AJAX POST — called by the wizard at step 2.
+    Seeds sample data for the chosen industry and returns JSON with the
+    dashboard URL so the frontend can display it and advance to step 3.
+    """
+    workspace = get_object_or_404(
+        Workspace, id=workspace_id, owner=request.user, is_active=True
+    )
+
+    industry = request.POST.get('industry', 'other').strip().lower()
+
+    try:
+        dashboard = OnboardingService.seed_workspace(workspace, industry, request.user)
+        dashboard_url = f"/dashboard/dashboards/{dashboard.id}/"
+        return JsonResponse({
+            'ok': True,
+            'dashboard_url': dashboard_url,
+            'dashboard_name': dashboard.name,
+            'table_name': dashboard.name.replace(' Dashboard', ''),
+        })
+    except Exception as exc:
+        logger.exception("Onboarding seed failed for workspace %s: %s", workspace_id, exc)
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+
+
+@login_required
+@require_POST
+def onboarding_complete(request, workspace_id):
+    """
+    Final step — marks onboarding as done and redirects to the main dashboard.
+    Optionally sends team invitation emails if the user filled that field.
+    """
+    workspace = get_object_or_404(
+        Workspace, id=workspace_id, owner=request.user, is_active=True
+    )
+
+    # Mark complete
+    workspace.onboarding_completed = True
+    workspace.save(update_fields=['onboarding_completed'])
+
+    # Optional: send invite emails for comma-separated addresses
+    invite_emails_raw = request.POST.get('invite_emails', '').strip()
+    if invite_emails_raw:
+        emails = [e.strip().lower() for e in invite_emails_raw.split(',') if e.strip()]
+        for email in emails[:5]:  # cap at 5 invites during onboarding
+            if not email:
+                continue
+            invitation, _ = WorkspaceInvitation.objects.get_or_create(
+                workspace=workspace,
+                email=email,
+                defaults={'role': 'editor', 'invited_by': request.user},
+            )
+            accept_url = (
+                f"{getattr(settings, 'SITE_URL', 'http://localhost:8000')}"
+                f"/workspaces/invite/{invitation.token}/accept/"
+            )
+            try:
+                send_mail(
+                    subject=f"You're invited to join {workspace.name} on AnalyticsMeta",
+                    message=(
+                        f"Hi,\n\n"
+                        f"{request.user.email} has invited you to join \"{workspace.name}\".\n\n"
+                        f"Click to accept: {accept_url}\n\n"
+                        f"This link expires in 7 days.\n\n— The AnalyticsMeta Team"
+                    ),
+                    from_email=getattr(settings, 'SUPPORT_EMAIL', settings.EMAIL_HOST_USER),
+                    recipient_list=[email],
+                    fail_silently=True,
+                )
+            except Exception as exc:
+                logger.warning("Invite email failed for %s: %s", email, exc)
+
+    messages.success(request, f'Welcome to {workspace.name}! Your workspace is ready.')
+    return redirect('dashboard:home')
 
 
 def _can_manage(user, workspace):

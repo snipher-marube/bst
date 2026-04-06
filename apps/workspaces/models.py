@@ -149,6 +149,10 @@ class Workspace(models.Model):
     max_records_per_table  = models.IntegerField(default=1000)
     max_team_members       = models.IntegerField(default=1)
 
+    # Onboarding
+    industry              = models.CharField(max_length=50, blank=True, default='')
+    onboarding_completed  = models.BooleanField(default=False)
+
     class Meta:
         indexes = [
             models.Index(fields=['owner', 'is_active']),

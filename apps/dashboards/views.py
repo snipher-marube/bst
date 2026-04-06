@@ -122,9 +122,9 @@ class WorkspaceCreateView(LoginRequiredMixin, CreateView):
         # Set as current workspace
         self.request.session['current_workspace_id'] = str(workspace.id)
         self.request.session.save()
-        
-        messages.success(self.request, f'Workspace "{workspace.name}" created successfully!')
-        return redirect('dashboard:home')
+
+        # Send to onboarding wizard instead of bare home
+        return redirect('workspaces:onboarding', workspace_id=workspace.id)
 
 @require_POST
 def switch_workspace(request, pk):
@@ -799,8 +799,9 @@ class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
             # transient user attribute so the next request starts clean.
             request.session.pop('current_workspace_id', None)
             request.session.modified = True
-            if hasattr(request.user, 'current_workspace'):
-                del request.user.current_workspace
+            # SimpleLazyObject (request.user) doesn't support __delattr__,
+            # so set to None rather than del.
+            request.user.current_workspace = None
 
             messages.success(request, f'Workspace "{workspace_name}" has been permanently deleted.')
             return redirect('dashboard:workspaces')

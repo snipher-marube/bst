@@ -37,6 +37,144 @@
 
   {% else %}
 
+  {# ── Get Started checklist (hidden once onboarding is complete) ────── #}
+  {% if not workspace.onboarding_completed %}
+  <div class="bg-white rounded-2xl border border-[#03466e]/20 shadow-sm overflow-hidden"
+       x-data="{ open: true }">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50 cursor-pointer"
+         @click="open = !open">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-[#f68712]/10 flex items-center justify-center">
+          <i class="fas fa-rocket text-[#f68712] text-sm"></i>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-gray-800">Get started with AnalyticsMeta</p>
+          <p class="text-xs text-gray-400">
+            {% with done=stats.tables|add:0 %}
+              {% if stats.tables > 0 and stats.records > 0 %}Complete the steps below to unlock the full platform{% else %}4 quick steps to get value from your data{% endif %}
+            {% endwith %}
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        {# progress pill #}
+        {% with total=4 %}
+        {% with done=0 %}
+        {% if stats.tables > 0 %}{% with done=1 %}{% endwith %}{% endif %}
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full
+          {% if stats.tables > 0 and stats.records > 0 %}bg-green-100 text-green-700{% else %}bg-[#03466e]/10 text-[#03466e]{% endif %}">
+          {% if stats.tables > 0 and stats.records > 0 and stats.dashboards > 0 %}3{% elif stats.tables > 0 and stats.records > 0 %}2{% elif stats.tables > 0 %}1{% else %}0{% endif %}/4 done
+        </span>
+        {% endwith %}{% endwith %}
+        <i class="fas text-gray-400 text-sm transition-transform duration-200"
+           :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </div>
+    </div>
+
+    <div x-show="open" x-collapse>
+      <div class="divide-y divide-gray-50 px-5">
+
+        {# Step 1: Sample data (always done if we got here via wizard) #}
+        <div class="flex items-start gap-4 py-4">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-green-100">
+            <i class="fas fa-check text-green-600 text-xs"></i>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-semibold text-gray-700 line-through">Create your workspace</p>
+            <p class="text-xs text-gray-400">Your workspace "{{ workspace.name }}" is set up and ready.</p>
+          </div>
+        </div>
+
+        {# Step 2: Import or create data #}
+        <div class="flex items-start gap-4 py-4">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+            {% if stats.records > 0 %}bg-green-100{% else %}bg-gray-100{% endif %}">
+            <i class="fas {% if stats.records > 0 %}fa-check text-green-600{% else %}fa-upload text-gray-400{% endif %} text-xs"></i>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-semibold {% if stats.records > 0 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
+              Import or add your data
+            </p>
+            <p class="text-xs text-gray-400 mb-2">
+              {% if stats.records > 0 %}{{ stats.records }} record{{ stats.records|pluralize }} loaded.{% else %}Upload a CSV/Excel file or add records manually.{% endif %}
+            </p>
+            {% if stats.records == 0 and stats.tables > 0 %}
+            <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+               style="background:#03466e">
+              <i class="fas fa-upload text-xs"></i> Import CSV
+            </a>
+            {% elif stats.records == 0 %}
+            <a href="{% url 'dashboard:table_create' %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+               style="background:#03466e">
+              <i class="fas fa-plus text-xs"></i> Create Table
+            </a>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Step 3: View a dashboard #}
+        <div class="flex items-start gap-4 py-4">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+            {% if stats.dashboards > 0 %}bg-green-100{% else %}bg-gray-100{% endif %}">
+            <i class="fas {% if stats.dashboards > 0 %}fa-check text-green-600{% else %}fa-chart-pie text-gray-400{% endif %} text-xs"></i>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-semibold {% if stats.dashboards > 0 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
+              Explore your dashboard
+            </p>
+            <p class="text-xs text-gray-400 mb-2">
+              {% if stats.dashboards > 0 %}You have {{ stats.dashboards }} dashboard{{ stats.dashboards|pluralize }} ready.{% else %}Dashboards are auto-generated when you create a table.{% endif %}
+            </p>
+            {% if stats.dashboards > 0 and recent_dashboards %}
+            <a href="{% url 'dashboard:dashboard_detail' pk=recent_dashboards.0.id %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+               style="background:#f68712">
+              <i class="fas fa-eye text-xs"></i> View Dashboard
+            </a>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Step 4: Invite a teammate #}
+        <div class="flex items-start gap-4 py-4">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+            {% if stats.members > 1 %}bg-green-100{% else %}bg-gray-100{% endif %}">
+            <i class="fas {% if stats.members > 1 %}fa-check text-green-600{% else %}fa-user-plus text-gray-400{% endif %} text-xs"></i>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-semibold {% if stats.members > 1 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
+              Invite a teammate
+            </p>
+            <p class="text-xs text-gray-400 mb-2">
+              {% if stats.members > 1 %}{{ stats.members }} members collaborating.{% else %}Share your workspace — collaboration unlocks more insights.{% endif %}
+            </p>
+            {% if stats.members <= 1 %}
+            <a href="{% url 'dashboard:members' %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
+              <i class="fas fa-user-plus text-xs"></i> Invite Team
+            </a>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+
+      {# dismiss button #}
+      <div class="px-5 py-4 bg-gray-50 flex items-center justify-between">
+        <p class="text-xs text-gray-400">This checklist will disappear once you're all set up.</p>
+        <form method="post" action="{% url 'workspaces:onboarding_complete' workspace.id %}">
+          {% csrf_token %}
+          <button type="submit" class="text-xs font-medium text-gray-500 hover:text-gray-700 underline transition">
+            Dismiss checklist
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Stats row ─────────────────────────────────────────────────────── #}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">

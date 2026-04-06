@@ -19,8 +19,8 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ## P0 — Must Fix Before Launch
 
-### [ ] 1. Onboarding Wizard + Sample Data
-**Status:** Not Started  
+### [x] 1. Onboarding Wizard + Sample Data
+**Status:** Done (2026-04-06)  
 **Impact:** #1 churn driver — users land on an empty workspace with no guidance  
 **Effort:** Medium
 
@@ -301,7 +301,7 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 | # | Feature | Priority | Status | Effort |
 |---|---------|----------|--------|--------|
-| 1 | Onboarding wizard + sample data | P0 | Not Started | Medium |
+| 1 | Onboarding wizard + sample data | P0 | Done | Medium |
 | 2 | Real AI/LLM integration | P0 | Not Started | Medium |
 | 3 | Email notifications | P0 | Not Started | Low |
 | 4 | Public dashboard viewer | P1 | Not Started | Low |
