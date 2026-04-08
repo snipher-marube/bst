@@ -36,19 +36,29 @@ jobs:
           - 6379:6379
 
     env:
-      DJANGO_SETTINGS_MODULE: config.settings.development
+      DJANGO_SETTINGS_MODULE: config.settings.test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/analyticsmeta_test
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: ci-test-secret-key-not-for-production
-      EMAIL_HOST_USER: ci@test.com
-      EMAIL_HOST_PASSWORD: ci-password
+      SECRET_KEY: dummy-secret
+      EMAIL_HOST_USER: ci.test@ci.com
+      EMAIL_HOST_PASSWORD: dummy_password
       SUPPORT_EMAIL: support@test.com
       SALES_EMAIL: sales@test.com
-      MPESA_CONSUMER_KEY: test-key
-      MPESA_CONSUMER_SECRET: test-secret
+      MPESA_CONSUMER_KEY: dummy-mpessa-consumer-key
+      MPESA_CONSUMER_SECRET: dummy-consumer-secret
       MPESA_SHORTCODE: "600000"
       MPESA_PASSKEY: test-passkey
       MPESA_CALLBACK_URL: http://localhost:8000/subscriptions/mpesa/callback/
+      GOOGLE_CLIENT_ID: dummy-google-client-id-for-ci
+      GOOGLE_CLIENT_SECRET: dummy-google-client-secret-for-ci
+      LINKEDIN_CLIENT_ID: dummy-linkedin-client-is-for-ci
+      LINKEDIN_CLIENT_SECRET: dummy-linkedin-client-secret-for-ci
+      # Add back PG_DATABASE variables with test database name
+      PG_DATABASE_NAME_DEV: analyticsmeta_test
+      PG_DATABASE_USER_DEV: postgres
+      PG_DATABASE_HOST_DEV: localhost
+      PG_DATABASE_PORT_DEV: 5432
+      PG_DATABASE_PASSWORD_DEV: postgres
 
     steps:
       - uses: actions/checkout@v4

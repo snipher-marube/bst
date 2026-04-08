@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.linkedin_oauth2',
     'rest_framework',
     'rest_framework.authtoken',
+    'drf_spectacular',
 
     # Local apps
     'apps.core',
@@ -363,6 +364,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
@@ -380,6 +382,20 @@ REST_FRAMEWORK = {
         'registration': '10/hour',   # account creation — strict to block mass sign-ups
         'file_upload': '30/hour',    # import jobs per authenticated user
     }
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'AnalyticsMeta API',
+    'DESCRIPTION': (
+        'REST API for AnalyticsMeta — a multi-tenant BI SaaS platform. '
+        'All endpoints require Token authentication unless noted.'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+    },
 }
 
 # Session configuration - use Redis for sessions in production
