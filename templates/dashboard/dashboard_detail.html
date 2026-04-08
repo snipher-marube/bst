@@ -458,6 +458,20 @@ function renderTable(el, data) {
 }
 
 // ── Charts ──────────────────────────────────────────────────────
+
+// Returns true when every non-empty label looks like an ISO date or datetime.
+// Matches: "2025-11-24", "2025-11-24T00:00:00", "2025-11-24 00:00:00"
+function _labelsAreDates(labels) {
+  const iso = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/;
+  return labels.length > 0 && labels.every(l => iso.test(String(l)));
+}
+
+// Truncate "2025-11-24T00:00:00" → "2025-11-24" so Plotly gets a clean date string.
+function _toDateOnly(label) {
+  const s = String(label);
+  return (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) ? s.slice(0, 10) : s;
+}
+
 function renderChart(el, data, chartType, widget) {
   let labels = [], values = [];
 
@@ -473,18 +487,30 @@ function renderChart(el, data, chartType, widget) {
   if (!labels.length) { el.innerHTML = `<div class="state-center"><i class="fas fa-chart-bar" style="color:#e5e7eb"></i><p>Not enough data</p></div>`; return; }
 
   const nums = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
-  const title = ''; // shown in widget header
+
+  // Read axis title overrides from viz_config (e.g. "date", "revenue", "sales")
+  const viz      = widget?.viz_config || {};
+  const xTitle   = viz.x_axis ? String(viz.x_axis).replace(/_/g, ' ') : '';
+  const yTitle   = viz.y_axis ? String(viz.y_axis).replace(/_/g, ' ') : '';
+
+  // Detect whether x labels are ISO dates so we can tell Plotly to treat them
+  // as a time axis (proper tick spacing, formatting, zoom behaviour).
+  const isDateAxis = chartType === 'scatter' && _labelsAreDates(labels);
+  // Always pass clean YYYY-MM-DD strings to Plotly — strip any time component.
+  const xValues = isDateAxis ? labels.map(_toDateOnly) : labels;
 
   let traces = [];
   if (chartType === 'scatter') {
     traces = [{
       type: 'scatter', mode: 'lines+markers',
-      x: labels, y: nums,
+      x: xValues, y: nums,
       line: { color: BRAND.primary, width: 2.5, shape: 'spline' },
       marker: { color: BRAND.accent, size: 6, line: { color: '#fff', width: 1.5 } },
       fill: 'tozeroy',
       fillcolor: 'rgba(3,70,110,.06)',
-      hovertemplate: '<b>%{x}</b><br>%{y}<extra></extra>',
+      hovertemplate: isDateAxis
+        ? '<b>%{x|%d %b %Y}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>'
+        : '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else if (chartType === 'bar') {
     traces = [{
@@ -494,31 +520,46 @@ function renderChart(el, data, chartType, widget) {
         opacity: .85,
         line: { color: 'rgba(255,255,255,.6)', width: 1 },
       },
-      hovertemplate: '<b>%{x}</b><br>%{y}<extra></extra>',
+      hovertemplate: '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else {
     traces = [{
       type: 'pie', labels, values: nums,
       marker: { colors: BRAND.colors, line: { color: '#fff', width: 2 } },
-      hovertemplate: '<b>%{label}</b><br>%{value} (%{percent})<extra></extra>',
+      hovertemplate: '<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
       textinfo: 'percent',
       textfont: { size: 11 },
     }];
   }
 
+  // Bottom margin grows when we show axis titles so the labels aren't clipped.
+  const bMargin = chartType !== 'pie' ? (xTitle ? 56 : 40) : 10;
+  const lMargin = chartType !== 'pie' ? (yTitle ? 64 : 50) : 10;
+
   const layout = {
     paper_bgcolor: BRAND.paper,
     plot_bgcolor:  BRAND.paper,
-    margin: chartType === 'pie' ? {t:10, r:10, b:10, l:10} : {t:10, r:12, b:40, l:50},
+    margin: chartType === 'pie' ? {t:10, r:10, b:10, l:10} : {t:10, r:12, b:bMargin, l:lMargin},
     font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
     showlegend: false,
     xaxis: chartType !== 'pie' ? {
       gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
       tickfont: { size: 10 }, automargin: true,
+      // Tell Plotly this is a date axis so it formats ticks as dates.
+      ...(isDateAxis ? {
+        type: 'date',
+        tickformat: '%d %b %Y',
+        dtick: labels.length <= 14 ? 86400000       // daily ticks up to 14 pts
+             : labels.length <= 60 ? 7 * 86400000   // weekly ticks up to 60 pts
+             : 'M1',                                 // monthly ticks beyond that
+      } : {}),
+      ...(xTitle ? { title: { text: xTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
     yaxis: chartType !== 'pie' ? {
       gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
       tickfont: { size: 10 }, automargin: true,
+      tickformat: ',',
+      ...(yTitle ? { title: { text: yTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
   };
 

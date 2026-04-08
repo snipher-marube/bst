@@ -231,7 +231,13 @@ class QueryEngine:
                             # Skip None / blank labels
                             if raw is None or str(raw).strip() in ('', 'None', 'nan'):
                                 continue
-                            label = str(raw)
+                            # Normalise datetime strings to date-only (YYYY-MM-DD)
+                            # so labels are consistent regardless of whether the value
+                            # was stored with a time component (e.g. "2025-11-24T00:00:00").
+                            raw_str = str(raw)
+                            if len(raw_str) > 10 and raw_str[10] in ('T', ' ') and raw_str[:4].isdigit():
+                                raw_str = raw_str[:10]
+                            label = raw_str
                         else:
                             continue
 
@@ -259,8 +265,19 @@ class QueryEngine:
                     else:
                         grouped = dict(sums)
 
-                    # Sort keys — ISO date strings sort correctly alphabetically
-                    result[name] = {str(k): round(v, 4) for k, v in sorted(grouped.items())}
+                    # Sort keys chronologically when they look like ISO dates;
+                    # fall back to plain string sort for categorical labels.
+                    def _sort_key(k):
+                        try:
+                            from datetime import date as _date
+                            return (0, _date.fromisoformat(str(k)))
+                        except (ValueError, TypeError):
+                            return (1, str(k))
+
+                    result[name] = {
+                        str(k): round(v, 4)
+                        for k, v in sorted(grouped.items(), key=lambda kv: _sort_key(kv[0]))
+                    }
 
                 else:
                     # Scalar aggregation (used by metric widgets)
@@ -462,24 +479,67 @@ class DataImportService:
                 except (ValueError, TypeError):
                     pass  # leave as-is if conversion fails
 
-        # 5. Attempt to parse date-like string columns — store as ISO strings
+        # 5. Attempt to parse date-like string columns — store as ISO strings.
+        #    Try an explicit priority list of formats to avoid the mm/dd vs dd/mm
+        #    ambiguity that comes with pandas' infer_datetime_format heuristic.
+        #    Priority order: unambiguous ISO first, then day-first (KE/EU), then
+        #    month-first (US).  The format that parses the most rows without NaT wins.
+        _DATE_FORMATS = [
+            # ISO / unambiguous (year always 4 digits)
+            '%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d',
+            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S',
+            # Day-first — common in Kenya / Europe
+            '%d-%m-%Y', '%d/%m/%Y', '%d.%m.%Y',
+            '%d-%m-%y', '%d/%m/%y',
+            # Long written forms
+            '%d %B %Y', '%d-%b-%Y', '%d %b %Y',
+            # Month-first — US style (lowest priority)
+            '%m-%d-%Y', '%m/%d/%Y',
+            '%m-%d-%y', '%m/%d/%y',
+        ]
+
         for col in df.select_dtypes(include='object').columns:
-            sample = df[col].dropna().head(20)
+            sample = df[col].dropna().head(30)
             if len(sample) == 0:
                 continue
-            try:
-                pd.to_datetime(sample, infer_datetime_format=True, errors='raise')
-                # Keep original values as backup before conversion
-                original = df[col].copy()
-                parsed = pd.to_datetime(df[col], infer_datetime_format=True, errors='coerce')
-                nat_count = parsed.isna().sum() - df[col].isna().sum()
-                if nat_count / max(len(df), 1) < 0.2:
-                    # Store as ISO date strings so JSON serialisation is safe
-                    df[col] = parsed.dt.strftime('%Y-%m-%d').where(parsed.notna(), None)
-                    report.append(f"Standardised '{col}' to ISO date format (YYYY-MM-DD)")
-                # else: leave original strings intact
-            except Exception:
-                pass
+
+            best_parsed = None
+            best_fmt    = None
+            best_score  = -1
+
+            for fmt in _DATE_FORMATS:
+                try:
+                    trial = pd.to_datetime(sample, format=fmt, errors='coerce')
+                    score = trial.notna().sum()
+                    if score > best_score:
+                        best_score  = score
+                        best_fmt    = fmt
+                        best_parsed = trial
+                except Exception:
+                    continue
+
+            # Require at least 70 % of the sample rows to parse cleanly
+            if best_fmt is None or best_score < len(sample) * 0.7:
+                continue
+
+            parsed = pd.to_datetime(df[col], format=best_fmt, errors='coerce')
+            nat_new = parsed.isna().sum() - df[col].isna().sum()
+            if nat_new / max(len(df), 1) >= 0.2:
+                continue  # too many failures on full column — leave as-is
+
+            df[col] = parsed.dt.strftime('%Y-%m-%d').where(parsed.notna(), None)
+            report.append(
+                f"Standardised '{col}' to ISO date format (YYYY-MM-DD) "
+                f"using format '{best_fmt}'"
+            )
+
+        # 5b. Normalise datetime64 columns that pandas already parsed (e.g. Excel
+        #     native date cells).  These never reach step 5 because their dtype is
+        #     datetime64, not object.  Store as plain YYYY-MM-DD strings so every
+        #     date value in the JSON is consistent.
+        for col in df.select_dtypes(include='datetime64').columns:
+            df[col] = df[col].dt.strftime('%Y-%m-%d').where(df[col].notna(), None)
+            report.append(f"Normalised datetime column '{col}' to ISO date format (YYYY-MM-DD)")
 
         # 6. Report rows with all-None values (already dropped by parse_file, but re-check after cleaning)
         all_null = df.isnull().all(axis=1).sum()
