@@ -173,13 +173,18 @@ class TableCreateView(LoginRequiredMixin, CreateView):
     model = DataTable
     template_name = 'dashboard/table_form.html'
     fields = ['name', 'description', 'schema']
-    
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['schema'].required = False
+        return form
+
     def get_success_url(self):
         return reverse('dashboard:table_detail', kwargs={'pk': self.object.pk})
-    
+
     def form_valid(self, form):
         workspace = self.request.user.current_workspace
-        
+
         if not workspace.can_add_table():
             messages.error(self.request, 'Table limit reached.')
             return redirect('dashboard:tables')
@@ -259,17 +264,17 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
     model = DataTable
     template_name = 'dashboard/table_confirm_delete.html'
     success_url = reverse_lazy('dashboard:tables')
-    
+
     def get_queryset(self):
         workspace = self.request.user.current_workspace
         return DataTable.objects.filter(workspace=workspace, is_active=True)
-    
-    def delete(self, request, *args, **kwargs):
+
+    def form_valid(self, form):
         table = self.get_object()
         table.is_active = False
         table.deleted_at = timezone.now()
         table.save()
-        messages.success(request, f'Table "{table.name}" deleted successfully!')
+        messages.success(self.request, f'Table "{table.name}" deleted successfully!')
         return redirect(self.success_url)
 
 
@@ -586,6 +591,7 @@ class RecordDeleteView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         record = self.get_record(**self.kwargs)
         context['record'] = record
+        context['object'] = record
         context['table'] = record.table
         return context
 
@@ -701,12 +707,12 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
         workspace = self.request.user.current_workspace
         return Dashboard.objects.filter(workspace=workspace, is_active=True)
     
-    def delete(self, request, *args, **kwargs):
+    def form_valid(self, form):
         dashboard = self.get_object()
         dashboard.is_active = False
         dashboard.deleted_at = timezone.now()
         dashboard.save()
-        messages.success(request, f'Dashboard "{dashboard.name}" deleted successfully!')
+        messages.success(self.request, f'Dashboard "{dashboard.name}" deleted successfully!')
         return redirect(self.success_url)
 
 
