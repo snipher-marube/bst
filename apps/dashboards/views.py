@@ -173,13 +173,18 @@ class TableCreateView(LoginRequiredMixin, CreateView):
     model = DataTable
     template_name = 'dashboard/table_form.html'
     fields = ['name', 'description', 'schema']
-    
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['schema'].required = False
+        return form
+
     def get_success_url(self):
         return reverse('dashboard:table_detail', kwargs={'pk': self.object.pk})
-    
+
     def form_valid(self, form):
         workspace = self.request.user.current_workspace
-        
+
         if not workspace.can_add_table():
             messages.error(self.request, 'Table limit reached.')
             return redirect('dashboard:tables')
@@ -259,21 +264,39 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
     model = DataTable
     template_name = 'dashboard/table_confirm_delete.html'
     success_url = reverse_lazy('dashboard:tables')
-    
+
     def get_queryset(self):
         workspace = self.request.user.current_workspace
         return DataTable.objects.filter(workspace=workspace, is_active=True)
-    
-    def delete(self, request, *args, **kwargs):
+
+    def form_valid(self, form):
         table = self.get_object()
         table.is_active = False
         table.deleted_at = timezone.now()
         table.save()
-        messages.success(request, f'Table "{table.name}" deleted successfully!')
+        messages.success(self.request, f'Table "{table.name}" deleted successfully!')
         return redirect(self.success_url)
 
 
 class TableImportMixin:
+    """Shared multi-step file-import logic for ``TableImportView`` and
+    ``TableCreateFromImportView``.
+
+    The import flow has two POST steps:
+
+    1. **upload** — user submits a CSV/XLSX file.  The mixin parses it with
+       ``DataImportService``, stores the cleaned ``DataFrame`` in the cache
+       under a random ``import_id`` UUID, and renders the preview/mapping
+       template with column name → field type suggestions.
+
+    2. **map** — user confirms or adjusts the column→field mapping and
+       submits a second form.  The mixin retrieves the cached ``DataFrame``,
+       runs ``DataImportService.import_data()``, and returns
+       ``(table, result_dict)`` so the calling view can redirect with a
+       success/warning message.
+
+    Cache TTL for the staged ``DataFrame`` is 3600 seconds (1 hour).
+    """
     """Shared logic for multi-step file imports"""
 
     def handle_upload_step(self, request, table=None):
@@ -490,7 +513,18 @@ class RecordListView(LoginRequiredMixin, ListView):
 
 
 class RecordCreateView(LoginRequiredMixin, TemplateView):
-    """Create a new record (data entry form)"""
+    """Render the per-field data-entry form and save a new ``Record``.
+
+    GET renders ``dashboard/record_form.html`` with the parent table in
+    context so the template can build one ``<input>`` per schema field.
+
+    POST reads ``field_<name>`` keys from ``request.POST``, assembles the
+    ``data`` dict, and calls ``Record.objects.create()``.  Validation errors
+    from ``Record.save()`` (schema type checking) are caught and shown as
+    Django messages rather than raising an unhandled exception.
+
+    URL: ``/dashboard/tables/<uuid:table_id>/records/create/``
+    """
     template_name = 'dashboard/record_form.html'
     
     def get_context_data(self, **kwargs):
@@ -534,7 +568,18 @@ class RecordCreateView(LoginRequiredMixin, TemplateView):
 
 
 class RecordEditView(LoginRequiredMixin, TemplateView):
-    """Edit an existing record"""
+    """Render an edit form pre-populated with existing record data, then save changes.
+
+    GET returns ``dashboard/record_form.html`` with ``editing=True`` so the
+    template can adjust the form heading and submit label.
+
+    POST follows the same ``field_<name>`` convention as ``RecordCreateView``:
+    it rebuilds the entire ``data`` dict from POST keys, assigns it to
+    ``record.data``, and calls ``record.save()``.  The record's full history
+    is not retained — if audit history is needed, see ``AuditLog``.
+
+    URL: ``/dashboard/tables/<uuid:table_id>/records/<uuid:record_id>/edit/``
+    """
     template_name = 'dashboard/record_form.html'
 
     def get_record(self, **kwargs):
@@ -584,7 +629,10 @@ class RecordDeleteView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['record'] = self.get_record(**self.kwargs)
+        record = self.get_record(**self.kwargs)
+        context['record'] = record
+        context['object'] = record
+        context['table'] = record.table
         return context
 
     def post(self, request, *args, **kwargs):
@@ -699,12 +747,12 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
         workspace = self.request.user.current_workspace
         return Dashboard.objects.filter(workspace=workspace, is_active=True)
     
-    def delete(self, request, *args, **kwargs):
+    def form_valid(self, form):
         dashboard = self.get_object()
         dashboard.is_active = False
         dashboard.deleted_at = timezone.now()
         dashboard.save()
-        messages.success(request, f'Dashboard "{dashboard.name}" deleted successfully!')
+        messages.success(self.request, f'Dashboard "{dashboard.name}" deleted successfully!')
         return redirect(self.success_url)
 
 
@@ -811,7 +859,23 @@ class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
 
 
 class TeamMembersView(LoginRequiredMixin, ListView):
-    """Team members management"""
+    """List current workspace members and pending invitations.
+
+    Renders ``dashboard/members.html`` with:
+
+    ``memberships``
+        All ``WorkspaceMembership`` rows for the active workspace,
+        with ``user`` pre-fetched to avoid N+1 queries.
+    ``pending_invitations``
+        ``WorkspaceInvitation`` rows that have not been accepted or
+        revoked — shown in a separate section so owners/admins can
+        revoke stale invites.
+    ``workspace``
+        The active ``Workspace`` instance (used by the template to
+        check the viewer's role before showing management actions).
+
+    URL: ``/dashboard/members/``
+    """
     model = WorkspaceMembership
     template_name = 'dashboard/members.html'
     context_object_name = 'memberships'
@@ -837,7 +901,14 @@ class TeamMembersView(LoginRequiredMixin, ListView):
 
 
 class ActivityLogView(LoginRequiredMixin, ListView):
-    """View workspace activity log"""
+    """Paginated view of the workspace's ``AuditLog`` entries.
+
+    Shows the 50 most recent entries per page, ordered newest-first.
+    Each entry records who performed an action (create, update, delete,
+    export, invite, etc.), on which object, and with what changes.
+
+    URL: ``/dashboard/activity/``
+    """
     model = AuditLog
     template_name = 'dashboard/activity.html'
     context_object_name = 'logs'
@@ -919,7 +990,23 @@ class BillingView(LoginRequiredMixin, TemplateView):
 
 
 class ProfileView(LoginRequiredMixin, TemplateView):
-    """User profile settings"""
+    """User profile and notification-preference settings.
+
+    GET renders ``dashboard/profile.html`` with the user's current
+    ``NotificationPreference`` row (created on first visit if absent).
+
+    POST dispatches on the hidden ``action`` field:
+
+    ``update_profile``
+        Updates ``first_name`` and ``last_name`` using ``save(update_fields=…)``
+        so only those two columns hit the database.
+
+    ``update_notification_prefs``
+        Reads checkbox presence for ``email_invites``, ``email_imports``,
+        ``email_insights``, and ``email_system``; saves the preference row.
+
+    URL: ``/dashboard/profile/``
+    """
     template_name = 'dashboard/profile.html'
 
     def get_context_data(self, **kwargs):
@@ -955,7 +1042,15 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
 
 class TableExportView(LoginRequiredMixin, TemplateView):
-    """Proxy to the exports app – supports ?format=csv|json|excel"""
+    """Thin proxy to ``apps.exports.views.export_table``.
+
+    Delegates the actual file generation to the exports app so that
+    export logic can be tested and reused independently of the dashboard
+    URL namespace.  Accepts the same ``?format=csv|json|excel`` query
+    parameter as the underlying view.
+
+    URL: ``/dashboard/tables/<uuid:pk>/export/``
+    """
     template_name = None  # no template; returns file download
 
     def get(self, request, *args, **kwargs):
