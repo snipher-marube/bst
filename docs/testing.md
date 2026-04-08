@@ -254,4 +254,3 @@ request to `main` via `.github/workflows/tests.yml`.  The workflow:
 The workflow uses `DJANGO_SETTINGS_MODULE=config.settings.test` so all
 infrastructure-dependent settings (debug toolbar, Postgres dev credentials)
 are swapped for their test equivalents automatically.
-
