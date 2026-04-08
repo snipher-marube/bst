@@ -33,8 +33,8 @@ Last updated: 2026-04-08
 | README said "JWT" but API uses DRF Token auth | ✅ Closed | `docs/api-authentication.md` |
 | How to obtain and use an API token | ✅ Closed | `docs/api-authentication.md` |
 | Request/response examples for common endpoints | ✅ Closed | `docs/api-authentication.md` |
-| Full endpoint list | ⚠️ Partial | `README.md` has routes; no OpenAPI/Swagger schema yet |
-| OpenAPI / Swagger / drf-spectacular schema | ❌ Open | Not yet set up |
+| Full endpoint list | ✅ Closed | `README.md` has route table; live Swagger UI at `/api/v1/docs/` |
+| OpenAPI / Swagger / drf-spectacular schema | ✅ Closed | `drf-spectacular` wired up; see `docs/openapi-schema.md` |
 
 ---
 
@@ -91,15 +91,15 @@ Last updated: 2026-04-08
 
 | Item | Status | Location |
 |---|---|---|
-| Newsletter subscription flow | ⚠️ Partial | `NEWSLETTER.md` exists — review for completeness |
-| Campaign creation and sending | ⚠️ Partial | `NEWSLETTER.md` |
-| Webhook event processing (bounce/complaint handling) | ❌ Open | Not documented |
-| A/B test campaign setup | ❌ Open | Not documented |
+| Newsletter subscription flow | ✅ Closed | `NEWSLETTER.md` §1–3 |
+| Campaign creation and sending | ✅ Closed | `NEWSLETTER.md` §3–5 |
+| Webhook event processing (bounce/complaint handling) | ✅ Closed | `NEWSLETTER.md` §9 — full flow, payload shape, re-processing recipe |
+| A/B test campaign setup | ✅ Closed | `NEWSLETTER.md` §10 — step-by-step guide with model field reference |
 
 ---
 
-## Remaining open items (priority order)
+## Remaining open items
 
-1. **OpenAPI schema** — Add `drf-spectacular` to generate `/api/v1/schema/` and a Swagger UI at `/api/v1/docs/`
-2. **Newsletter webhook processing** — Document how bounce/complaint webhooks map to `WebhookEvent` → `process_webhook_event` Celery task
-3. **A/B test campaign setup** — Document how to create and track A/B newsletter campaigns
+All previously open items have been closed. The only ongoing maintenance items are:
+
+- **Auto-dashboard generation detail** — the high-level description in `README.md` is sufficient for most contributors; a full field-by-field reference could be added to `docs/widget-configuration.md` if needed.

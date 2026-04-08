@@ -254,19 +254,207 @@ All list assignments are preserved. Useful for recurring campaigns
 Bounces and complaints arrive via **webhooks** from your email provider (Gmail
 does not send webhooks — for production volume use SendGrid, SES, or Mailgun).
 
-Configure your provider to `POST` to:
+### Configure your provider
+
+Point your email provider's webhook to:
 ```
 https://yourdomain.com/newsletter/webhook/<provider>/
 ```
-Where `<provider>` is `sendgrid`, `ses`, `mailgun`, or `postmark`.
+Where `<provider>` is one of: `sendgrid`, `ses`, `mailgun`, or `postmark`.
 
-Events are stored in **Admin → Newsletter → Webhook Events** and processed
-asynchronously by Celery. Hard bounces automatically set subscriber
-status to `BOUNCED`.
+The endpoint (`POST /newsletter/webhook/<provider>/`) is `@csrf_exempt`.
+No authentication header is required — Safaricom-style validation is not
+implemented, so restrict inbound IPs at the Nginx/firewall level in production.
+
+### What happens when a webhook arrives
+
+```
+Email provider POSTs JSON to /newsletter/webhook/<provider>/
+  → view parses the payload
+  → WebhookEvent row created (processed=False)
+  → process_webhook_event.delay(event.id) queued in Celery
+  → Celery worker picks it up
+       ├── event_type == "open"      → CampaignRecipient.record_open()
+       ├── event_type == "click"     → CampaignRecipient.record_click(url)
+       ├── event_type == "bounce"    → BounceReport created
+       │                               hard bounce → Subscriber.status = BOUNCED
+       └── event_type == "complaint" → Subscriber.status = COMPLAINED
+  → event.processed = True, processed_at = now()
+```
+
+### Expected payload shape
+
+The `event` field in the JSON body drives routing. Normalise your provider's
+payload to match this shape before sending (or use a provider adapter):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `event` | string | yes | `open`, `click`, `bounce`, or `complaint` |
+| `email` | string | bounce / complaint | Subscriber email address |
+| `message_id` | string | open / click | Value of the `Message-ID` header set at send time |
+| `url` | string | click only | The destination URL that was clicked |
+| `bounce_type` | string | bounce only | `hard` or `soft` |
+| `reason` | string | bounce only | Human-readable reason (e.g. `550 5.1.1 No such user`) |
+
+**Example — hard bounce:**
+```json
+{
+  "event": "bounce",
+  "email": "user@example.com",
+  "bounce_type": "hard",
+  "reason": "550 5.1.1 The email account does not exist"
+}
+```
+
+**Example — complaint (spam report):**
+```json
+{
+  "event": "complaint",
+  "email": "user@example.com"
+}
+```
+
+**Example — open:**
+```json
+{
+  "event": "open",
+  "message_id": "<42.7.1717161600.0@AnalyticsMeta>"
+}
+```
+
+### Viewing processed events
+
+Go to **Admin → Newsletter → Webhook Events**.
+Each row shows provider, event type, processed status, and the raw payload.
+`WebhookEvent` rows are read-only — they cannot be edited or added manually.
+
+### Re-processing a failed event
+
+If Celery was down and an event wasn't processed:
+
+```python
+from apps.newsletter.tasks import process_webhook_event
+from apps.newsletter.models import WebhookEvent
+
+event = WebhookEvent.objects.get(id=<id>)
+event.processed = False
+event.save(update_fields=['processed'])
+process_webhook_event.delay(event.id)
+```
+
+### SendGrid provider adapter example
+
+SendGrid sends an array of events per request. Write a thin adapter view that
+splits the array and posts each item to the internal webhook handler:
+
+```python
+# In a custom view, before storing the WebhookEvent:
+import requests
+payload_list = json.loads(request.body)   # SendGrid sends a list
+for item in payload_list:
+    normalised = {
+        'event':      item.get('event'),
+        'email':      item.get('email'),
+        'message_id': item.get('smtp-id') or item.get('sg_message_id'),
+        'bounce_type': 'hard' if item.get('type') == 'blocked' else 'soft',
+        'reason':     item.get('reason', ''),
+        'url':        item.get('url', ''),
+    }
+    WebhookEvent.objects.create(
+        provider='sendgrid', event_type=normalised['event'], payload=normalised
+    )
+```
 
 ---
 
-## 10. Email Templates (Reusable Blocks)
+## 10. A/B Test Campaigns
+
+A/B testing lets you send two or more subject-line (or content) variants to a
+portion of your list, measure which performs better, then send the winner to
+the remainder.
+
+The `Campaign` model has three A/B fields:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `is_ab_test` | bool | Marks this campaign as the A/B test parent |
+| `ab_test_variants` | JSON list | IDs of the variant campaigns |
+| `ab_test_winner` | FK → Campaign | Set after declaring a winner |
+
+### Step-by-step
+
+#### 1. Create the variants
+
+Each variant is a normal campaign. The fastest way:
+
+1. Create your base campaign (Variant A) and save it.
+2. Select it in the list view → action **"📋 Duplicate"**.
+3. Open the duplicate → change the subject line (and/or content) → save.
+   This is Variant B.
+4. Repeat for additional variants if needed.
+
+#### 2. Set up the parent A/B test record
+
+Open Variant A in the admin and:
+- Tick **Is AB test** (`is_ab_test = True`).
+- In the **Advanced** fieldset, set `ab_test_variants` to the JSON array of
+  variant campaign IDs (including Variant A itself):
+
+```json
+[1, 2]
+```
+
+_(Replace 1 and 2 with the actual IDs of your variant campaigns.)_
+
+#### 3. Assign each variant to a list segment
+
+A/B tests work by splitting your audience. Do this manually:
+
+1. Create two sub-lists (e.g. `Weekly Digest — A` and `Weekly Digest — B`),
+   each containing roughly half of your active subscribers.
+2. Assign Variant A to `Weekly Digest — A` and Variant B to `Weekly Digest — B`.
+
+> Tip: Export all active subscribers from the main list → split the CSV 50/50
+> → import each half into its respective sub-list.
+
+#### 4. Send the variants
+
+Send each variant independently using the normal **Send Now** flow (§5).
+Both sends go to their respective sub-lists simultaneously.
+
+#### 5. Wait and compare results
+
+Wait at least 4 hours (or until open rates stabilise). Open each campaign
+in the admin and compare the **Open Rate** and **Click Rate** in the
+**Performance Statistics** fieldset.
+
+| Metric | Variant A | Variant B |
+|---|---|---|
+| Open rate | 28.4% | 34.1% ← winner |
+| Click rate | 3.2% | 4.8% ← winner |
+
+#### 6. Declare a winner and send to the remainder
+
+1. Open Variant A (the parent, `is_ab_test=True`).
+2. In the **Advanced** fieldset, set **AB test winner** to the winning campaign.
+3. Duplicate the winning variant one more time for the "remainder" send.
+4. Assign the duplicate to your main list (minus the A/B sub-lists).
+5. Send as normal.
+
+#### Tips for valid A/B tests
+
+- **Change one variable at a time** — subject line only, or content only.
+  Changing both makes it impossible to know what drove the difference.
+- **Equal split** — aim for a 50/50 audience split to get statistically
+  comparable results.
+- **Minimum sample size** — you need at least ~200 sends per variant to see
+  meaningful differences in open rate.
+- **Wait long enough** — most opens happen within 24 hours. Don't declare a
+  winner after 30 minutes.
+
+---
+
+## 11. Email Templates (Reusable Blocks)
 
 **Admin → Newsletter → Email Templates** stores reusable HTML snippets.
 
@@ -276,7 +464,7 @@ status to `BOUNCED`.
 
 ---
 
-## 11. Deliverability Checklist
+## 12. Deliverability Checklist
 
 Before your first production send, verify:
 
@@ -291,7 +479,7 @@ Before your first production send, verify:
 
 ---
 
-## 12. Management Commands
+## 13. Management Commands
 
 ```bash
 # Check Celery workers are alive
@@ -303,7 +491,7 @@ python manage.py send_campaigns
 
 ---
 
-## 13. Settings Reference
+## 14. Settings Reference
 
 In `config/settings/base.py`:
 

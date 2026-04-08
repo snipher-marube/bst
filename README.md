@@ -62,11 +62,15 @@ Extended documentation lives in the [`docs/`](docs/) folder.
 | Topic | File | Status |
 |---|---|---|
 | API authentication & token examples | [docs/api-authentication.md](docs/api-authentication.md) | Complete |
+| OpenAPI schema & Swagger UI setup | [docs/openapi-schema.md](docs/openapi-schema.md) | Complete |
 | WebSocket events reference | [docs/websockets.md](docs/websockets.md) | Complete |
 | Widget `query_config` & `viz_config` | [docs/widget-configuration.md](docs/widget-configuration.md) | Complete |
 | Google & LinkedIn OAuth setup | [docs/oauth-setup.md](docs/oauth-setup.md) | Complete |
 | Render.com deployment guide | [docs/render-deployment.md](docs/render-deployment.md) | Complete |
 | Dashboard performance bottlenecks | [docs/DASHBOARD_BOTTLENECKS.md](docs/DASHBOARD_BOTTLENECKS.md) | Complete |
+| Testing strategy & patterns | [docs/testing.md](docs/testing.md) | Complete |
+| Frontend patterns (Alpine.js + HTMX) | [docs/frontend-patterns.md](docs/frontend-patterns.md) | Complete |
+| Newsletter system operations | [NEWSLETTER.md](NEWSLETTER.md) | Complete |
 | Open documentation gaps | [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md) | Living document |
 
 > New contributors should read **[docs/api-authentication.md](docs/api-authentication.md)** and **[docs/websockets.md](docs/websockets.md)** before touching the backend, and **[docs/widget-configuration.md](docs/widget-configuration.md)** before touching dashboards.
@@ -448,7 +452,7 @@ POST   /api/v1/auth/register/
 POST   /api/v1/auth/password/reset/
 ```
 
-> **Note:** An OpenAPI / Swagger schema (`drf-spectacular`) is tracked as an open item in [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
+> **Interactive docs:** Browse and test every endpoint at [`/api/v1/docs/`](http://localhost:8000/api/v1/docs/) (Swagger UI) or download the raw schema from [`/api/v1/schema/`](http://localhost:8000/api/v1/schema/). See [docs/openapi-schema.md](docs/openapi-schema.md) for setup and customisation details.
 
 ---
 
@@ -673,7 +677,7 @@ class DataTableTestCase(TestCase):
 - Use `self.client.force_login(user)` for authenticated view tests
 - Do not mock the database — use real SQLite in tests (the default Django test runner handles this)
 
-> Testing documentation is an open item — see [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
+> Full testing guide including pytest setup, factories, and coverage configuration: [docs/testing.md](docs/testing.md).
 
 ### Submitting a Pull Request
 
@@ -698,11 +702,10 @@ New to the codebase? These areas are well-documented and self-contained:
 
 | Area | What to do | Relevant files |
 |---|---|---|
-| OpenAPI schema | Add `drf-spectacular`, expose `/api/v1/schema/` and Swagger UI | `config/urls.py`, `pyproject.toml` |
-| Template tag docs | Write reference for `dashboard_filters.py` custom filter | `apps/dashboards/templatetags/` |
-| Test coverage | Add `TestCase` classes for `apps/workspaces/` views | `apps/workspaces/tests.py` |
-| Newsletter webhooks | Document bounce/complaint → `WebhookEvent` → Celery task flow | `apps/newsletter/`, `DOCUMENTATION_GAPS.md` |
-| Frontend patterns doc | Write `docs/frontend-patterns.md` covering Alpine.js store + HTMX conventions | any template |
+| Test coverage — workspaces | Add `TestCase` classes for `apps/workspaces/` views | `apps/workspaces/tests.py` |
+| Test coverage — subscriptions | Add `TestCase` classes for M-Pesa and billing views | `apps/subscriptions/tests.py` |
+| `@extend_schema` annotations | Add OpenAPI summaries to all API v1 views | `apps/dashboards/urls_api_v1.py` |
+| Auto-dashboard deep-dive | Write field-by-field reference for `generate_default_dashboard()` | `apps/dashboards/models.py`, `docs/widget-configuration.md` |
 
 > All open items are tracked in [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
 
@@ -781,10 +784,9 @@ Planned features and open documentation tasks are tracked in two places:
 
 Highest-priority items right now:
 
-1. OpenAPI / Swagger schema via `drf-spectacular`
-2. Test coverage for `apps/workspaces/` and `apps/subscriptions/`
-3. Newsletter webhook (bounce/complaint) documentation
-4. Frontend patterns documentation (Alpine.js + HTMX conventions)
+1. Test coverage for `apps/workspaces/` and `apps/subscriptions/`
+2. Auto-dashboard generation deep-dive documentation
+3. Soft-delete / archive workflow for DataTables
 
 ---
 
