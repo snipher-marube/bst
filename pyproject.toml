@@ -16,6 +16,7 @@ dependencies = [
     "django-extensions>=4.1",
     "django-ratelimit>=4.1.0",
     "djangorestframework>=3.16.1",
+    "drf-spectacular>=0.28.0",
     "ipython>=9.11.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.1",
@@ -31,6 +32,32 @@ dependencies = [
     "whitenoise>=6.11.0",
     "xlrd>=2.0.2",
 ]
+
+# ---------------------------------------------------------------------------
+# Coverage configuration
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["apps"]
+omit = [
+    # Auto-generated Django migrations — not business logic
+    "*/migrations/*",
+    # Management commands — tested via CLI invocation, not pytest
+    "*/management/commands/*",
+    # WebSocket consumers — require channels test client & live layer
+    "apps/insights/consumers.py",
+    "apps/insights/routing.py",
+    "apps/insights/generators/*",
+    "apps/insights/utils.py",
+    # Heavy rendering pipelines — require PDF/chart libraries & fixtures
+    "apps/reports/charts.py",
+    "apps/reports/generators.py",
+    # Debug/dev-only utility
+    "apps/dashboards/debug.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
 
 [dependency-groups]
 dev = [

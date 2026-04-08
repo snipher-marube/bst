@@ -29,7 +29,8 @@ django-allauth==65.15.1
 django-debug-toolbar==6.3.0
 django-extensions==4.1
 django-ratelimit==4.1.0
-djangorestframework==3.16.1
+djangorestframework==3.17.1
+drf-spectacular==0.28.0
 et-xmlfile==2.0.0
 executing==2.2.1
 factory-boy==3.3.3
@@ -75,7 +76,7 @@ pycparser==3.0
 pyflakes==3.4.0
 pygments==2.19.2
 pyjwt==2.11.0
-pyopenssl==25.3.0
+pyopenssl==26.0.0
 pytest==9.0.2
 pytest-cov==7.1.0
 pytest-django==4.12.0
