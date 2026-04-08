@@ -36,7 +36,7 @@ jobs:
           - 6379:6379
 
     env:
-      DJANGO_SETTINGS_MODULE: config.settings.development
+      DJANGO_SETTINGS_MODULE: config.settings.test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/analyticsmeta_test
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: dummy-secret

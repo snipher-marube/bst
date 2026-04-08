@@ -39,10 +39,13 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CHANNEL_LAYERS['default']['CONFIG']['hosts'] = [(REDIS_HOST, REDIS_PORT)]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Debug Toolbar
+# Debug Toolbar  (never in CI/test environments — it requires the djdt URL
+# namespace to be registered and the middleware active simultaneously, which
+# breaks tests that don't set up the full URL conf)
 # ─────────────────────────────────────────────────────────────────────────────
-INSTALLED_APPS += ['debug_toolbar']
-MIDDLEWARE.insert(1, 'debug_toolbar.middleware.DebugToolbarMiddleware')
+if not os.environ.get('CI'):
+    INSTALLED_APPS += ['debug_toolbar']
+    MIDDLEWARE.insert(1, 'debug_toolbar.middleware.DebugToolbarMiddleware')
 
 INTERNAL_IPS = [
     '127.0.0.1',
