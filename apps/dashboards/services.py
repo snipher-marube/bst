@@ -768,100 +768,156 @@ class WorkspaceInsightService:
         date_fields    = [n for n, t in schema.items() if t in self.DATE_TYPES]
         text_fields    = [n for n, t in schema.items() if t in self.TEXT_TYPES]
 
-        # Keep only numeric fields that actually contain numbers in the data
+        # Keep only numeric fields that actually contain numbers in the data,
+        # then rank them so the most meaningful field (revenue/total/amount)
+        # is used as the primary metric throughout the dashboard.
         valid_numeric = self._filter_numeric_fields(numeric_fields, sample)
+        valid_numeric = sorted(
+            valid_numeric,
+            key=lambda f: self._score_field_for_kpi(f, schema.get(f, 'number')),
+            reverse=True,
+        )
+        # Primary value field — highest-scored numeric (e.g. Total KES, Revenue)
+        primary_value = valid_numeric[0] if valid_numeric else None
 
-        # Classify text fields by cardinality
-        low_card  = []   # 2–25 unique values  → bar / pie charts
+        # Classify text fields by cardinality, then rank by chart usefulness.
+        # very_low_card (2-8 unique)  → ideal for pie charts (also used in bar)
+        # low_card      (9-25 unique) → bar charts only
+        very_low_card, low_card = [], []
         for field in text_fields:
             unique = self._unique_values(field, sample)
-            if 2 <= len(unique) <= 25:
+            n = len(unique)
+            if 2 <= n <= 8:
+                very_low_card.append((field, n))   # (name, cardinality)
+            elif n <= 25:
                 low_card.append(field)
+
+        # For bar charts: sort purely by business relevance score.
+        # For pie charts: composite score = relevance - (cardinality / 10)
+        # so Status (2 values, score 3) beats Category (6 values, score 5)
+        # as a pie candidate: 3-0.2=2.8 vs 5-0.6=4.4 … actually Category still
+        # wins here. Use a stronger cardinality bonus: relevance * 2 - cardinality.
+        very_low_card_for_bar  = sorted([f for f, _ in very_low_card],
+                                        key=self._score_field_for_chart, reverse=True)
+        very_low_card_for_pie  = sorted(very_low_card,
+                                        key=lambda x: self._score_field_for_chart(x[0]) * 2 - x[1],
+                                        reverse=True)
+        very_low_card_for_pie  = [f for f, _ in very_low_card_for_pie]
+
+        low_card = sorted(low_card, key=self._score_field_for_chart, reverse=True)
+
+        # All categorical fields for bar charts (best-ranked first)
+        all_categorical = very_low_card_for_bar + low_card
 
         # Primary date field (first one detected)
         primary_date = date_fields[0] if date_fields else None
+        group_by     = primary_date if primary_date else 'created_at_date'
+        date_label   = self._clean_display_name(primary_date) if primary_date else 'Date'
 
         insights = []
         color_i  = 0
 
-        # ── KPI row ─────────────────────────────────────────────────────
-        insights.append(self._kpi_spec('Total Records', 'count', None, color_i))
+        # ── KPI row (up to 4 cards, always width=3) ──────────────────────
+        #
+        # Card 1: Total Transactions (always useful regardless of data type)
+        insights.append(self._kpi_spec('Total Transactions', 'count', None, color_i))
         color_i += 1
 
-        for field in valid_numeric[:3]:
-            ft     = schema.get(field, 'number')
-            prefix = '$' if ft == 'currency' else ''
-            suffix = '%' if ft == 'percentage' else ''
+        # Card 2: Sum of primary value field (e.g. Total Revenue)
+        if primary_value:
+            display_pv = self._clean_display_name(primary_value)
+            prefix_pv  = self._currency_prefix(primary_value, schema.get(primary_value))
             insights.append(
-                self._kpi_spec(f'Total {field}', 'sum', field, color_i,
-                               prefix=prefix, suffix=suffix)
+                self._kpi_spec(f'Total {display_pv}', 'sum', primary_value,
+                               color_i, prefix=prefix_pv)
             )
             color_i += 1
 
-        # Average for first numeric field when it makes sense
-        if len(valid_numeric) >= 1:
-            ft     = schema.get(valid_numeric[0], 'number')
-            prefix = '$' if ft == 'currency' else ''
+        # Card 3: Average of primary value field (e.g. Avg Revenue per transaction)
+        if primary_value:
             insights.append(
-                self._kpi_spec(f'Avg {valid_numeric[0]}', 'avg', valid_numeric[0],
-                               color_i, prefix=prefix)
+                self._kpi_spec(f'Avg {display_pv}', 'avg', primary_value,
+                               color_i, prefix=prefix_pv)
             )
             color_i += 1
 
-        # ── Trend charts (numeric value over the date field) ────────────
-        group_by    = primary_date if primary_date else 'created_at_date'
-        date_label  = primary_date if primary_date else 'Time'
+        # Card 4: Second meaningful numeric field (skip fields with negative score
+        # and skip fields whose display name is semantically redundant with the
+        # primary value — e.g. 'Subtotal' when primary is 'Total / Revenue').
+        primary_display_lower = display_pv.lower() if primary_value else ''
+        secondary_fields = [
+            f for f in valid_numeric[1:]
+            if self._score_field_for_kpi(f, schema.get(f, 'number')) >= 0
+            and f != primary_value
+            and self._clean_display_name(f).lower() not in (primary_display_lower, 'revenue', 'total')
+            and primary_display_lower not in self._clean_display_name(f).lower()
+        ]
+        if secondary_fields:
+            sec = secondary_fields[0]
+            display_sec = self._clean_display_name(sec)
+            prefix_sec  = self._currency_prefix(sec, schema.get(sec))
+            insights.append(
+                self._kpi_spec(f'Total {display_sec}', 'sum', sec,
+                               color_i, prefix=prefix_sec)
+            )
+            color_i += 1
 
-        for field in valid_numeric[:2]:
+        # ── Trend line charts ─────────────────────────────────────────────
+        # Line 1: primary value over time  (e.g. Revenue Over Time)
+        if primary_value:
             insights.append({
                 'type': 'line_chart',
-                'title': f'{field} by {date_label}',
+                'title': f'{display_pv} Over Time',
                 'width': 6, 'height': 4,
                 'query_config': {'aggregations': [
-                    {'type': 'sum', 'field': field, 'group_by': group_by, 'name': 'val'}
+                    {'type': 'sum', 'field': primary_value,
+                     'group_by': group_by, 'name': 'val'}
                 ]},
-                'viz_config': {'x_axis': group_by, 'y_axis': 'val'},
+                'viz_config': {'x_axis': date_label, 'y_axis': display_pv},
             })
 
-        # Records timeline when there are no numeric fields
-        if not valid_numeric and primary_date:
-            insights.append({
-                'type': 'line_chart',
-                'title': f'Records by {primary_date}',
-                'width': 6, 'height': 4,
-                'query_config': {'aggregations': [
-                    {'type': 'count', 'group_by': primary_date, 'name': 'val'}
-                ]},
-                'viz_config': {'x_axis': primary_date, 'y_axis': 'val'},
-            })
+        # Line 2: transaction count over time (always informative)
+        insights.append({
+            'type': 'line_chart',
+            'title': 'Transactions Over Time',
+            'width': 6, 'height': 4,
+            'query_config': {'aggregations': [
+                {'type': 'count', 'group_by': group_by, 'name': 'val'}
+            ]},
+            'viz_config': {'x_axis': date_label, 'y_axis': 'Transactions'},
+        })
 
-        # ── Categorical bar charts ───────────────────────────────────────
-        for field in low_card[:2]:
-            if valid_numeric:
-                # Show numeric total broken down by the category
-                agg   = {'type': 'sum', 'field': valid_numeric[0], 'group_by': field, 'name': 'val'}
-                title = f'{valid_numeric[0]} by {field}'
+        # ── Bar charts (up to 4 most meaningful categorical fields) ───────
+        for field in all_categorical[:4]:
+            display_field = self._clean_display_name(field)
+            if primary_value:
+                agg   = {'type': 'sum', 'field': primary_value,
+                         'group_by': field, 'name': 'val'}
+                title = f'{display_pv} by {display_field}'
+                y_lbl = display_pv
             else:
                 agg   = {'type': 'count', 'group_by': field, 'name': 'val'}
-                title = f'{field} Distribution'
+                title = f'{display_field} Distribution'
+                y_lbl = 'Count'
 
             insights.append({
                 'type': 'bar_chart',
                 'title': title,
                 'width': 6, 'height': 4,
                 'query_config': {'aggregations': [agg]},
-                'viz_config': {'x_axis': field, 'y_axis': 'val'},
+                'viz_config': {'x_axis': display_field, 'y_axis': y_lbl},
             })
 
-        # ── Pie chart for first categorical field ────────────────────────
-        if low_card:
-            cat = low_card[0]
-            if valid_numeric:
-                agg   = {'type': 'sum', 'field': valid_numeric[0], 'group_by': cat, 'name': 'val'}
-                title = f'{valid_numeric[0]} Split by {cat}'
+        # ── Pie charts (up to 2 very-low-cardinality fields, 2–8 values) ──
+        for field in very_low_card_for_pie[:2]:
+            display_field = self._clean_display_name(field)
+            if primary_value:
+                agg   = {'type': 'sum', 'field': primary_value,
+                         'group_by': field, 'name': 'val'}
+                title = f'{display_pv} by {display_field}'
             else:
-                agg   = {'type': 'count', 'group_by': cat, 'name': 'val'}
-                title = f'{cat} Breakdown'
+                agg   = {'type': 'count', 'group_by': field, 'name': 'val'}
+                title = f'{display_field} Breakdown'
 
             insights.append({
                 'type': 'pie_chart',
@@ -890,6 +946,111 @@ class WorkspaceInsightService:
             'query_config': {'aggregations': [agg]},
             'viz_config': {'icon': icon, 'color': color, 'prefix': prefix, 'suffix': suffix},
         }
+
+    def _score_field_for_kpi(self, field_name, field_type='number'):
+        """
+        Return an integer score for how useful a numeric field is as a KPI.
+        Higher = more meaningful.  Negative scores are excluded from KPI cards.
+
+        Rules applied (cumulative):
+          +5  field name contains a revenue/total/amount keyword
+          +2  field name contains 'subtotal' (useful but secondary to 'total')
+          +1  field name contains quantity/count/units keyword
+          -6  field name contains percent / % / rate / discount / tax
+              (summing these produces a nonsense number)
+          -4  field name suggests a unit price rather than a line total
+        """
+        name = field_name.lower()
+        score = 0
+        if any(k in name for k in ('revenue', 'sales', 'income', 'earnings')):
+            score += 5
+        elif 'total' in name and 'subtotal' not in name and 'sub total' not in name:
+            score += 5
+        elif 'subtotal' in name or 'sub total' in name:
+            score -= 1  # always redundant when a 'total' field exists
+        elif any(k in name for k in ('amount', 'value', 'price') ) and \
+                not any(k in name for k in ('unit price', 'price per', 'rate per', 'cost per')):
+            score += 3
+        if any(k in name for k in ('quantity', 'qty', 'units', 'pieces', 'count')):
+            score += 1
+        if any(k in name for k in ('percent', ' %', '%', 'rate', 'ratio', 'discount', 'tax')):
+            score -= 6
+        if any(k in name for k in ('unit price', 'price per', 'cost per', 'rate per')):
+            score -= 4
+        return score
+
+    def _score_field_for_chart(self, field_name):
+        """
+        Return an integer score for how useful a text field is as a chart dimension.
+        Higher = more meaningful breakdown axis.
+
+        Fields like 'Category', 'Species', 'Staff', 'Payment Method', 'Status'
+        score highly.  ID / name / description fields score negatively.
+        """
+        name = field_name.lower()
+        score = 0
+        if any(k in name for k in ('category', 'type', 'kind', 'class', 'group')):
+            score += 5
+        if any(k in name for k in ('species', 'breed', 'product', 'service', 'item', 'department')):
+            score += 4
+        if any(k in name for k in ('staff', 'agent', 'employee', 'rep', 'handler',
+                                   'doctor', 'vet', 'nurse', 'technician', 'assigned')):
+            score += 4
+        if any(k in name for k in ('payment', 'method', 'channel', 'mode', 'medium')):
+            score += 3
+        if any(k in name for k in ('status', 'state', 'stage', 'result', 'outcome')):
+            score += 3
+        if any(k in name for k in ('region', 'location', 'area', 'zone', 'branch',
+                                   'store', 'outlet', 'site')):
+            score += 3
+        if any(k in name for k in ('gender', 'sex', 'age group', 'tier', 'segment')):
+            score += 2
+        # Penalise identifier / free-text fields
+        if any(k in name for k in ('id', ' ref', 'reference', 'code', 'number',
+                                   'name', 'description', 'note', 'comment',
+                                   'remark', 'detail', 'info')):
+            score -= 4
+        return score
+
+    def _clean_display_name(self, field_name):
+        """
+        Convert a raw field name to a clean axis / title label.
+
+        Examples:
+          'Total (KES)'          → 'Revenue'
+          'Subtotal (KES)'       → 'Subtotal'
+          'Unit Price (KES)'     → 'Unit Price'
+          'Discount %'           → 'Discount'
+          'created_at_date'      → 'Date'
+          'payment_method'       → 'Payment Method'
+
+        When the bare name after stripping units is just 'Total' we return
+        'Revenue' instead — 'Total Total' as a KPI title reads poorly.
+        """
+        import re
+        if not field_name or field_name in ('created_at_date', 'created_at', '_created_at'):
+            return 'Date'
+        name = re.sub(r'\s*\([^)]*\)', '', field_name).strip()   # strip (units)
+        name = re.sub(r'[\s%/\\|]+$', '', name).strip()          # strip trailing symbols
+        name = name.replace('_', ' ').strip()
+        # Avoid generic single-word names that produce double-prefixed KPI titles
+        if name.lower() == 'total':
+            return 'Revenue'
+        if name.lower() == 'amount':
+            return 'Amount'
+        return name if name else field_name
+
+    def _currency_prefix(self, field_name, field_type=None):
+        """
+        Return a short currency prefix for KPI cards based on field name / type.
+        'Total (KES)' → 'KES '   'Revenue ($)' → '$'   fallback → ''
+        """
+        name = (field_name or '').lower()
+        if 'kes' in name:
+            return 'KES '
+        if field_type == 'currency':
+            return '$'
+        return ''
 
     def _filter_numeric_fields(self, fields, sample):
         """Return only fields that actually contain parseable numbers."""
