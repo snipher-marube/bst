@@ -769,6 +769,25 @@ class WorkspaceInsightService:
             key=lambda f: self._score_field_for_kpi(f, schema.get(f, 'number')),
             reverse=True,
         )
+
+        # Demote low-cardinality numeric fields that score poorly as KPIs
+        # (e.g. 'Year' with 16 unique values) to categorical chart dimensions.
+        # Strong negative KPI score (≤ -5) = summing this field is meaningless.
+        # If the field also has chart utility and ≤ 30 unique values, promote
+        # it to the appropriate cardinality bucket so it gets a bar chart.
+        _pending_numeric_demotions = []  # (field, n_unique) tuples
+        kept_numeric = []
+        for f in valid_numeric:
+            kpi_s = self._score_field_for_kpi(f, schema.get(f, 'number'))
+            if kpi_s <= -5:
+                n_unique = len(self._unique_values(f, sample))
+                if self._score_field_for_chart(f) > 0 and n_unique <= 30:
+                    _pending_numeric_demotions.append((f, n_unique))
+                # Either way, exclude from numeric KPI list
+            else:
+                kept_numeric.append(f)
+        valid_numeric = kept_numeric
+
         # Primary value field — highest-scored numeric (e.g. Total KES, Revenue)
         primary_value = valid_numeric[0] if valid_numeric else None
 
@@ -783,6 +802,13 @@ class WorkspaceInsightService:
                 very_low_card.append((field, n))   # (name, cardinality)
             elif n <= 25:
                 low_card.append(field)
+
+        # Merge demoted numeric fields (e.g. 'Year') into the appropriate bucket
+        for f, n in _pending_numeric_demotions:
+            if 2 <= n <= 8:
+                very_low_card.append((f, n))
+            elif n <= 25:
+                low_card.append(f)
 
         # For bar charts: sort purely by business relevance score.
         # For pie charts: composite score = relevance - (cardinality / 10)
@@ -979,6 +1005,7 @@ class WorkspaceInsightService:
         identically to space-separated names.
         """
         name = self._normalize_name(field_name)
+        words = set(name.split())
         score = 0
         if any(k in name for k in ('revenue', 'sales', 'income', 'earnings')):
             score += 5
@@ -986,15 +1013,19 @@ class WorkspaceInsightService:
             score += 5
         elif 'subtotal' in name or 'sub total' in name:
             score -= 1  # always redundant when a 'total' field exists
-        elif any(k in name for k in ('amount', 'value', 'price') ) and \
+        elif any(k in name for k in ('amount', 'value', 'price')) and \
                 not any(k in name for k in ('unit price', 'price per', 'rate per', 'cost per')):
             score += 3
-        if any(k in name for k in ('quantity', 'qty', 'units', 'pieces', 'count')):
+        if any(k in name for k in ('quantity', 'qty', 'units', 'pieces', 'count',
+                                   'mileage', 'odometer')):
             score += 1
         if any(k in name for k in ('percent', ' %', '%', 'rate', 'ratio', 'discount', 'tax')):
             score -= 6
         if any(k in name for k in ('unit price', 'price per', 'cost per', 'rate per')):
             score -= 4
+        # Year / model-year columns — summing years is meaningless as a KPI
+        if any(k in words for k in ('year', 'yr')):
+            score -= 8
         return score
 
     def _score_field_for_chart(self, field_name):
@@ -1009,17 +1040,20 @@ class WorkspaceInsightService:
         identically to space-separated names.
         """
         name = self._normalize_name(field_name)
+        words = set(name.split())
         score = 0
         if any(k in name for k in ('category', 'type', 'kind', 'class', 'group', 'segment')):
             score += 5
         if any(k in name for k in ('species', 'breed', 'product', 'service',
-                                   'item', 'department', 'brand')):
+                                   'item', 'department', 'brand',
+                                   'make', 'manufacturer', 'vendor', 'supplier',
+                                   'model', 'variant', 'trim', 'edition', 'version')):
             score += 4
         if any(k in name for k in ('staff', 'agent', 'employee', 'rep', 'handler',
                                    'doctor', 'vet', 'nurse', 'technician', 'assigned',
                                    'salesperson', 'seller', 'sales person')):
             score += 4
-        if any(k in name for k in ('payment', 'method', 'channel', 'mode', 'medium')):
+        if any(k in name for k in ('payment', 'method', 'channel', 'medium')) or 'mode' in words:
             score += 3
         if any(k in name for k in ('status', 'state', 'stage', 'result', 'outcome')):
             score += 3
@@ -1028,6 +1062,9 @@ class WorkspaceInsightService:
             score += 3
         if any(k in name for k in ('gender', 'sex', 'age group', 'tier', 'segment')):
             score += 2
+        # Year / model-year columns make excellent bar-chart dimensions
+        if any(k in words for k in ('year', 'yr', 'vintage')):
+            score += 3
         # Penalise identifier / free-text fields — match on word boundaries
         # by checking after normalisation (e.g. 'order id' not 'salesperson')
         words = set(name.split())
@@ -1103,6 +1140,12 @@ class WorkspaceInsightService:
         name = (field_name or '').lower()
         if 'kes' in name:
             return 'KES '
+        if 'usd' in name or '($)' in name:
+            return '$'
+        if 'gbp' in name or '(£)' in name:
+            return '£'
+        if 'eur' in name or '(€)' in name:
+            return '€'
         if field_type == 'currency':
             return '$'
         return ''
