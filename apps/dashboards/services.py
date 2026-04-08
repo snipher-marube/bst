@@ -2,11 +2,7 @@ import json
 import pandas as pd
 import numpy as np
 from django.conf import settings
-from django.db import connection
 from django.core.cache import cache
-from django.utils import timezone
-from typing import Dict, List, Any, Optional
-import hashlib
 import logging
 
 from apps.dashboards.models import Record
@@ -128,7 +124,7 @@ class QueryEngine:
             logger.error(f"Widget query error: {str(e)}", exc_info=True)
             return {"error": str(e)}
     
-    def _execute_metric_query(self, widget, limit):
+    def _execute_metric_query(self, widget, _limit):
         """Execute metric widget query"""
         from .models import Record
         
@@ -414,7 +410,6 @@ class DataImportService:
 
     def _sanitize_row(self, row):
         """Convert a row dict to contain only JSON-serializable Python native types."""
-        import datetime
         clean = {}
         for k, v in row.items():
             if v is None:
@@ -438,7 +433,6 @@ class DataImportService:
         import re
         report = []
         original_rows = len(df)
-        original_cols = list(df.columns)
 
         # 1. Strip whitespace from column names
         new_cols = [str(c).strip() for c in df.columns]
@@ -503,18 +497,16 @@ class DataImportService:
             if len(sample) == 0:
                 continue
 
-            best_parsed = None
-            best_fmt    = None
-            best_score  = -1
+            best_fmt   = None
+            best_score = -1
 
             for fmt in _DATE_FORMATS:
                 try:
                     trial = pd.to_datetime(sample, format=fmt, errors='coerce')
                     score = trial.notna().sum()
                     if score > best_score:
-                        best_score  = score
-                        best_fmt    = fmt
-                        best_parsed = trial
+                        best_score = score
+                        best_fmt   = fmt
                 except Exception:
                     continue
 
@@ -650,7 +642,7 @@ class WorkspaceInsightService:
 
         if not created:
             # Regenerate: wipe previously auto-generated widgets
-            dashboard.widgets.filter(title__startswith='[Auto]').delete()
+            dashboard.widgets.filter(title__startswith='[Auto]').delete()  # type: ignore[attr-defined]
 
         from django.db.models import Exists, OuterRef
         _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
@@ -828,7 +820,7 @@ class WorkspaceInsightService:
             display_pv = self._clean_display_name(primary_value)
             prefix_pv  = self._currency_prefix(primary_value, schema.get(primary_value))
             insights.append(
-                self._kpi_spec(f'Total {display_pv}', 'sum', primary_value,
+                self._kpi_spec(self._agg_title('sum', display_pv), 'sum', primary_value,
                                color_i, prefix=prefix_pv)
             )
             color_i += 1
@@ -836,7 +828,7 @@ class WorkspaceInsightService:
         # Card 3: Average of primary value field (e.g. Avg Revenue per transaction)
         if primary_value:
             insights.append(
-                self._kpi_spec(f'Avg {display_pv}', 'avg', primary_value,
+                self._kpi_spec(self._agg_title('avg', display_pv), 'avg', primary_value,
                                color_i, prefix=prefix_pv)
             )
             color_i += 1
@@ -857,7 +849,7 @@ class WorkspaceInsightService:
             display_sec = self._clean_display_name(sec)
             prefix_sec  = self._currency_prefix(sec, schema.get(sec))
             insights.append(
-                self._kpi_spec(f'Total {display_sec}', 'sum', sec,
+                self._kpi_spec(self._agg_title('sum', display_sec), 'sum', sec,
                                color_i, prefix=prefix_sec)
             )
             color_i += 1
@@ -947,7 +939,30 @@ class WorkspaceInsightService:
             'viz_config': {'icon': icon, 'color': color, 'prefix': prefix, 'suffix': suffix},
         }
 
-    def _score_field_for_kpi(self, field_name, field_type='number'):
+    def _normalize_name(self, field_name):
+        """
+        Return a lowercase, space-separated version of a field name so keyword
+        checks work regardless of whether the source used CamelCase, snake_case,
+        spaces, or a mix.
+
+        Examples:
+          'TotalRevenue'   → 'total revenue'
+          'unit_price'     → 'unit price'
+          'UnitPrice'      → 'unit price'
+          'Total (KES)'    → 'total  kes '   (parens stripped by callers)
+          'CustomerType'   → 'customer type'
+        """
+        import re
+        # 1. Insert space before each uppercase letter that follows a lowercase/digit
+        name = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', field_name)
+        # 2. Insert space before a run of uppercase letters followed by lowercase
+        #    e.g. "OrderID" → "Order ID"
+        name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', name)
+        # 3. Replace underscores and hyphens with spaces
+        name = name.replace('_', ' ').replace('-', ' ')
+        return name.lower().strip()
+
+    def _score_field_for_kpi(self, field_name, field_type='number'):  # noqa: ARG002
         """
         Return an integer score for how useful a numeric field is as a KPI.
         Higher = more meaningful.  Negative scores are excluded from KPI cards.
@@ -959,8 +974,11 @@ class WorkspaceInsightService:
           -6  field name contains percent / % / rate / discount / tax
               (summing these produces a nonsense number)
           -4  field name suggests a unit price rather than a line total
+
+        Uses _normalize_name so CamelCase / snake_case fields are handled
+        identically to space-separated names.
         """
-        name = field_name.lower()
+        name = self._normalize_name(field_name)
         score = 0
         if any(k in name for k in ('revenue', 'sales', 'income', 'earnings')):
             score += 5
@@ -986,29 +1004,38 @@ class WorkspaceInsightService:
 
         Fields like 'Category', 'Species', 'Staff', 'Payment Method', 'Status'
         score highly.  ID / name / description fields score negatively.
+
+        Uses _normalize_name so CamelCase / snake_case fields are handled
+        identically to space-separated names.
         """
-        name = field_name.lower()
+        name = self._normalize_name(field_name)
         score = 0
-        if any(k in name for k in ('category', 'type', 'kind', 'class', 'group')):
+        if any(k in name for k in ('category', 'type', 'kind', 'class', 'group', 'segment')):
             score += 5
-        if any(k in name for k in ('species', 'breed', 'product', 'service', 'item', 'department')):
+        if any(k in name for k in ('species', 'breed', 'product', 'service',
+                                   'item', 'department', 'brand')):
             score += 4
         if any(k in name for k in ('staff', 'agent', 'employee', 'rep', 'handler',
-                                   'doctor', 'vet', 'nurse', 'technician', 'assigned')):
+                                   'doctor', 'vet', 'nurse', 'technician', 'assigned',
+                                   'salesperson', 'seller', 'sales person')):
             score += 4
         if any(k in name for k in ('payment', 'method', 'channel', 'mode', 'medium')):
             score += 3
         if any(k in name for k in ('status', 'state', 'stage', 'result', 'outcome')):
             score += 3
         if any(k in name for k in ('region', 'location', 'area', 'zone', 'branch',
-                                   'store', 'outlet', 'site')):
+                                   'store', 'outlet', 'site', 'territory')):
             score += 3
         if any(k in name for k in ('gender', 'sex', 'age group', 'tier', 'segment')):
             score += 2
-        # Penalise identifier / free-text fields
-        if any(k in name for k in ('id', ' ref', 'reference', 'code', 'number',
-                                   'name', 'description', 'note', 'comment',
-                                   'remark', 'detail', 'info')):
+        # Penalise identifier / free-text fields — match on word boundaries
+        # by checking after normalisation (e.g. 'order id' not 'salesperson')
+        words = set(name.split())
+        if any(k in words for k in ('id', 'ref', 'code', 'no', 'num', 'number')):
+            score -= 4
+        if any(k in name for k in ('reference', 'description', 'note', 'comment',
+                                   'remark', 'detail', 'info', 'full name',
+                                   'client name', 'customer name')):
             score -= 4
         return score
 
@@ -1030,15 +1057,43 @@ class WorkspaceInsightService:
         import re
         if not field_name or field_name in ('created_at_date', 'created_at', '_created_at'):
             return 'Date'
-        name = re.sub(r'\s*\([^)]*\)', '', field_name).strip()   # strip (units)
-        name = re.sub(r'[\s%/\\|]+$', '', name).strip()          # strip trailing symbols
-        name = name.replace('_', ' ').strip()
-        # Avoid generic single-word names that produce double-prefixed KPI titles
+        # Strip parenthetical units: "Total (KES)" → "Total"
+        name = re.sub(r'\s*\([^)]*\)', '', field_name).strip()
+        # Strip trailing punctuation / unit symbols
+        name = re.sub(r'[\s%/\\|]+$', '', name).strip()
+        # Split CamelCase: "TotalRevenue" → "Total Revenue", "OrderID" → "Order ID"
+        name = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', name)
+        name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', name)
+        # Replace underscores / hyphens with spaces
+        name = name.replace('_', ' ').replace('-', ' ').strip()
+        # Avoid generic single-word names that produce doubled KPI titles
+        # e.g. "Total (KES)" → bare "Total" → rename to "Revenue"
         if name.lower() == 'total':
             return 'Revenue'
         if name.lower() == 'amount':
             return 'Amount'
         return name if name else field_name
+
+    def _agg_title(self, agg_type, display_name):
+        """
+        Build a KPI title without doubling the aggregation word.
+
+        _agg_title('sum', 'Revenue')        → 'Total Revenue'
+        _agg_title('sum', 'Total Revenue')  → 'Total Revenue'   (no double)
+        _agg_title('avg', 'Total Revenue')  → 'Avg Revenue'     (strip existing prefix)
+        _agg_title('sum', 'Units Sold')     → 'Total Units Sold'
+        """
+        agg_words = {'sum': 'Total', 'avg': 'Avg', 'count': 'Count',
+                     'max': 'Max', 'min': 'Min'}
+        prefix = agg_words.get(agg_type, 'Total')
+        # Strip any existing aggregation prefix from the display name so we
+        # don't produce 'Total Total Revenue' or 'Avg Total Revenue'.
+        clean = display_name
+        for word in agg_words.values():
+            if clean.lower().startswith(word.lower() + ' '):
+                clean = clean[len(word):].strip()
+                break
+        return f'{prefix} {clean}'
 
     def _currency_prefix(self, field_name, field_type=None):
         """
