@@ -16,6 +16,7 @@ dependencies = [
     "django-extensions>=4.1",
     "django-ratelimit>=4.1.0",
     "djangorestframework>=3.16.1",
+    "drf-spectacular>=0.28.0",
     "ipython>=9.11.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.1",
