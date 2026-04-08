@@ -1,7 +1,7 @@
 # Documentation Gaps — AnalyticsMeta
 
 Tracks what was missing and what has been written to close each gap.
-Last updated: 2026-04-04
+Last updated: 2026-04-08
 
 ---
 
@@ -81,9 +81,9 @@ Last updated: 2026-04-04
 | Item | Status | Location |
 |---|---|---|
 | Debug toolbar setup | ✅ Closed | Added to `development.py` + `urls.py`; access at `/__debug__/` |
-| Testing strategy and how to add tests | ❌ Open | No test documentation yet |
-| Frontend architecture (Alpine.js + HTMX patterns) | ❌ Open | Not yet documented |
-| Custom template tags (`dashboard_filters`) | ❌ Open | Not yet documented |
+| Testing strategy and how to add tests | ✅ Closed | `docs/testing.md` — pytest setup, factories, view/API/Celery patterns, coverage |
+| Frontend architecture (Alpine.js + HTMX patterns) | ✅ Closed | `docs/frontend-patterns.md` — Alpine components, state machines, CSRF, polling, Tailwind |
+| Custom template tags (`dashboard_filters`) | ✅ Closed | `apps/dashboards/templatetags/dashboard_filters.py` — module docstring + full `get_item` docstring |
 
 ---
 
@@ -101,7 +101,5 @@ Last updated: 2026-04-04
 ## Remaining open items (priority order)
 
 1. **OpenAPI schema** — Add `drf-spectacular` to generate `/api/v1/schema/` and a Swagger UI at `/api/v1/docs/`
-2. **Testing guide** — Document how to run tests, what factories exist (`factory-boy`), how to write new tests
-3. **Newsletter webhook processing** — Document how bounce/complaint webhooks map to `WebhookEvent` → `process_webhook_event` Celery task
-4. **Frontend patterns** — Document Alpine.js store structure and HTMX partial URL conventions
-5. **Custom template tags** — Document `dashboard_filters.py` filter reference
+2. **Newsletter webhook processing** — Document how bounce/complaint webhooks map to `WebhookEvent` → `process_webhook_event` Celery task
+3. **A/B test campaign setup** — Document how to create and track A/B newsletter campaigns
