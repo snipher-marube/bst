@@ -76,7 +76,7 @@ pycparser==3.0
 pyflakes==3.4.0
 pygments==2.19.2
 pyjwt==2.11.0
-pyopenssl==25.3.0
+pyopenssl==26.0.0
 pytest==9.0.2
 pytest-cov==7.1.0
 pytest-django==4.12.0
