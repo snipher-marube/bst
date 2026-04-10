@@ -1,0 +1,31 @@
+employee_id,department,position,salary,hire_date,attendance,leave_days,status
+EMP-001,Engineering,Senior Developer,180000,2021-03-15,96,5,Active
+EMP-002,Sales,Account Manager,95000,2020-07-01,88,12,Active
+EMP-003,HR,HR Officer,75000,2022-01-10,94,3,Active
+EMP-004,Finance,Accountant,110000,2019-11-20,91,8,Active
+EMP-005,Engineering,Junior Developer,120000,2023-02-28,98,2,Active
+EMP-006,Marketing,Marketing Lead,105000,2020-09-05,85,15,Active
+EMP-007,Sales,Sales Executive,85000,2021-06-14,90,7,Active
+EMP-008,Operations,Operations Manager,130000,2018-04-03,93,6,Active
+EMP-009,Engineering,DevOps Engineer,160000,2022-08-22,97,4,Active
+EMP-010,Finance,Finance Manager,145000,2017-12-01,92,5,Active
+EMP-011,HR,Recruiter,70000,2023-05-15,89,10,Active
+EMP-012,Sales,Sales Manager,115000,2019-03-18,87,14,Active
+EMP-013,Engineering,QA Engineer,125000,2022-11-07,95,3,Active
+EMP-014,Marketing,Content Strategist,88000,2021-09-30,83,18,Inactive
+EMP-015,Operations,Logistics Officer,80000,2020-06-25,91,8,Active
+EMP-016,Engineering,Backend Developer,155000,2021-01-12,99,1,Active
+EMP-017,Finance,Payroll Officer,90000,2022-04-19,94,5,Active
+EMP-018,Sales,Sales Executive,85000,2023-07-03,86,11,Active
+EMP-019,HR,HR Manager,100000,2018-08-14,95,4,Active
+EMP-020,Engineering,Frontend Developer,140000,2022-06-01,97,2,Active
+EMP-021,Marketing,Digital Marketer,92000,2021-11-22,88,9,Active
+EMP-022,Operations,Warehouse Supervisor,78000,2020-02-10,90,7,Active
+EMP-023,Finance,Auditor,115000,2019-07-29,93,6,Active
+EMP-024,Sales,Account Executive,90000,2023-01-17,84,13,Active
+EMP-025,Engineering,Data Engineer,165000,2022-09-05,98,2,Active
+EMP-026,HR,Training Officer,72000,2021-04-08,92,5,Active
+EMP-027,Marketing,Brand Manager,108000,2020-12-14,86,12,Inactive
+EMP-028,Operations,Fleet Manager,95000,2019-05-27,89,9,Active
+EMP-029,Finance,Tax Specialist,120000,2021-08-03,96,3,Active
+EMP-030,Engineering,Security Engineer,158000,2023-03-20,99,1,Active

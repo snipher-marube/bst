@@ -1,0 +1,31 @@
+order_id,customer,amount,region,notes,delivery_date,status
+ORD-001,Alice,5400,,Express delivery needed,,Shipped
+ORD-002,Bob,2200,Nairobi,,,Delivered
+ORD-003,Carol,,Mombasa,,2024-01-15,Pending
+ORD-004,David,8800,Kisumu,Handle with care,2024-01-18,Shipped
+ORD-005,Eve,3100,,,,Pending
+ORD-006,Frank,6700,Nakuru,,,Delivered
+ORD-007,Grace,,Nairobi,Fragile item,,Shipped
+ORD-008,Henry,4400,Mombasa,,,Delivered
+ORD-009,Irene,9900,,Return requested,,Returned
+ORD-010,James,1800,Kisumu,,,Pending
+ORD-011,Karen,,Nakuru,,2024-02-05,Shipped
+ORD-012,Liam,7200,Nairobi,,,Delivered
+ORD-013,Mary,3800,,,2024-02-12,Shipped
+ORD-014,Noah,,Mombasa,Cold chain required,,Pending
+ORD-015,Olivia,5600,Kisumu,,,Delivered
+ORD-016,Peter,2900,,,,Pending
+ORD-017,Quinn,11000,Nakuru,Signature required,2024-02-22,Delivered
+ORD-018,Rachel,,Nairobi,,,Shipped
+ORD-019,Samuel,4200,Mombasa,,,Delivered
+ORD-020,Tina,6800,,,2024-03-01,Shipped
+ORD-021,Umar,,Kisumu,Oversized item,,Pending
+ORD-022,Vera,3400,Nakuru,,,Delivered
+ORD-023,William,7900,Nairobi,,,Shipped
+ORD-024,Xenia,,Mombasa,,2024-03-10,Delivered
+ORD-025,Yusuf,5100,Kisumu,,,Delivered
+ORD-026,Zara,8300,,Priority shipment,,Shipped
+ORD-027,Aaron,,Nakuru,,,Pending
+ORD-028,Bella,4700,Nairobi,,,Delivered
+ORD-029,Charles,6100,Mombasa,,,Shipped
+ORD-030,Diana,,Kisumu,,2024-03-28,Delivered

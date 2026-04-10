@@ -543,6 +543,90 @@ class DataImportService:
         if rows_removed and not any('duplicate' in r or 'empty' in r for r in report):
             report.append(f"Removed {rows_removed} row(s) during cleaning")
 
+        # 7. Normalise boolean-like text columns → Python True/False
+        #    Require ≥85 % of non-null values to match known boolean words.
+        BOOL_TRUE  = {'yes', 'y', 'true', 't', '1', 'on', 'active', 'enabled',
+                      'correct', 'valid', 'present', 'pass'}
+        BOOL_FALSE = {'no', 'n', 'false', 'f', '0', 'off', 'inactive', 'disabled',
+                      'incorrect', 'invalid', 'absent', 'fail'}
+        ALL_BOOL   = BOOL_TRUE | BOOL_FALSE
+        bool_cols  = []
+        for col in df.select_dtypes(include='object').columns:
+            samp = df[col].dropna()
+            if len(samp) == 0:
+                continue
+            lower = samp.map(lambda x: str(x).strip().lower())
+            if lower.isin(ALL_BOOL).sum() / len(samp) >= 0.85:
+                df[col] = df[col].map(
+                    lambda x: (True  if str(x).strip().lower() in BOOL_TRUE  else
+                               False if str(x).strip().lower() in BOOL_FALSE else None)
+                    if pd.notna(x) else None
+                )
+                bool_cols.append(col)
+        if bool_cols:
+            report.append(
+                f"Normalised {len(bool_cols)} boolean column(s) to True/False: "
+                f"{', '.join(bool_cols)}"
+            )
+
+        # 8. Strip percentage signs and convert to numeric
+        #    e.g. "45.3 %" or "12%" → 45.3, 12.0
+        pct_cols = []
+        for col in df.select_dtypes(include='object').columns:
+            samp = df[col].dropna().head(20)
+            if len(samp) == 0:
+                continue
+            pct_like = samp.map(
+                lambda x: bool(re.match(r'^-?\s*\d+\.?\d*\s*%$', str(x).strip()))
+            ).sum()
+            if pct_like / len(samp) >= 0.75:
+                cleaned = df[col].map(
+                    lambda x: float(re.sub(r'[^\d.\-]', '', str(x).strip()))
+                    if pd.notna(x) and str(x).strip() else None
+                )
+                try:
+                    df[col] = pd.to_numeric(cleaned, errors='raise')
+                    pct_cols.append(col)
+                except (ValueError, TypeError):
+                    pass
+        if pct_cols:
+            report.append(
+                f"Converted {len(pct_cols)} percentage column(s) to numeric (stripped %): "
+                f"{', '.join(pct_cols)}"
+            )
+
+        # 9. Standardise categorical text to Title Case
+        #    Only applies to low-cardinality text columns (≤30 unique, ≤30 % cardinality ratio)
+        #    to avoid mangling free-text names / descriptions.
+        titled_cols = []
+        for col in df.select_dtypes(include='object').columns:
+            n_non_null = df[col].notna().sum()
+            if n_non_null == 0:
+                continue
+            n_unique = df[col].nunique(dropna=True)
+            if n_unique > 30 or n_unique / max(n_non_null, 1) > 0.3:
+                continue
+            df[col] = df[col].map(lambda x: x.title() if isinstance(x, str) else x)
+            titled_cols.append(col)
+        if titled_cols:
+            report.append(
+                f"Standardised {len(titled_cols)} categorical column(s) to Title Case "
+                f"for consistent grouping: {', '.join(titled_cols)}"
+            )
+
+        # 10. Data-quality flag: columns with >30 % missing values
+        #     (informational — data is kept, user is informed)
+        low_fill = []
+        for col in df.columns:
+            null_pct = df[col].isna().mean()
+            if null_pct >= 0.30:
+                low_fill.append(f"'{col}' ({null_pct:.0%} missing)")
+        if low_fill:
+            report.append(
+                f"High missing-value rate detected — consider reviewing: "
+                f"{'; '.join(low_fill)}"
+            )
+
         if not report:
             report.append("No issues found — data looks clean")
 
@@ -557,41 +641,89 @@ class DataImportService:
     
     def _detect_schema_from_df(self, df):
         """
-        Automatically detect field types from a DataFrame
+        Detect field types using majority-vote sampling over up to 50 non-null values
+        per column, supporting text, number, date, datetime, boolean, email, url,
+        phone, percentage, and currency types.
         """
-        schema = []
-        
+        import re as _re
+        schema    = []
+        _EMAIL    = _re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        _URL      = _re.compile(r'^https?://', _re.I)
+        _PHONE    = _re.compile(r'^\+?[\d][\d\s\-\(\)\.]{6,17}$')
+        _PCT      = _re.compile(r'^-?\s*\d+\.?\d*\s*%$')
+        # Currency-prefixed or thousands-separated numeric values
+        _NUMERIC  = _re.compile(r'^[\$£€KES\s]*-?[\d,]+\.?\d*$')
+        _BOOL_SET = {'yes', 'no', 'true', 'false', 'y', 'n', '1', '0',
+                     'on', 'off', 'active', 'inactive', 'enabled', 'disabled',
+                     'pass', 'fail', 'correct', 'incorrect', 'present', 'absent'}
+
         for column in df.columns:
-            # Get first non-null value for detection
             non_null = df[column].dropna()
-            first_val = non_null.iloc[0] if not non_null.empty else ""
 
-            # Improved detection logic
-            field_type = 'text'
-
-            if pd.api.types.is_numeric_dtype(df[column]):
-                field_type = 'number'
-            elif pd.api.types.is_bool_dtype(df[column]):
+            # Fast path: unambiguous pandas dtype
+            if pd.api.types.is_bool_dtype(df[column]):
                 field_type = 'boolean'
             elif pd.api.types.is_datetime64_any_dtype(df[column]):
                 field_type = 'datetime'
-            elif isinstance(first_val, str):
-                val_lower = first_val.lower()
-                if '@' in first_val and '.' in first_val:
-                    field_type = 'email'
-                elif val_lower.startswith(('http://', 'https://')):
-                    field_type = 'url'
-                elif val_lower in ['true', 'false', 'yes', 'no']:
-                    field_type = 'boolean'
-                elif self._is_date(first_val):
-                    field_type = 'date'
-            
-            schema.append({
-                'name': str(column),
-                'type': field_type,
-                'required': False
-            })
-        
+            elif pd.api.types.is_integer_dtype(df[column]):
+                field_type = 'number'
+            elif pd.api.types.is_float_dtype(df[column]):
+                field_type = 'number'
+            elif pd.api.types.is_numeric_dtype(df[column]):
+                field_type = 'number'
+            elif non_null.empty:
+                field_type = 'text'
+            else:
+                # Sample-based majority vote (up to 50 values)
+                sample = non_null.head(50).astype(str).str.strip()
+                n = max(len(sample), 1)
+                votes = {t: 0 for t in (
+                    'email', 'url', 'boolean', 'percentage',
+                    'phone', 'number', 'date', 'text'
+                )}
+
+                for val in sample:
+                    if not val or val in ('None', 'nan', ''):
+                        continue
+                    vl = val.lower()
+                    if _EMAIL.match(val):
+                        votes['email'] += 1
+                    elif _URL.match(val):
+                        votes['url'] += 1
+                    elif vl in _BOOL_SET:
+                        votes['boolean'] += 1
+                    elif _PCT.match(val):
+                        votes['percentage'] += 1
+                    elif self._is_date(val):
+                        # Date before phone: ISO dates like 2024-01-15 look
+                        # like phone numbers to the PHONE regex.
+                        votes['date'] += 1
+                    elif _PHONE.match(val):
+                        votes['phone'] += 1
+                    else:
+                        # Try numeric (strip known currency/separator chars)
+                        stripped = _re.sub(r'[\$£€,\s]', '', val)
+                        try:
+                            float(stripped)
+                            votes['number'] += 1
+                            continue
+                        except ValueError:
+                            pass
+                        votes['text'] += 1
+
+                best_type  = max(votes, key=votes.get)
+                best_score = votes[best_type]
+                # Require >55 % agreement for a non-text type
+                field_type = best_type if best_score / n >= 0.55 else 'text'
+
+                # 'percentage' is supported in DataTable.FIELD_TYPES; others fall back to text
+                allowed = {'text', 'number', 'date', 'datetime', 'boolean',
+                           'email', 'url', 'phone', 'currency', 'percentage'}
+                if field_type not in allowed:
+                    field_type = 'text'
+
+            schema.append({'name': str(column), 'type': field_type, 'required': False})
+
         return schema
     
     def _is_date(self, value):
@@ -738,8 +870,15 @@ class WorkspaceInsightService:
         Every spec is a dict with:
           type, title, width, height, query_config, viz_config
 
-        The query_config follows the QueryEngine contract so widgets render
-        without any hardcoded data.
+        viz_config may contain a 'description' key: a plain-English sentence
+        explaining what the widget shows — rendered for non-technical users.
+
+        The engine:
+          1. Detects the business domain (sales, HR, healthcare, etc.)
+          2. Classifies fields and filters out noise (IDs, free-text, etc.)
+          3. Handles edge cases: no numerics, no dates, text-only, etc.
+          4. Selects the most informative chart types for each dimension
+          5. Generates narrative descriptions on every widget
         """
         from .models import Record
 
@@ -755,14 +894,16 @@ class WorkspaceInsightService:
         if not sample:
             return []
 
-        # ── Classify schema fields ──────────────────────────────────────
+        # ── Step 1: Detect domain ─────────────────────────────────────────
+        domain      = self._detect_data_domain(schema, sample)
+        record_noun = self._domain_record_noun(domain)
+
+        # ── Step 2: Classify schema fields ───────────────────────────────
         numeric_fields = [n for n, t in schema.items() if t in self.NUMERIC_TYPES]
         date_fields    = [n for n, t in schema.items() if t in self.DATE_TYPES]
         text_fields    = [n for n, t in schema.items() if t in self.TEXT_TYPES]
 
-        # Keep only numeric fields that actually contain numbers in the data,
-        # then rank them so the most meaningful field (revenue/total/amount)
-        # is used as the primary metric throughout the dashboard.
+        # Keep only numeric fields that actually contain numbers
         valid_numeric = self._filter_numeric_fields(numeric_fields, sample)
         valid_numeric = sorted(
             valid_numeric,
@@ -770,98 +911,110 @@ class WorkspaceInsightService:
             reverse=True,
         )
 
-        # Demote low-cardinality numeric fields that score poorly as KPIs
-        # (e.g. 'Year' with 16 unique values) to categorical chart dimensions.
-        # Strong negative KPI score (≤ -5) = summing this field is meaningless.
-        # If the field also has chart utility and ≤ 30 unique values, promote
-        # it to the appropriate cardinality bucket so it gets a bar chart.
-        _pending_numeric_demotions = []  # (field, n_unique) tuples
+        # Detect percentage/rate fields — better as gauge than sum KPI
+        pct_field_names = {'percent', '%', 'rate', 'ratio', 'score',
+                           'satisfaction', 'nps', 'csat', 'gpa', 'grade'}
+        pct_fields = [
+            f for f in valid_numeric
+            if any(k in self._normalize_name(f) for k in pct_field_names)
+        ]
+
+        # Demote low-signal numeric fields to categorical chart dimensions
+        _pending_demotions = []
         kept_numeric = []
         for f in valid_numeric:
             kpi_s = self._score_field_for_kpi(f, schema.get(f, 'number'))
             if kpi_s <= -5:
                 n_unique = len(self._unique_values(f, sample))
                 if self._score_field_for_chart(f) > 0 and n_unique <= 30:
-                    _pending_numeric_demotions.append((f, n_unique))
-                # Either way, exclude from numeric KPI list
+                    _pending_demotions.append((f, n_unique))
             else:
                 kept_numeric.append(f)
         valid_numeric = kept_numeric
 
-        # Primary value field — highest-scored numeric (e.g. Total KES, Revenue)
         primary_value = valid_numeric[0] if valid_numeric else None
+        display_pv    = self._clean_display_name(primary_value) if primary_value else ''
+        prefix_pv     = (self._currency_prefix(primary_value, schema.get(primary_value))
+                         if primary_value else '')
 
-        # Classify text fields by cardinality, then rank by chart usefulness.
-        # very_low_card (2-8 unique)  → ideal for pie charts (also used in bar)
-        # low_card      (9-25 unique) → bar charts only
+        # ── Step 3: Classify categorical fields ───────────────────────────
         very_low_card, low_card = [], []
         for field in text_fields:
+            chart_score = self._score_field_for_chart(field)
+            if chart_score <= -4:       # ID / free-text / contact field — skip
+                continue
             unique = self._unique_values(field, sample)
             n = len(unique)
             if 2 <= n <= 8:
-                very_low_card.append((field, n))   # (name, cardinality)
+                very_low_card.append((field, n))
             elif n <= 25:
                 low_card.append(field)
 
-        # Merge demoted numeric fields (e.g. 'Year') into the appropriate bucket
-        for f, n in _pending_numeric_demotions:
+        # Merge demoted numeric fields
+        for f, n in _pending_demotions:
             if 2 <= n <= 8:
                 very_low_card.append((f, n))
             elif n <= 25:
                 low_card.append(f)
 
-        # For bar charts: sort purely by business relevance score.
-        # For pie charts: composite score = relevance - (cardinality / 10)
-        # so Status (2 values, score 3) beats Category (6 values, score 5)
-        # as a pie candidate: 3-0.2=2.8 vs 5-0.6=4.4 … actually Category still
-        # wins here. Use a stronger cardinality bonus: relevance * 2 - cardinality.
-        very_low_card_for_bar  = sorted([f for f, _ in very_low_card],
-                                        key=self._score_field_for_chart, reverse=True)
-        very_low_card_for_pie  = sorted(very_low_card,
-                                        key=lambda x: self._score_field_for_chart(x[0]) * 2 - x[1],
-                                        reverse=True)
-        very_low_card_for_pie  = [f for f, _ in very_low_card_for_pie]
-
+        very_low_card_for_bar = sorted(
+            [f for f, _ in very_low_card],
+            key=self._score_field_for_chart, reverse=True
+        )
+        very_low_card_for_pie = sorted(
+            very_low_card,
+            key=lambda x: self._score_field_for_chart(x[0]) * 2 - x[1],
+            reverse=True
+        )
+        very_low_card_for_pie = [f for f, _ in very_low_card_for_pie]
         low_card = sorted(low_card, key=self._score_field_for_chart, reverse=True)
-
-        # All categorical fields for bar charts (best-ranked first)
         all_categorical = very_low_card_for_bar + low_card
 
-        # Primary date field (first one detected)
+        # ── Step 4: Date dimension ────────────────────────────────────────
         primary_date = date_fields[0] if date_fields else None
         group_by     = primary_date if primary_date else 'created_at_date'
         date_label   = self._clean_display_name(primary_date) if primary_date else 'Date'
+        has_dates    = bool(date_fields) or True   # created_at is always available
 
         insights = []
         color_i  = 0
 
-        # ── KPI row (up to 4 cards, always width=3) ──────────────────────
-        #
-        # Card 1: Total Transactions (always useful regardless of data type)
-        insights.append(self._kpi_spec('Total Transactions', 'count', None, color_i))
+        # ════════════════════════════════════════════════════════════════
+        #  KPI CARDS (up to 4, always width=3 so they fill one row)
+        # ════════════════════════════════════════════════════════════════
+
+        # Card 1 — Total record count, domain-labelled
+        count_label = self._domain_count_label(domain)
+        count_desc  = (f"Total number of {record_noun} captured in this dataset. "
+                       f"Use this as your baseline volume metric.")
+        insights.append(self._kpi_spec(
+            count_label, 'count', None, color_i, description=count_desc
+        ))
         color_i += 1
 
-        # Card 2: Sum of primary value field (e.g. Total Revenue)
+        # Card 2 — Sum of primary value field
         if primary_value:
-            display_pv = self._clean_display_name(primary_value)
-            prefix_pv  = self._currency_prefix(primary_value, schema.get(primary_value))
-            insights.append(
-                self._kpi_spec(self._agg_title('sum', display_pv), 'sum', primary_value,
-                               color_i, prefix=prefix_pv)
-            )
+            sum_title = self._agg_title('sum', display_pv)
+            sum_desc  = (f"Grand total of {display_pv.lower()} across all {record_noun}. "
+                         f"This is your headline performance number.")
+            insights.append(self._kpi_spec(
+                sum_title, 'sum', primary_value, color_i,
+                prefix=prefix_pv, description=sum_desc
+            ))
             color_i += 1
 
-        # Card 3: Average of primary value field (e.g. Avg Revenue per transaction)
+        # Card 3 — Average of primary value field
         if primary_value:
-            insights.append(
-                self._kpi_spec(self._agg_title('avg', display_pv), 'avg', primary_value,
-                               color_i, prefix=prefix_pv)
-            )
+            avg_title = self._agg_title('avg', display_pv)
+            avg_desc  = (f"Average {display_pv.lower()} per {record_noun[:-1] if record_noun.endswith('s') else record_noun}. "
+                         f"Benchmark this against targets to spot under- or over-performance.")
+            insights.append(self._kpi_spec(
+                avg_title, 'avg', primary_value, color_i,
+                prefix=prefix_pv, description=avg_desc
+            ))
             color_i += 1
 
-        # Card 4: Second meaningful numeric field (skip fields with negative score
-        # and skip fields whose display name is semantically redundant with the
-        # primary value — e.g. 'Subtotal' when primary is 'Total / Revenue').
+        # Card 4 — Second meaningful numeric (skip semantically redundant fields)
         primary_display_lower = display_pv.lower() if primary_value else ''
         secondary_fields = [
             f for f in valid_numeric[1:]
@@ -869,19 +1022,24 @@ class WorkspaceInsightService:
             and f != primary_value
             and self._clean_display_name(f).lower() not in (primary_display_lower, 'revenue', 'total')
             and primary_display_lower not in self._clean_display_name(f).lower()
+            and f not in pct_fields     # percentage fields get a separate treatment
         ]
         if secondary_fields:
-            sec = secondary_fields[0]
+            sec         = secondary_fields[0]
             display_sec = self._clean_display_name(sec)
             prefix_sec  = self._currency_prefix(sec, schema.get(sec))
-            insights.append(
-                self._kpi_spec(self._agg_title('sum', display_sec), 'sum', sec,
-                               color_i, prefix=prefix_sec)
-            )
+            sec_desc    = (f"Total {display_sec.lower()} — track alongside "
+                           f"{display_pv.lower() or 'the primary metric'} for a "
+                           f"complete picture of performance.")
+            insights.append(self._kpi_spec(
+                self._agg_title('sum', display_sec), 'sum', sec,
+                color_i, prefix=prefix_sec, description=sec_desc
+            ))
             color_i += 1
 
-        # ── Trend line charts ─────────────────────────────────────────────
-        # Line 1: primary value over time  (e.g. Revenue Over Time)
+        # ════════════════════════════════════════════════════════════════
+        #  TREND CHARTS — value + volume over time
+        # ════════════════════════════════════════════════════════════════
         if primary_value:
             insights.append({
                 'type': 'line_chart',
@@ -891,78 +1049,205 @@ class WorkspaceInsightService:
                     {'type': 'sum', 'field': primary_value,
                      'group_by': group_by, 'name': 'val'}
                 ]},
-                'viz_config': {'x_axis': date_label, 'y_axis': display_pv},
+                'viz_config': {
+                    'x_axis': date_label, 'y_axis': display_pv,
+                    'description': (
+                        f"How {display_pv.lower()} changes over time. "
+                        f"Look for growth trends, seasonal peaks, and sudden dips "
+                        f"that may signal issues or opportunities."
+                    ),
+                },
             })
 
-        # Line 2: transaction count over time (always informative)
+        vol_title = f'{self._domain_count_label(domain)} Over Time'
         insights.append({
             'type': 'line_chart',
-            'title': 'Transactions Over Time',
+            'title': vol_title,
             'width': 6, 'height': 4,
             'query_config': {'aggregations': [
                 {'type': 'count', 'group_by': group_by, 'name': 'val'}
             ]},
-            'viz_config': {'x_axis': date_label, 'y_axis': 'Transactions'},
+            'viz_config': {
+                'x_axis': date_label, 'y_axis': 'Volume',
+                'description': (
+                    f"Volume of {record_noun} over time. "
+                    f"Spikes indicate busy periods; flat lines may reveal inactivity. "
+                    f"Compare against the value trend above to spot efficiency gaps."
+                ),
+            },
         })
 
-        # ── Bar charts (up to 4 most meaningful categorical fields) ───────
-        for field in all_categorical[:4]:
+        # ════════════════════════════════════════════════════════════════
+        #  BAR CHARTS — categorical breakdowns (up to 4)
+        # ════════════════════════════════════════════════════════════════
+        bar_count = 0
+        for field in all_categorical[:6]:
+            if bar_count >= 4:
+                break
             display_field = self._clean_display_name(field)
+
             if primary_value:
                 agg   = {'type': 'sum', 'field': primary_value,
                          'group_by': field, 'name': 'val'}
                 title = f'{display_pv} by {display_field}'
                 y_lbl = display_pv
+                desc  = (
+                    f"Which {display_field.lower()} drives the most {display_pv.lower()}? "
+                    f"Taller bars are your top contributors — focus resources there."
+                )
             else:
                 agg   = {'type': 'count', 'group_by': field, 'name': 'val'}
                 title = f'{display_field} Distribution'
                 y_lbl = 'Count'
+                desc  = (
+                    f"How {record_noun} are distributed across {display_field.lower()} values. "
+                    f"Imbalances may highlight concentration risk or growth opportunities."
+                )
 
             insights.append({
                 'type': 'bar_chart',
                 'title': title,
                 'width': 6, 'height': 4,
                 'query_config': {'aggregations': [agg]},
-                'viz_config': {'x_axis': display_field, 'y_axis': y_lbl},
+                'viz_config': {'x_axis': display_field, 'y_axis': y_lbl, 'description': desc},
             })
+            bar_count += 1
 
-        # ── Pie charts (up to 2 very-low-cardinality fields, 2–8 values) ──
+        # ════════════════════════════════════════════════════════════════
+        #  PIE CHARTS — part-of-whole (2–8 unique values only)
+        # ════════════════════════════════════════════════════════════════
         for field in very_low_card_for_pie[:2]:
             display_field = self._clean_display_name(field)
+
             if primary_value:
                 agg   = {'type': 'sum', 'field': primary_value,
                          'group_by': field, 'name': 'val'}
-                title = f'{display_pv} by {display_field}'
+                title = f'{display_pv} Share by {display_field}'
+                desc  = (
+                    f"How {display_pv.lower()} is split across {display_field.lower()} segments. "
+                    f"Each slice shows that segment's contribution to the total."
+                )
             else:
                 agg   = {'type': 'count', 'group_by': field, 'name': 'val'}
                 title = f'{display_field} Breakdown'
+                desc  = (
+                    f"Proportional breakdown of {record_noun} by {display_field.lower()}. "
+                    f"The largest slice is your dominant category."
+                )
 
             insights.append({
                 'type': 'pie_chart',
                 'title': title,
                 'width': 6, 'height': 4,
                 'query_config': {'aggregations': [agg]},
-                'viz_config': {},
+                'viz_config': {'description': desc},
             })
+
+        # ════════════════════════════════════════════════════════════════
+        #  AVERAGE BY CATEGORY — reveal which segment performs best
+        #  (only when we have both a primary value AND categorical dims)
+        # ════════════════════════════════════════════════════════════════
+        if primary_value and all_categorical:
+            # Pick the highest-scoring categorical field not already in bar charts
+            already_used = set(all_categorical[:bar_count])
+            avg_candidates = [f for f in all_categorical if f not in already_used]
+            if avg_candidates:
+                avg_field   = avg_candidates[0]
+                display_avg = self._clean_display_name(avg_field)
+                insights.append({
+                    'type': 'bar_chart',
+                    'title': f'Avg {display_pv} per {display_avg}',
+                    'width': 6, 'height': 4,
+                    'query_config': {'aggregations': [
+                        {'type': 'avg', 'field': primary_value,
+                         'group_by': avg_field, 'name': 'val'}
+                    ]},
+                    'viz_config': {
+                        'x_axis': display_avg, 'y_axis': f'Avg {display_pv}',
+                        'description': (
+                            f"Average {display_pv.lower()} per {display_avg.lower()}. "
+                            f"Use this to benchmark {display_avg.lower()} groups against each other "
+                            f"and identify outliers worth investigating."
+                        ),
+                    },
+                })
+
+        # ════════════════════════════════════════════════════════════════
+        #  SECONDARY NUMERIC CORRELATION — when 2+ valid numeric fields
+        #  show Avg(primary) by buckets of the secondary field
+        # ════════════════════════════════════════════════════════════════
+        if len(valid_numeric) >= 2 and primary_value:
+            sec_num = [f for f in valid_numeric[1:] if f not in pct_fields][:1]
+            for sec_f in sec_num:
+                display_sec = self._clean_display_name(sec_f)
+                n_unique    = len(self._unique_values(sec_f, sample))
+                if n_unique <= 30:   # discrete enough for a grouped bar
+                    insights.append({
+                        'type': 'bar_chart',
+                        'title': f'{display_pv} vs {display_sec}',
+                        'width': 6, 'height': 4,
+                        'query_config': {'aggregations': [
+                            {'type': 'avg', 'field': primary_value,
+                             'group_by': sec_f, 'name': 'val'}
+                        ]},
+                        'viz_config': {
+                            'x_axis': display_sec, 'y_axis': f'Avg {display_pv}',
+                            'description': (
+                                f"Relationship between {display_sec.lower()} and "
+                                f"average {display_pv.lower()}. "
+                                f"A clear pattern here may indicate a strong correlation "
+                                f"worth acting on."
+                            ),
+                        },
+                    })
+
+        # ════════════════════════════════════════════════════════════════
+        #  TEXT-ONLY / NO NUMERIC edge case
+        #  When there are no numeric fields at all, focus on distribution
+        #  charts across the most informative categorical dimensions.
+        # ════════════════════════════════════════════════════════════════
+        if not valid_numeric and all_categorical:
+            # We already emitted bar charts above; add one more pie if possible
+            extra_pies = [f for f in very_low_card_for_pie[2:4]]
+            for field in extra_pies:
+                display_field = self._clean_display_name(field)
+                insights.append({
+                    'type': 'pie_chart',
+                    'title': f'{display_field} Composition',
+                    'width': 6, 'height': 4,
+                    'query_config': {'aggregations': [
+                        {'type': 'count', 'group_by': field, 'name': 'val'}
+                    ]},
+                    'viz_config': {
+                        'description': (
+                            f"Composition of {record_noun} by {display_field.lower()}. "
+                            f"Each slice represents one distinct value's share of the total."
+                        ),
+                    },
+                })
 
         return insights
 
     # ------------------------------------------------------------------ #
     #  Helpers
     # ------------------------------------------------------------------ #
-    def _kpi_spec(self, title, agg_type, field, color_i, prefix='', suffix=''):
-        """Build a metric widget spec with branded icon/colour."""
+    def _kpi_spec(self, title, agg_type, field, color_i,
+                  prefix='', suffix='', description=''):
+        """Build a metric widget spec with branded icon/colour and narrative description."""
         agg = {'type': agg_type, 'name': 'val'}
         if field:
             agg['field'] = field
         color = self._KPI_COLORS[color_i % len(self._KPI_COLORS)]
         icon  = self._KPI_ICONS[color_i  % len(self._KPI_ICONS)]
+        viz   = {'icon': icon, 'color': color, 'prefix': prefix, 'suffix': suffix}
+        if description:
+            viz['description'] = description
         return {
             'type': 'metric',
             'title': title,
             'width': 3, 'height': 2,
             'query_config': {'aggregations': [agg]},
-            'viz_config': {'icon': icon, 'color': color, 'prefix': prefix, 'suffix': suffix},
+            'viz_config': viz,
         }
 
     def _normalize_name(self, field_name):
@@ -1017,8 +1302,21 @@ class WorkspaceInsightService:
                 not any(k in name for k in ('unit price', 'price per', 'rate per', 'cost per')):
             score += 3
         if any(k in name for k in ('quantity', 'qty', 'units', 'pieces', 'count',
-                                   'mileage', 'odometer')):
+                                   'mileage', 'odometer', 'volume', 'headcount',
+                                   'enrollment', 'patients', 'responses')):
             score += 1
+        # Finance / HR specific positive signals
+        if any(k in name for k in ('salary', 'payroll', 'wage', 'compensation',
+                                   'balance', 'budget', 'expense', 'profit', 'margin',
+                                   'loan', 'credit', 'debit', 'asset', 'liability')):
+            score += 4
+        # Healthcare / inventory positive
+        if any(k in name for k in ('dose', 'dosage', 'stock', 'inventory', 'stock level',
+                                   'reorder', 'issued', 'received', 'dispensed')):
+            score += 2
+        # Survey scores
+        if any(k in name for k in ('nps', 'csat', 'satisfaction score', 'rating')):
+            score += 3
         if any(k in name for k in ('percent', ' %', '%', 'rate', 'ratio', 'discount', 'tax')):
             score -= 6
         if any(k in name for k in ('unit price', 'price per', 'cost per', 'rate per')):
@@ -1026,6 +1324,9 @@ class WorkspaceInsightService:
         # Year / model-year columns — summing years is meaningless as a KPI
         if any(k in words for k in ('year', 'yr')):
             score -= 8
+        # ID/code fields
+        if any(k in words for k in ('id', 'code', 'ref', 'no', 'num', 'number', 'index')):
+            score -= 6
         return score
 
     def _score_field_for_chart(self, field_name):
@@ -1060,19 +1361,31 @@ class WorkspaceInsightService:
         if any(k in name for k in ('region', 'location', 'area', 'zone', 'branch',
                                    'store', 'outlet', 'site', 'territory')):
             score += 3
-        if any(k in name for k in ('gender', 'sex', 'age group', 'tier', 'segment')):
+        if any(k in name for k in ('gender', 'sex', 'age group', 'tier', 'segment',
+                                   'priority', 'severity', 'level', 'rank',
+                                   'ward', 'shift', 'grade', 'class', 'faculty')):
             score += 2
         # Year / model-year columns make excellent bar-chart dimensions
-        if any(k in words for k in ('year', 'yr', 'vintage')):
+        if any(k in words for k in ('year', 'yr', 'vintage', 'semester', 'quarter')):
             score += 3
+        # Logistics / healthcare breakdowns
+        if any(k in name for k in ('route', 'destination', 'origin', 'diagnosis',
+                                   'procedure', 'treatment', 'medication',
+                                   'channel', 'source', 'platform')):
+            score += 3
+        # Education / survey dimensions
+        if any(k in name for k in ('subject', 'course', 'module', 'question',
+                                   'response', 'outcome', 'result')):
+            score += 2
         # Penalise identifier / free-text fields — match on word boundaries
         # by checking after normalisation (e.g. 'order id' not 'salesperson')
         words = set(name.split())
-        if any(k in words for k in ('id', 'ref', 'code', 'no', 'num', 'number')):
+        if any(k in words for k in ('id', 'ref', 'code', 'no', 'num', 'number', 'index')):
             score -= 4
         if any(k in name for k in ('reference', 'description', 'note', 'comment',
                                    'remark', 'detail', 'info', 'full name',
-                                   'client name', 'customer name')):
+                                   'client name', 'customer name', 'address',
+                                   'email', 'phone', 'contact')):
             score -= 4
         return score
 
@@ -1173,6 +1486,101 @@ class WorkspaceInsightService:
                 if v not in (None, '', 'None', 'nan'):
                     seen.add(str(v))
         return seen
+
+    # ------------------------------------------------------------------ #
+    #  Domain detection
+    # ------------------------------------------------------------------ #
+    _DOMAIN_SIGNALS = {
+        'sales':      ['invoice', 'customer', 'product', 'revenue', 'sale', 'order',
+                       'item', 'receipt', 'purchase', 'client', 'discount', 'transaction',
+                       'basket', 'cart', 'coupon', 'loyalty', 'crm'],
+        'hr':         ['employee', 'staff', 'salary', 'department', 'hire', 'leave',
+                       'payroll', 'position', 'attendance', 'performance', 'headcount',
+                       'appraisal', 'contract', 'onboarding', 'termination', 'shift'],
+        'healthcare': ['patient', 'diagnosis', 'doctor', 'hospital', 'treatment',
+                       'medication', 'appointment', 'prescription', 'clinic', 'ward',
+                       'nurse', 'procedure', 'icu', 'discharge', 'admission', 'vitals'],
+        'inventory':  ['stock', 'sku', 'warehouse', 'reorder', 'supplier', 'batch',
+                       'expiry', 'shelf', 'bin', 'issued', 'received', 'units',
+                       'location', 'barcode', 'lead time', 'goods', 'asset'],
+        'finance':    ['account', 'debit', 'credit', 'balance', 'ledger', 'journal',
+                       'budget', 'expense', 'asset', 'liability', 'equity', 'loan',
+                       'interest', 'repayment', 'invoice', 'payment', 'reconcil'],
+        'logistics':  ['shipment', 'delivery', 'route', 'driver', 'vehicle',
+                       'dispatch', 'tracking', 'destination', 'origin', 'freight',
+                       'waybill', 'manifest', 'consignment', 'eta', 'fleet'],
+        'education':  ['student', 'grade', 'course', 'teacher', 'class', 'score',
+                       'exam', 'subject', 'school', 'enrollment', 'marks', 'module',
+                       'lecture', 'assignment', 'semester', 'gpa', 'faculty'],
+        'survey':     ['response', 'rating', 'satisfaction', 'feedback', 'likert',
+                       'nps', 'sentiment', 'agree', 'strongly', 'question', 'score',
+                       'net promoter', 'csat', 'opinion', 'respondent'],
+        'iot':        ['sensor', 'temperature', 'humidity', 'pressure', 'reading',
+                       'device', 'signal', 'voltage', 'meter', 'threshold', 'alert',
+                       'telemetry', 'firmware', 'gateway', 'kwh', 'rpm'],
+    }
+
+    def _detect_data_domain(self, schema, sample):
+        """
+        Detect the business domain from field names and a sample of record values.
+        Returns one of: 'sales' | 'hr' | 'healthcare' | 'inventory' | 'finance' |
+                        'logistics' | 'education' | 'survey' | 'iot' | 'generic'
+        """
+        all_fields = ' '.join(schema.keys()).lower()
+        scores     = {d: 0.0 for d in self._DOMAIN_SIGNALS}
+
+        for domain, keywords in self._DOMAIN_SIGNALS.items():
+            for kw in keywords:
+                if kw in all_fields:
+                    scores[domain] += 1.0
+
+        # Lighter-weight signal from actual values
+        if sample:
+            value_text = ' '.join(
+                str(v).lower()
+                for rec in sample[:40]
+                for v in (rec or {}).values()
+                if v and isinstance(v, str) and len(str(v)) < 60
+            )
+            for domain, keywords in self._DOMAIN_SIGNALS.items():
+                for kw in keywords:
+                    if kw in value_text:
+                        scores[domain] += 0.3
+
+        best = max(scores, key=scores.get)
+        return best if scores[best] >= 1.0 else 'generic'
+
+    def _domain_count_label(self, domain):
+        """Human-readable KPI label for total record count, tailored to domain."""
+        return {
+            'sales':      'Total Transactions',
+            'hr':         'Total Employees',
+            'healthcare': 'Total Patients',
+            'inventory':  'Total Items',
+            'finance':    'Total Entries',
+            'logistics':  'Total Shipments',
+            'education':  'Total Students',
+            'survey':     'Total Responses',
+            'iot':        'Total Readings',
+            'generic':    'Total Records',
+        }.get(domain, 'Total Records')
+
+    def _domain_record_noun(self, domain):
+        """Singular/plural noun for records in this domain (used in descriptions)."""
+        return {
+            'sales':      'transactions',
+            'hr':         'employees',
+            'healthcare': 'patients',
+            'inventory':  'items',
+            'finance':    'entries',
+            'logistics':  'shipments',
+            'education':  'students',
+            'survey':     'responses',
+            'iot':        'readings',
+            'generic':    'records',
+        }.get(domain, 'records')
+
+
 class AuditService:
     """
     Service for creating audit logs
