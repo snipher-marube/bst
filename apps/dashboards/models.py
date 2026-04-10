@@ -134,11 +134,17 @@ class DataTable(models.Model):
         return self.record_count * avg_record_size
 
     def generate_default_dashboard(self):
-        """Automatically create a smart dashboard for this table"""
+        """Automatically create a smart dashboard for this table.
+
+        The entire operation runs inside a single database transaction so a
+        crash mid-way never leaves a half-built dashboard or orphaned widgets.
+        """
         from .models import Dashboard, Widget
+        from django.db import transaction
         import re
 
-        # Generate a unique slug
+        # Generate a unique slug — resolved *before* the transaction so the
+        # while-loop does not hold a write lock during a potentially slow loop.
         base_slug = re.sub(r'[^a-z0-9]+', '-', self.name.lower().strip()).strip('-') + '-dashboard'
         slug = base_slug
         counter = 1
@@ -146,89 +152,73 @@ class DataTable(models.Model):
             slug = f"{base_slug}-{counter}"
             counter += 1
 
-        dashboard = Dashboard.objects.create(
-            workspace=self.workspace,
-            name=f"{self.name} Dashboard",
-            description=f"Auto-generated dashboard for {self.name}",
-            slug=slug,
-            created_by=self.created_by,
-            layout_config={"columns": 12, "rowHeight": 100, "compact": True}
-        )
+        with transaction.atomic():
+            dashboard = Dashboard.objects.create(
+                workspace=self.workspace,
+                name=f"{self.name} Dashboard",
+                description=f"Auto-generated dashboard for {self.name}",
+                slug=slug,
+                created_by=self.created_by,
+                layout_config={"columns": 12, "rowHeight": 100, "compact": True}
+            )
 
-        # Classify schema fields
-        numeric_types = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
-        date_types    = {'date', 'datetime'}
-        text_types    = {'text', 'string', 'category', 'email', 'url'}
+            # Classify schema fields
+            numeric_types = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+            date_types    = {'date', 'datetime'}
+            text_types    = {'text', 'string', 'category', 'email', 'url'}
 
-        numeric_fields = [f for f in self.schema if f.get('type') in numeric_types]
-        date_fields    = [f for f in self.schema if f.get('type') in date_types]
-        text_fields    = [f for f in self.schema if f.get('type') in text_types]
+            numeric_fields = [f for f in self.schema if f.get('type') in numeric_types]
+            date_fields    = [f for f in self.schema if f.get('type') in date_types]
+            text_fields    = [f for f in self.schema if f.get('type') in text_types]
 
-        # ── Row 1: KPI cards (w=3 h=2 each, up to 4 across) ──────────────────
-        kpi_colors = ['blue', 'green', 'orange', 'purple']
-        kpi_icons  = ['fa-database', 'fa-chart-bar', 'fa-coins', 'fa-percent']
-        kpi_x, kpi_y, kpi_w, kpi_h = 0, 0, 3, 2
+            # ── Row 1: KPI cards (w=3 h=2 each, up to 4 across) ──────────────
+            kpi_colors = ['blue', 'green', 'orange', 'purple']
+            kpi_icons  = ['fa-database', 'fa-chart-bar', 'fa-coins', 'fa-percent']
+            kpi_x, kpi_y, kpi_w, kpi_h = 0, 0, 3, 2
 
-        # Total Records — always present
-        Widget.objects.create(
-            dashboard=dashboard, widget_type='metric', title='Total Records', table=self,
-            query_config={"aggregations": [{"type": "count", "name": "val"}]},
-            viz_config={"icon": "fa-database", "color": "blue"},
-            position={"x": kpi_x, "y": kpi_y, "w": kpi_w, "h": kpi_h}
-        )
-        kpi_x += kpi_w
-
-        # One KPI per numeric field (max 3 more so row stays 4-wide)
-        for i, field in enumerate(numeric_fields[:3]):
-            prefix = "$" if field.get('type') == 'currency' else ""
-            suffix = "%" if field.get('type') == 'percentage' else ""
-            color  = kpi_colors[(i + 1) % len(kpi_colors)]
-            icon   = kpi_icons[(i + 1) % len(kpi_icons)]
+            # Total Records — always present
             Widget.objects.create(
-                dashboard=dashboard, widget_type='metric',
-                title=f"Total {field['name']}", table=self,
-                query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
-                viz_config={"prefix": prefix, "suffix": suffix, "icon": icon, "color": color},
+                dashboard=dashboard, widget_type='metric', title='Total Records', table=self,
+                query_config={"aggregations": [{"type": "count", "name": "val"}]},
+                viz_config={"icon": "fa-database", "color": "blue"},
                 position={"x": kpi_x, "y": kpi_y, "w": kpi_w, "h": kpi_h}
             )
             kpi_x += kpi_w
-            if kpi_x >= 12:
-                kpi_x = 0
-                kpi_y += kpi_h
 
-        # ── Row 2+: Charts ────────────────────────────────────────────────────
-        chart_y = kpi_y + kpi_h   # start below KPI row
-        chart_x = 0
-
-        primary_date = date_fields[0]['name'] if date_fields else None
-
-        # Numeric trend charts — group by date field if available, else by created_at
-        for field in numeric_fields[:2]:
-            group_by = primary_date if primary_date else 'created_at_date'
-            title = f"{field['name']} Over Time" if primary_date else f"{field['name']} Trend"
-            Widget.objects.create(
-                dashboard=dashboard, widget_type='line_chart', title=title, table=self,
-                query_config={"aggregations": [
-                    {"type": "sum", "field": field['name'], "group_by": group_by, "name": "val"}
-                ]},
-                viz_config={"x_axis": group_by, "y_axis": "val"},
-                position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
-            )
-            chart_x += 6
-            if chart_x >= 12:
-                chart_x = 0
-                chart_y += 4
-
-        # Date field: records-per-period line chart (only if we have a date but no numeric field used it)
-        if date_fields and not numeric_fields:
-            for dfield in date_fields[:1]:
+            # One KPI per numeric field (max 3 more so row stays 4-wide)
+            for i, field in enumerate(numeric_fields[:3]):
+                prefix = "$" if field.get('type') == 'currency' else ""
+                suffix = "%" if field.get('type') == 'percentage' else ""
+                color  = kpi_colors[(i + 1) % len(kpi_colors)]
+                icon   = kpi_icons[(i + 1) % len(kpi_icons)]
                 Widget.objects.create(
-                    dashboard=dashboard, widget_type='line_chart',
-                    title=f"Records by {dfield['name']}", table=self,
+                    dashboard=dashboard, widget_type='metric',
+                    title=f"Total {field['name']}", table=self,
+                    query_config={"aggregations": [{"type": "sum", "field": field['name'], "name": "val"}]},
+                    viz_config={"prefix": prefix, "suffix": suffix, "icon": icon, "color": color},
+                    position={"x": kpi_x, "y": kpi_y, "w": kpi_w, "h": kpi_h}
+                )
+                kpi_x += kpi_w
+                if kpi_x >= 12:
+                    kpi_x = 0
+                    kpi_y += kpi_h
+
+            # ── Row 2+: Charts ────────────────────────────────────────────────
+            chart_y = kpi_y + kpi_h   # start below KPI row
+            chart_x = 0
+
+            primary_date = date_fields[0]['name'] if date_fields else None
+
+            # Numeric trend charts — group by date field if available
+            for field in numeric_fields[:2]:
+                group_by = primary_date if primary_date else 'created_at_date'
+                title = f"{field['name']} Over Time" if primary_date else f"{field['name']} Trend"
+                Widget.objects.create(
+                    dashboard=dashboard, widget_type='line_chart', title=title, table=self,
                     query_config={"aggregations": [
-                        {"type": "count", "group_by": dfield['name'], "name": "val"}
+                        {"type": "sum", "field": field['name'], "group_by": group_by, "name": "val"}
                     ]},
-                    viz_config={"x_axis": dfield['name'], "y_axis": "val"},
+                    viz_config={"x_axis": group_by, "y_axis": "val"},
                     position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
                 )
                 chart_x += 6
@@ -236,33 +226,50 @@ class DataTable(models.Model):
                     chart_x = 0
                     chart_y += 4
 
-        # Categorical fields: bar chart for distribution
-        for field in text_fields[:2]:
+            # Date field: records-per-period (only when no numeric field covers it)
+            if date_fields and not numeric_fields:
+                for dfield in date_fields[:1]:
+                    Widget.objects.create(
+                        dashboard=dashboard, widget_type='line_chart',
+                        title=f"Records by {dfield['name']}", table=self,
+                        query_config={"aggregations": [
+                            {"type": "count", "group_by": dfield['name'], "name": "val"}
+                        ]},
+                        viz_config={"x_axis": dfield['name'], "y_axis": "val"},
+                        position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+                    )
+                    chart_x += 6
+                    if chart_x >= 12:
+                        chart_x = 0
+                        chart_y += 4
+
+            # Categorical fields: bar chart for distribution
+            for field in text_fields[:2]:
+                Widget.objects.create(
+                    dashboard=dashboard, widget_type='bar_chart',
+                    title=f"{field['name']} Distribution", table=self,
+                    query_config={"aggregations": [
+                        {"type": "count", "group_by": field['name'], "name": "val"}
+                    ]},
+                    viz_config={"x_axis": field['name'], "y_axis": "val"},
+                    position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+                )
+                chart_x += 6
+                if chart_x >= 12:
+                    chart_x = 0
+                    chart_y += 4
+
+            # Data table at the bottom — always present
+            table_y = chart_y + (4 if chart_x > 0 else 0)
             Widget.objects.create(
-                dashboard=dashboard, widget_type='bar_chart',
-                title=f"{field['name']} Distribution", table=self,
-                query_config={"aggregations": [
-                    {"type": "count", "group_by": field['name'], "name": "val"}
-                ]},
-                viz_config={"x_axis": field['name'], "y_axis": "val"},
-                position={"x": chart_x, "y": chart_y, "w": 6, "h": 4}
+                dashboard=dashboard, widget_type='table',
+                title=f"All {self.name} Records", table=self,
+                query_config={"limit": 20},
+                viz_config={"page_size": 20, "show_search": True},
+                position={"x": 0, "y": table_y, "w": 12, "h": 6}
             )
-            chart_x += 6
-            if chart_x >= 12:
-                chart_x = 0
-                chart_y += 4
 
-        # Data table at the bottom — always present
-        table_y = chart_y + (4 if chart_x > 0 else 0)
-        Widget.objects.create(
-            dashboard=dashboard, widget_type='table',
-            title=f"All {self.name} Records", table=self,
-            query_config={"limit": 20},
-            viz_config={"page_size": 20, "show_search": True},
-            position={"x": 0, "y": table_y, "w": 12, "h": 6}
-        )
-
-        return dashboard
+        return dashboard  # transaction committed — dashboard + all widgets exist or none do
 
 
 class Record(models.Model):
@@ -525,6 +532,9 @@ class ImportJob(models.Model):
 
     file_name = models.CharField(max_length=255)
     file_path = models.CharField(max_length=500, blank=True)
+    # SHA-256 of the raw file bytes — used to prevent duplicate imports when a
+    # Celery task retries or the user re-uploads an identical file.
+    file_hash = models.CharField(max_length=64, blank=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
     total_rows = models.IntegerField(default=0)
@@ -545,9 +555,29 @@ class ImportJob(models.Model):
             models.Index(fields=['workspace', 'status']),
             models.Index(fields=['table', 'status']),
         ]
+        # Prevent duplicate imports: same file into the same table cannot be
+        # re-imported unless the previous job failed (handled in service layer).
+        constraints = [
+            models.UniqueConstraint(
+                fields=['table', 'file_hash'],
+                condition=models.Q(status__in=['pending', 'running', 'completed']),
+                name='unique_successful_import_per_table_hash',
+            )
+        ]
 
     def __str__(self):
         return f"ImportJob {self.file_name} ({self.status})"
+
+    @staticmethod
+    def compute_hash(file_obj):
+        """Return SHA-256 hex digest of *file_obj* (rewinds before and after)."""
+        import hashlib
+        file_obj.seek(0)
+        h = hashlib.sha256()
+        for chunk in iter(lambda: file_obj.read(65536), b''):
+            h.update(chunk)
+        file_obj.seek(0)
+        return h.hexdigest()
 
     @property
     def progress_pct(self):

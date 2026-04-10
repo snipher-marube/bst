@@ -69,7 +69,9 @@ class DataTableSerializer(serializers.ModelSerializer):
             'schema', 'record_count', 'is_active',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'record_count', 'created_at', 'updated_at']
+        # workspace is injected by the view via serializer.save(workspace=ws)
+        # — never sent in the request body.
+        read_only_fields = ['id', 'workspace', 'record_count', 'created_at', 'updated_at']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

@@ -727,11 +727,11 @@ class DataImportService:
         return schema
     
     def _is_date(self, value):
-        """Check if string is a date"""
+        """Return True if *value* can be parsed as an ISO date string."""
         from django.utils.dateparse import parse_date
         try:
             return parse_date(str(value)) is not None
-        except:
+        except (ValueError, TypeError, AttributeError):
             return False
 
 
