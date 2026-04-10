@@ -436,26 +436,105 @@ class Widget(models.Model):
     # Data source configuration
     table = models.ForeignKey(DataTable, on_delete=models.SET_NULL, null=True, blank=True)
     
-    # Query configuration
-    query_config = JSONField(default=dict)
-    
-    # Visualization configuration
-    viz_config = JSONField(default=dict)
-    
-    # Position in grid (x, y, width, height)
-    position = JSONField(default=dict)
-    
+    # Query configuration — blank=True because {} is a valid empty config.
+    query_config = JSONField(default=dict, blank=True)
+
+    # Hard ceiling: a single widget may never request more than this many rows.
+    # Prevents crafted query_configs from materialising millions of records.
+    MAX_QUERY_LIMIT = 10_000
+
+    # Aggregation types the query engine actually supports.
+    ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct'}
+
+    # Visualization configuration — blank=True because {} is a valid empty config.
+    viz_config = JSONField(default=dict, blank=True)
+
+    # Position in grid (x, y, width, height) — blank=True same reason.
+    position = JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         indexes = [
             models.Index(fields=['dashboard', 'widget_type']),
         ]
-    
+
     def __str__(self):
         return f"{self.title} ({self.widget_type})"
-    
+
+    def clean(self):
+        """Validate query_config so malformed or oversized configs are rejected
+        at model-save time rather than silently exploding at render time."""
+        from django.core.exceptions import ValidationError
+
+        qc = self.query_config or {}
+
+        # ── Row limit cap ────────────────────────────────────────────────
+        limit = qc.get('limit')
+        if limit is not None:
+            try:
+                limit = int(limit)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {'query_config': "query_config.limit must be an integer."}
+                )
+            if limit < 1:
+                raise ValidationError(
+                    {'query_config': "query_config.limit must be at least 1."}
+                )
+            if limit > self.MAX_QUERY_LIMIT:
+                raise ValidationError(
+                    {'query_config': (
+                        f"query_config.limit cannot exceed {self.MAX_QUERY_LIMIT:,}. "
+                        f"Requested: {limit:,}."
+                    )}
+                )
+
+        # ── Aggregation shape ────────────────────────────────────────────
+        aggs = qc.get('aggregations')
+        if aggs is not None:
+            if not isinstance(aggs, list):
+                raise ValidationError(
+                    {'query_config': "query_config.aggregations must be a list."}
+                )
+            if len(aggs) > 20:
+                raise ValidationError(
+                    {'query_config': (
+                        "query_config.aggregations may contain at most 20 items."
+                    )}
+                )
+            for i, agg in enumerate(aggs):
+                if not isinstance(agg, dict):
+                    raise ValidationError(
+                        {'query_config': f"aggregations[{i}] must be an object."}
+                    )
+                agg_type = agg.get('type', '')
+                if agg_type not in self.ALLOWED_AGG_TYPES:
+                    raise ValidationError(
+                        {'query_config': (
+                            f"aggregations[{i}].type '{agg_type}' is not supported. "
+                            f"Allowed: {', '.join(sorted(self.ALLOWED_AGG_TYPES))}."
+                        )}
+                    )
+
+        # ── Filters shape ────────────────────────────────────────────────
+        filters = qc.get('filters')
+        if filters is not None:
+            if not isinstance(filters, list):
+                raise ValidationError(
+                    {'query_config': "query_config.filters must be a list."}
+                )
+            if len(filters) > 50:
+                raise ValidationError(
+                    {'query_config': "query_config.filters may contain at most 50 items."}
+                )
+
+    def save(self, *args, **kwargs):
+        """Run full_clean() so query_config validation fires on every save path."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     def get_data(self, limit=1000):
         """
         Execute the query and return data for this widget
