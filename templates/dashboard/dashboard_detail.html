@@ -414,6 +414,7 @@ function renderKPI(el, widget, data) {
   const prefix = viz.prefix || '';
   const suffix = viz.suffix || '';
   const icon   = viz.icon   || 'fa-chart-bar';
+  const desc   = viz.description || '';
   const pal    = KPI_PALETTE[viz.color] || KPI_PALETTE.blue;
 
   let value = data.val !== undefined ? data.val : Object.values(data)[0];
@@ -428,6 +429,7 @@ function renderKPI(el, widget, data) {
       <div style="min-width:0;flex:1">
         <div class="kpi-num" style="color:${pal.numColor}">${prefix}${fmtNum(value)}${suffix}</div>
         <div class="kpi-label">${esc(widget.title)}</div>
+        ${desc ? `<div style="font-size:.6rem;color:#9ca3af;margin-top:.2rem;line-height:1.35;white-space:normal">${esc(desc)}</div>` : ''}
       </div>
     </div>`;
 }
@@ -564,12 +566,28 @@ function renderChart(el, data, chartType, widget) {
   };
 
   el.innerHTML = '';
+
+  // Optional insight description footer (for non-technical storytelling)
+  const desc = (widget?.viz_config || {}).description;
+  const descHeight = desc ? 36 : 0;
+
   const div = document.createElement('div');
-  div.style.cssText = 'width:100%;height:100%';
+  div.style.cssText = `width:100%;height:calc(100% - ${descHeight}px)`;
   el.appendChild(div);
   Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
   // Register for resize events triggered by GridStack
   if (widget?.id) plotlyDivs.set(widget.id, div);
+
+  if (desc) {
+    const foot = document.createElement('div');
+    foot.style.cssText = [
+      'font-size:.6875rem', 'color:#6b7280', 'padding:.3rem 1rem .4rem',
+      'border-top:1px solid #f3f4f6', 'line-height:1.4',
+      'background:#fafafa', 'white-space:normal',
+    ].join(';');
+    foot.innerHTML = `<i class="fas fa-lightbulb" style="color:#f68712;margin-right:.3rem;font-size:.6rem"></i>${esc(desc)}`;
+    el.appendChild(foot);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────

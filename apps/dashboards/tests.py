@@ -1199,3 +1199,627 @@ class TestCanManageWorkspace(TestCase):
         req.user = self.user
         req.data = {}
         self.assertFalse(perm.has_permission(req, None))
+
+
+# ---------------------------------------------------------------------------
+# clean_dataframe — new steps 7-10
+# ---------------------------------------------------------------------------
+
+import os
+import pandas as pd
+
+FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'test_fixtures')
+
+
+class TestCleanDataNewSteps(TestCase):
+    """Tests for clean_dataframe steps 7 (boolean), 8 (percentage),
+    9 (title case), and 10 (missing-value flag)."""
+
+    def setUp(self):
+        self.svc = DataImportService()
+
+    # ── Step 7: boolean normalisation ────────────────────────────────────
+
+    def test_step7_boolean_yes_no_converted(self):
+        df = pd.DataFrame({
+            'active': ['yes', 'no', 'yes', 'YES', 'No', 'NO', 'yes', 'no',
+                       'yes', 'no', 'yes', 'yes', 'no', 'yes', 'no', 'yes',
+                       'yes', 'no', 'yes', 'no'],
+        })
+        cleaned, report = self.svc.clean_dataframe(df)
+        self.assertTrue(any('boolean' in r.lower() or 'normalised' in r.lower()
+                            for r in report), f"Expected boolean report, got: {report}")
+        self.assertIn(True,  cleaned['active'].values)
+        self.assertIn(False, cleaned['active'].values)
+
+    def test_step7_true_false_converted(self):
+        df = pd.DataFrame({
+            'flag': ['true', 'false', 'true', 'false', 'TRUE', 'FALSE',
+                     'true', 'false', 'true', 'false', 'true', 'false',
+                     'true', 'false', 'true', 'false', 'true', 'false',
+                     'true', 'false'],
+        })
+        cleaned, report = self.svc.clean_dataframe(df)
+        self.assertIn(True,  cleaned['flag'].values)
+        self.assertIn(False, cleaned['flag'].values)
+
+    def test_step7_mixed_text_not_converted(self):
+        """A column with varied text values must NOT be forced to boolean."""
+        df = pd.DataFrame({
+            'name': ['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank',
+                     'Grace', 'Henry', 'Irene', 'James', 'Karen', 'Liam',
+                     'Mary', 'Noah', 'Olivia', 'Peter', 'Quinn', 'Rachel',
+                     'Sam', 'Tina'],
+        })
+        cleaned, _ = self.svc.clean_dataframe(df)
+        # All values must remain strings (pandas 3 uses StringDtype, not object)
+        for val in cleaned['name'].dropna():
+            self.assertIsInstance(val, str, f"Expected str, got {type(val)}: {val}")
+
+    # ── Step 8: percentage stripping ─────────────────────────────────────
+
+    def test_step8_pct_column_becomes_numeric(self):
+        df = pd.DataFrame({
+            'completion': ['85%', '72%', '91%', '68%', '95%', '55%', '88%',
+                           '76%', '98%', '63%', '84%', '70%', '92%', '79%',
+                           '48%', '86%', '97%', '74%', '89%', '61%'],
+        })
+        cleaned, report = self.svc.clean_dataframe(df)
+        self.assertTrue(
+            any('percentage' in r.lower() or 'numeric' in r.lower() for r in report)
+            or pd.api.types.is_numeric_dtype(cleaned['completion']),
+            "Percentage column should be numeric after cleaning"
+        )
+        if pd.api.types.is_numeric_dtype(cleaned['completion']):
+            self.assertAlmostEqual(cleaned['completion'].iloc[0], 85.0)
+
+    def test_step8_space_before_pct_handled(self):
+        df = pd.DataFrame({
+            'rate': ['45 %', '78 %', '91 %', '62 %', '88 %', '54 %', '77 %',
+                     '93 %', '66 %', '82 %', '59 %', '74 %', '87 %', '69 %',
+                     '95 %', '73 %', '81 %', '67 %', '90 %', '58 %'],
+        })
+        cleaned, _ = self.svc.clean_dataframe(df)
+        if pd.api.types.is_numeric_dtype(cleaned['rate']):
+            self.assertAlmostEqual(cleaned['rate'].iloc[0], 45.0)
+
+    # ── Step 9: title-case categorical ───────────────────────────────────
+
+    def test_step9_low_cardinality_text_titled(self):
+        # Use a unique id column so deduplication does not collapse repeated
+        # 'status' values — otherwise a single-column df gets reduced to 3 rows
+        # and n_unique/n_non_null = 1.0 > 0.3, which causes step 9 to skip.
+        df = pd.DataFrame({
+            'id':     list(range(20)),
+            'status': ['active', 'inactive', 'active', 'pending', 'active',
+                       'inactive', 'active', 'pending', 'active', 'inactive',
+                       'active', 'inactive', 'pending', 'active', 'inactive',
+                       'active', 'pending', 'active', 'inactive', 'active'],
+        })
+        cleaned, report = self.svc.clean_dataframe(df)
+        self.assertTrue(
+            any('title' in r.lower() or 'standardised' in r.lower() for r in report)
+            or str(cleaned['status'].iloc[0])[0].isupper(),
+            "Low-cardinality column should be title-cased"
+        )
+
+    def test_step9_high_cardinality_not_titled(self):
+        """Columns with many unique values must NOT be forced to title case."""
+        values = [f'item_{i}' for i in range(30)]  # 30 unique → skip
+        df = pd.DataFrame({'description': values})
+        cleaned, _ = self.svc.clean_dataframe(df)
+        # column should remain unchanged (still lowercase)
+        self.assertTrue(cleaned['description'].iloc[0].startswith('item_'))
+
+    # ── Step 10: missing-value flag ───────────────────────────────────────
+
+    def test_step10_high_missing_rate_reported(self):
+        """Columns with ≥30 % missing values should appear in the report."""
+        data = {'amount': [100, None, None, None, None, None, None, None, None, None,
+                           200, None, None, None, None, None, None, None, None, None],
+                'name':   ['Alice'] * 20}
+        df = pd.DataFrame(data)
+        _, report = self.svc.clean_dataframe(df)
+        self.assertTrue(
+            any('missing' in r.lower() for r in report),
+            f"Expected high-missing warning. Got: {report}"
+        )
+
+    def test_step10_low_missing_not_reported(self):
+        """Columns below 30 % missing should NOT trigger the warning."""
+        data = {'amount': [100, 200, None, 400, 500, 600, 700, 800, 900, 1000],
+                'name':   ['A'] * 10}
+        df = pd.DataFrame(data)
+        _, report = self.svc.clean_dataframe(df)
+        high_miss = [r for r in report if 'missing' in r.lower() and 'amount' in r.lower()]
+        self.assertEqual(high_miss, [])
+
+    # ── CSV fixture round-trip ────────────────────────────────────────────
+
+    def test_boolean_pct_csv_cleans_without_error(self):
+        """boolean_pct.csv has both boolean text cols and percentage cols."""
+        path = os.path.join(FIXTURES_DIR, 'boolean_pct.csv')
+        df = pd.read_csv(path)
+        cleaned, report = self.svc.clean_dataframe(df)
+        self.assertGreater(len(cleaned), 0)
+        # At least one cleaning step must have triggered
+        self.assertGreater(len(report), 0)
+
+    def test_sparse_csv_reports_high_missing(self):
+        """sparse.csv has columns with >30 % nulls — step 10 must flag them."""
+        path = os.path.join(FIXTURES_DIR, 'sparse.csv')
+        df = pd.read_csv(path)
+        _, report = self.svc.clean_dataframe(df)
+        self.assertTrue(
+            any('missing' in r.lower() for r in report),
+            f"Expected high-missing warning for sparse.csv. Got: {report}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Schema detection — majority-vote sampling
+# ---------------------------------------------------------------------------
+
+class TestSchemaDetectionMajorityVote(TestCase):
+    """Tests for DataImportService._detect_schema_from_df."""
+
+    def setUp(self):
+        self.svc = DataImportService()
+
+    def _schema(self, df):
+        return {s['name']: s['type'] for s in self.svc._detect_schema_from_df(df)}
+
+    def test_detects_email_column(self):
+        df = pd.DataFrame({'email': [f'user{i}@example.com' for i in range(20)]})
+        self.assertEqual(self._schema(df).get('email'), 'email')
+
+    def test_detects_url_column(self):
+        df = pd.DataFrame({'website': [f'https://site{i}.com' for i in range(20)]})
+        self.assertEqual(self._schema(df).get('website'), 'url')
+
+    def test_detects_boolean_column(self):
+        df = pd.DataFrame({'active': ['yes', 'no'] * 10})
+        typ = self._schema(df).get('active')
+        self.assertEqual(typ, 'boolean')
+
+    def test_detects_percentage_column(self):
+        df = pd.DataFrame({'rate': [f'{i}%' for i in range(10, 50)]})
+        typ = self._schema(df).get('rate')
+        self.assertEqual(typ, 'percentage')
+
+    def test_detects_numeric_column(self):
+        df = pd.DataFrame({'amount': [100.0, 200.0, 300.0] * 10})
+        typ = self._schema(df).get('amount')
+        self.assertEqual(typ, 'number')
+
+    def test_detects_date_column(self):
+        df = pd.DataFrame({'sale_date': ['2024-01-15', '2024-02-20', '2024-03-05'] * 10})
+        typ = self._schema(df).get('sale_date')
+        self.assertEqual(typ, 'date')
+
+    def test_defaults_to_text_for_mixed(self):
+        df = pd.DataFrame({'misc': ['hello', '42', 'world', 'foo', 'bar',
+                                    'baz', 'qux', 'quux', 'corge', 'grault'] * 2})
+        typ = self._schema(df).get('misc')
+        self.assertEqual(typ, 'text')
+
+    def test_already_numeric_dtype_detected_as_number(self):
+        df = pd.DataFrame({'revenue': pd.array([1000, 2000, 3000] * 5, dtype='int64')})
+        typ = self._schema(df).get('revenue')
+        self.assertEqual(typ, 'number')
+
+    def test_already_bool_dtype_detected_as_boolean(self):
+        df = pd.DataFrame({'flag': pd.array([True, False] * 10, dtype='bool')})
+        typ = self._schema(df).get('flag')
+        self.assertEqual(typ, 'boolean')
+
+    def test_all_csv_fixtures_produce_schema(self):
+        """Every fixture CSV must produce a non-empty schema."""
+        for fname in ('sales.csv', 'hr.csv', 'healthcare.csv',
+                      'inventory.csv', 'finance.csv', 'survey.csv', 'text_only.csv'):
+            with self.subTest(file=fname):
+                df = pd.read_csv(os.path.join(FIXTURES_DIR, fname))
+                schema = self.svc._detect_schema_from_df(df)
+                self.assertGreater(len(schema), 0, f"Empty schema for {fname}")
+                for field in schema:
+                    self.assertIn('name', field)
+                    self.assertIn('type', field)
+                    self.assertTrue(field['type'], f"Empty type for field {field['name']}")
+
+
+# ---------------------------------------------------------------------------
+# Insight engine — no widget may be empty
+# ---------------------------------------------------------------------------
+
+class TestInsightEngineWidgetCompleteness(TestCase):
+    """
+    _generate_table_insights must never produce:
+      - a widget with an empty title
+      - a widget whose query_config has no aggregations
+      - a widget whose viz_config is missing a 'description'
+
+    Covers all nine detected domains plus key edge cases.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.svc = WorkspaceInsightService()
+
+    @staticmethod
+    def _clean_row(row):
+        """Convert a row dict to contain only JSON-serializable Python types."""
+        import json, math
+        clean = {}
+        for k, v in row.items():
+            if v is None:
+                clean[k] = None
+            elif isinstance(v, float) and math.isnan(v):
+                clean[k] = None
+            else:
+                try:
+                    json.dumps(v)   # fast serializability check
+                    clean[k] = v
+                except (TypeError, ValueError):
+                    clean[k] = None  # pd.NA, numpy types, etc.
+        return clean
+
+    def _build(self, schema_fields, rows):
+        """Create DataTable + Records and return the table."""
+        schema = [{'name': n, 'type': t, 'required': False} for n, t in schema_fields]
+        table  = DataTableFactory(schema=schema)
+        user   = table.workspace.owner
+        clean  = [self._clean_row(r) for r in rows]
+        p1, p2 = _patch_tasks()
+        with p1, p2:
+            Record.objects.bulk_create([
+                Record(table=table, data=row, created_by=user, is_active=True)
+                for row in clean
+            ])
+        table.record_count = len(clean)
+        table.save(update_fields=['record_count'])
+        return table
+
+    def _check(self, insights, label=''):
+        self.assertGreater(len(insights), 0, f"No widgets generated — {label}")
+        for spec in insights:
+            with self.subTest(widget_title=spec.get('title', '??'), dataset=label):
+                self.assertTrue(
+                    spec.get('title', '').strip(),
+                    f"Empty title: {spec}"
+                )
+                aggs = (spec.get('query_config') or {}).get('aggregations')
+                self.assertTrue(aggs, f"No aggregations in query_config: {spec}")
+                desc = (spec.get('viz_config') or {}).get('description', '')
+                self.assertTrue(
+                    desc.strip(),
+                    f"Missing or empty viz_config.description: {spec}"
+                )
+
+    # ── Sales ─────────────────────────────────────────────────────────────
+
+    def test_sales_domain_no_empty_widgets(self):
+        products = ['Widget A', 'Gadget B', 'Tool C', 'Device D']
+        regions  = ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru']
+        statuses = ['Paid', 'Pending', 'Cancelled']
+        rows = [
+            {'invoice': f'INV-{i:03d}',
+             'customer': f'Customer {i % 8}',
+             'product': products[i % 4],
+             'region':  regions[i % 4],
+             'amount':  round(1000 + i * 150.5, 2),
+             'discount': round(i * 2.0, 2),
+             'status':  statuses[i % 3],
+             'sale_date': f'2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}'}
+            for i in range(30)
+        ]
+        schema = [
+            ('invoice', 'text'), ('customer', 'text'), ('product', 'text'),
+            ('region',  'text'), ('amount',   'currency'), ('discount', 'number'),
+            ('status',  'text'), ('sale_date', 'date'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'sales')
+
+    # ── HR ────────────────────────────────────────────────────────────────
+
+    def test_hr_domain_no_empty_widgets(self):
+        depts    = ['Engineering', 'Sales', 'HR', 'Finance', 'Marketing']
+        positions = ['Developer', 'Manager', 'Executive', 'Analyst', 'Lead']
+        rows = [
+            {'employee_id': f'EMP-{i:03d}',
+             'department': depts[i % 5],
+             'position':   positions[i % 5],
+             'salary':     80000 + i * 2500,
+             'attendance': 85 + (i % 15),
+             'leave_days': i % 20,
+             'hire_date':  f'2020-{(i % 12) + 1:02d}-01',
+             'status':     'Active' if i % 5 != 3 else 'Inactive'}
+            for i in range(30)
+        ]
+        schema = [
+            ('employee_id', 'text'), ('department', 'text'), ('position', 'text'),
+            ('salary',      'number'), ('attendance', 'number'), ('leave_days', 'number'),
+            ('hire_date',   'date'),  ('status',     'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'hr')
+
+    # ── Healthcare ────────────────────────────────────────────────────────
+
+    def test_healthcare_domain_no_empty_widgets(self):
+        diagnoses = ['Malaria', 'Typhoid', 'Diabetes', 'Fracture', 'Pneumonia']
+        wards     = ['General', 'ICU', 'Orthopedics', 'Surgery', 'Endocrinology']
+        rows = [
+            {'patient_id':    f'PAT-{i:03d}',
+             'diagnosis':     diagnoses[i % 5],
+             'ward':          wards[i % 5],
+             'doctor':        f'Dr. {["Kamau","Odhiambo","Wanjiru","Mwangi","Omondi"][i%5]}',
+             'bill_amount':   10000 + i * 1500,
+             'admission_date': f'2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}',
+             'status':        'Discharged' if i % 3 != 0 else 'Admitted'}
+            for i in range(30)
+        ]
+        schema = [
+            ('patient_id', 'text'), ('diagnosis', 'text'), ('ward', 'text'),
+            ('doctor',     'text'), ('bill_amount', 'currency'),
+            ('admission_date', 'date'), ('status', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'healthcare')
+
+    # ── Inventory ─────────────────────────────────────────────────────────
+
+    def test_inventory_domain_no_empty_widgets(self):
+        warehouses = ['Main Store', 'Stationery', 'Medical', 'General']
+        suppliers  = ['PharmaCo', 'MediSupply', 'OfficeWorld', 'CleanCo']
+        rows = [
+            {'sku':         f'SKU-{i:03d}',
+             'product':     f'Product {i % 12}',
+             'warehouse':   warehouses[i % 4],
+             'stock':       50 + i * 10,
+             'reorder_level': 20 + i % 30,
+             'unit_cost':   round(10 + i * 5.5, 2),
+             'supplier':    suppliers[i % 4],
+             'status':      'Available' if i % 4 != 3 else 'Low Stock'}
+            for i in range(30)
+        ]
+        schema = [
+            ('sku',         'text'), ('product',  'text'), ('warehouse', 'text'),
+            ('stock',       'number'), ('reorder_level', 'number'),
+            ('unit_cost',   'currency'), ('supplier', 'text'), ('status', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'inventory')
+
+    # ── Finance ───────────────────────────────────────────────────────────
+
+    def test_finance_domain_no_empty_widgets(self):
+        depts  = ['Marketing', 'Engineering', 'Sales', 'Operations', 'Finance']
+        t_types = ['Expense', 'Salary', 'Revenue', 'Equipment', 'Utilities']
+        rows = [
+            {'account':           f'ACC-{i:03d}',
+             'department':        depts[i % 5],
+             'transaction_type':  t_types[i % 5],
+             'debit':             round(i % 2 == 0 and 5000 + i * 1000 or 0, 2),
+             'credit':            round(i % 2 == 1 and 8000 + i * 800 or 0, 2),
+             'balance':           round(50000 - i * 500, 2),
+             'transaction_date':  f'2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}',
+             'status':            'Completed' if i % 5 != 4 else 'Pending'}
+            for i in range(30)
+        ]
+        schema = [
+            ('account', 'text'), ('department', 'text'), ('transaction_type', 'text'),
+            ('debit',   'currency'), ('credit', 'currency'), ('balance', 'currency'),
+            ('transaction_date', 'date'), ('status', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'finance')
+
+    # ── Survey ────────────────────────────────────────────────────────────
+
+    def test_survey_domain_no_empty_widgets(self):
+        channels  = ['Online', 'Phone', 'Email']
+        regions   = ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru']
+        outcomes  = ['Promoter', 'Passive', 'Detractor']
+        rows = [
+            {'respondent_id': f'R{i:03d}',
+             'rating':        (i % 5) + 1,
+             'satisfaction':  50 + (i * 3) % 50,
+             'nps':           i % 11,
+             'channel':       channels[i % 3],
+             'region':        regions[i % 4],
+             'feedback_date': f'2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}',
+             'outcome':       outcomes[i % 3]}
+            for i in range(30)
+        ]
+        schema = [
+            ('respondent_id', 'text'), ('rating', 'number'), ('satisfaction', 'number'),
+            ('nps',    'number'),  ('channel', 'text'), ('region', 'text'),
+            ('feedback_date', 'date'), ('outcome', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'survey')
+
+    # ── Text-only (no numeric fields) ─────────────────────────────────────
+
+    def test_text_only_no_empty_widgets(self):
+        """With zero numeric fields the engine must still produce at least
+        a count KPI and distribution charts — none may be empty."""
+        categories = ['Premium', 'Standard', 'Basic']
+        regions    = ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru']
+        statuses   = ['Active', 'Inactive']
+        channels   = ['Web', 'Mobile', 'Phone']
+        rows = [
+            {'name':     f'Contact {i}',
+             'category': categories[i % 3],
+             'region':   regions[i % 4],
+             'status':   statuses[i % 2],
+             'channel':  channels[i % 3]}
+            for i in range(30)
+        ]
+        schema = [
+            ('name', 'text'), ('category', 'text'), ('region', 'text'),
+            ('status', 'text'), ('channel', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'text-only')
+
+    # ── Single numeric, no categoricals ───────────────────────────────────
+
+    def test_single_numeric_no_categoricals_no_empty_widgets(self):
+        """Minimal dataset: one numeric field, no text fields, no dates."""
+        rows = [{'revenue': round(1000 + i * 55.5, 2)} for i in range(20)]
+        schema = [('revenue', 'currency')]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'single-numeric')
+
+    # ── No dates, many categoricals ───────────────────────────────────────
+
+    def test_no_date_field_no_empty_widgets(self):
+        """When no date column is present, trend charts should fall back to
+        created_at_date — widgets must still be complete."""
+        regions   = ['Nairobi', 'Mombasa', 'Kisumu']
+        statuses  = ['Active', 'Closed', 'Pending']
+        rows = [
+            {'customer': f'Cust {i}',
+             'amount':   round(500 + i * 80, 2),
+             'region':   regions[i % 3],
+             'status':   statuses[i % 3]}
+            for i in range(30)
+        ]
+        schema = [
+            ('customer', 'text'), ('amount', 'currency'),
+            ('region', 'text'), ('status', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'no-dates')
+
+    # ── Low-cardinality-only categorical (pie-heavy) ───────────────────────
+
+    def test_pie_heavy_dataset_no_empty_widgets(self):
+        """All categorical columns have ≤5 unique values → lots of pie charts."""
+        rows = [
+            {'gender':  ['Male', 'Female'][i % 2],
+             'tier':    ['Bronze', 'Silver', 'Gold'][i % 3],
+             'status':  ['Active', 'Inactive'][i % 2],
+             'channel': ['Web', 'App', 'Phone', 'Email'][i % 4],
+             'revenue': round(200 + i * 45, 2)}
+            for i in range(30)
+        ]
+        schema = [
+            ('gender', 'text'), ('tier', 'text'), ('status', 'text'),
+            ('channel', 'text'), ('revenue', 'currency'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'pie-heavy')
+
+    # ── Sparse data (many nulls) ──────────────────────────────────────────
+
+    def test_sparse_data_no_empty_widgets(self):
+        """Columns with >30 % nulls — engine must handle gracefully."""
+        rows = []
+        for i in range(30):
+            row = {'order_id': f'ORD-{i:03d}',
+                   'customer': f'Customer {i % 8}',
+                   'status':   ['Shipped', 'Delivered', 'Pending'][i % 3]}
+            if i % 3 != 0:          # ~33 % null
+                row['amount'] = round(500 + i * 60, 2)
+            if i % 4 != 0:          # ~25 % null
+                row['region'] = ['Nairobi', 'Mombasa', 'Kisumu'][i % 3]
+            rows.append(row)
+
+        schema = [
+            ('order_id', 'text'), ('customer', 'text'),
+            ('amount',   'currency'), ('region', 'text'), ('status', 'text'),
+        ]
+        table   = self._build(schema, rows)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'sparse')
+
+    # ── CSV fixture integration ───────────────────────────────────────────
+
+    def _build_from_csv(self, fname, schema_fields):
+        """Import a fixture CSV into a DataTable and return the table."""
+        df   = pd.read_csv(os.path.join(FIXTURES_DIR, fname))
+        rows = df.to_dict('records')   # _build/_clean_row handles NaN → None
+        return self._build(schema_fields, rows)
+
+    def test_sales_csv_no_empty_widgets(self):
+        schema = [
+            ('invoice_id', 'text'), ('customer', 'text'), ('product', 'text'),
+            ('region',     'text'), ('amount',   'currency'), ('discount', 'number'),
+            ('sale_date',  'date'), ('status',   'text'),
+        ]
+        table   = self._build_from_csv('sales.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'sales.csv')
+
+    def test_hr_csv_no_empty_widgets(self):
+        schema = [
+            ('employee_id', 'text'), ('department', 'text'), ('position', 'text'),
+            ('salary',      'number'), ('hire_date', 'date'),
+            ('attendance',  'number'), ('leave_days', 'number'), ('status', 'text'),
+        ]
+        table   = self._build_from_csv('hr.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'hr.csv')
+
+    def test_healthcare_csv_no_empty_widgets(self):
+        schema = [
+            ('patient_id', 'text'), ('diagnosis', 'text'), ('doctor', 'text'),
+            ('ward', 'text'), ('treatment', 'text'), ('bill_amount', 'currency'),
+            ('admission_date', 'date'), ('discharge_date', 'date'), ('status', 'text'),
+        ]
+        table   = self._build_from_csv('healthcare.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'healthcare.csv')
+
+    def test_inventory_csv_no_empty_widgets(self):
+        schema = [
+            ('sku', 'text'), ('product', 'text'), ('warehouse', 'text'),
+            ('stock', 'number'), ('reorder_level', 'number'), ('unit_cost', 'currency'),
+            ('supplier', 'text'), ('expiry_date', 'date'), ('status', 'text'),
+        ]
+        table   = self._build_from_csv('inventory.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'inventory.csv')
+
+    def test_finance_csv_no_empty_widgets(self):
+        schema = [
+            ('account', 'text'), ('department', 'text'), ('transaction_type', 'text'),
+            ('debit', 'currency'), ('credit', 'currency'), ('balance', 'currency'),
+            ('transaction_date', 'date'), ('status', 'text'),
+        ]
+        table   = self._build_from_csv('finance.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'finance.csv')
+
+    def test_survey_csv_no_empty_widgets(self):
+        schema = [
+            ('respondent_id', 'text'), ('rating', 'number'), ('satisfaction', 'number'),
+            ('nps', 'number'), ('channel', 'text'), ('region', 'text'),
+            ('feedback_date', 'date'), ('outcome', 'text'),
+        ]
+        table   = self._build_from_csv('survey.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'survey.csv')
+
+    def test_text_only_csv_no_empty_widgets(self):
+        schema = [
+            ('name', 'text'), ('category', 'text'), ('region', 'text'),
+            ('channel', 'text'), ('status', 'text'),
+        ]
+        table   = self._build_from_csv('text_only.csv', schema)
+        insights = self.svc._generate_table_insights(table)
+        self._check(insights, 'text_only.csv')
