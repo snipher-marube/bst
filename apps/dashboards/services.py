@@ -124,72 +124,228 @@ class QueryEngine:
             logger.error(f"Widget query error: {str(e)}", exc_info=True)
             return {"error": str(e)}
     
+    # ------------------------------------------------------------------
+    # DB-side aggregation helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _db_numeric_expr(field):
+        """Return a Django expression that casts a JSON text field to float.
+
+        Works on both SQLite (3.38+, ships with Python 3.12+) and PostgreSQL
+        via Django's KeyTextTransform + Cast.
+        """
+        from django.db.models import FloatField
+        from django.db.models.functions import Cast
+        from django.db.models.fields.json import KeyTextTransform
+        return Cast(KeyTextTransform(field, 'data'), output_field=FloatField())
+
+    @staticmethod
+    def _db_scalar_agg(queryset, agg_type, field):
+        """Run a single scalar DB aggregation; returns float or None."""
+        from django.db.models import Sum, Avg, Min, Max
+        expr = QueryEngine._db_numeric_expr(field)
+        fn   = {'sum': Sum, 'avg': Avg, 'min': Min, 'max': Max}[agg_type]
+        return queryset.aggregate(_r=fn(expr))['_r']
+
     def _execute_metric_query(self, widget, _limit):
-        """Execute metric widget query"""
+        """Execute metric widget query using DB-side aggregation.
+
+        All count/sum/avg/min/max operations are pushed into the database.
+        This eliminates the previous O(n) Python loop that fetched up to
+        10,000 records into memory.
+        """
         from .models import Record
-        
+
         config = widget.query_config or {}
         aggregations = config.get('aggregations', [])
-        
-        # Base queryset
-        queryset = Record.objects.filter(
-            table=widget.table,
-            is_active=True
-        )
-        
-        # Apply filters if any
+
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
-        
+
         if not aggregations:
-            # Default to count
             return {'val': queryset.count()}
-        
-        # Handle different aggregation types
+
         result = {}
         for agg in aggregations:
             agg_type = agg.get('type', 'count')
-            field = agg.get('field')
-            name = agg.get('name', 'val')
-            
-            if agg_type == 'count':
-                result[name] = queryset.count()
-            elif agg_type in ['sum', 'avg', 'min', 'max'] and field:
-                # Aggregate JSON field values in Python (Postgres JSONB aggregate
-                # support requires raw SQL; this approach is simpler and safe up
-                # to QUERY_ENGINE_MAX_RECORDS rows).
-                max_records = getattr(settings, 'QUERY_ENGINE_MAX_RECORDS', 10000)
-                records = queryset.values_list('data', flat=True)[:max_records]
-                
-                values = []
-                for record_data in records:
-                    if record_data and field in record_data:
-                        try:
-                            val = float(record_data[field])
-                            values.append(val)
-                        except (ValueError, TypeError):
-                            pass
-                
-                if values:
-                    if agg_type == 'sum':
-                        result[name] = sum(values)
-                    elif agg_type == 'avg':
-                        result[name] = sum(values) / len(values)
-                    elif agg_type == 'min':
-                        result[name] = min(values)
-                    elif agg_type == 'max':
-                        result[name] = max(values)
+            field    = agg.get('field')
+            name     = agg.get('name', 'val')
+
+            try:
+                if agg_type == 'count':
+                    result[name] = queryset.count()
+                elif agg_type in ('sum', 'avg', 'min', 'max') and field:
+                    value = self._db_scalar_agg(queryset, agg_type, field)
+                    result[name] = round(float(value), 4) if value is not None else 0
                 else:
                     result[name] = 0
-        
+            except Exception as exc:
+                # DB-side cast fails for non-numeric values (e.g. SQLite without
+                # JSON1 or mixed-type columns). Fall back to Python aggregation.
+                logger.warning(
+                    f"DB aggregation failed for field='{field}' agg='{agg_type}': {exc}. "
+                    "Falling back to Python-side aggregation."
+                )
+                result[name] = self._python_scalar_agg(queryset, agg_type, field)
+
         return result
+
+    def _python_scalar_agg(self, queryset, agg_type, field):
+        """Python-side scalar aggregation fallback (loads data into memory)."""
+        max_records = getattr(settings, 'QUERY_ENGINE_MAX_RECORDS', 10_000)
+        values = []
+        for record_data in queryset.values_list('data', flat=True)[:max_records]:
+            if record_data and field in record_data:
+                try:
+                    values.append(float(record_data[field]))
+                except (ValueError, TypeError):
+                    pass
+        if not values:
+            return 0
+        return {
+            'sum': sum(values),
+            'avg': sum(values) / len(values),
+            'min': min(values),
+            'max': max(values),
+        }.get(agg_type, 0)
     
-    def _execute_chart_query(self, widget, limit):
-        """Execute chart widget query and return data formatted for the frontend."""
-        from .models import Record
+    # ------------------------------------------------------------------
+    # DB-side helpers for chart aggregation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _chart_sort_key(k):
+        """Sort key: ISO dates sort chronologically first; strings alphabetically."""
+        try:
+            from datetime import date as _date
+            return (0, _date.fromisoformat(str(k)))
+        except (ValueError, TypeError):
+            return (1, str(k))
+
+    def _db_grouped_agg(self, queryset, agg_type, field, group_by, limit):
+        """
+        DB-side grouped aggregation.
+
+        Returns a label→value dict, sorted chronologically for date labels
+        and alphabetically for categorical labels.  Raises on DB error so the
+        caller can fall back to the Python path.
+        """
+        from django.db.models import Count, Sum, Avg, Min, Max, FloatField
+        from django.db.models.functions import Cast, TruncDate
+        from django.db.models.fields.json import KeyTextTransform
+
+        _SCALAR_FN = {'sum': Sum, 'avg': Avg, 'min': Min, 'max': Max}
+
+        # --- label expression ------------------------------------------------
+        if group_by in ('created_at', '_created_at', 'created_at_date'):
+            qs = queryset.annotate(label=TruncDate('created_at'))
+        else:
+            qs = queryset.annotate(label=KeyTextTransform(group_by, 'data'))
+
+        # --- value expression ------------------------------------------------
+        if agg_type == 'count':
+            val_expr = Count('id')
+        elif agg_type in _SCALAR_FN and field:
+            numeric_expr = Cast(
+                KeyTextTransform(field, 'data'),
+                output_field=FloatField(),
+            )
+            val_expr = _SCALAR_FN[agg_type](numeric_expr)
+        else:
+            val_expr = Count('id')
+
+        rows = (
+            qs
+            .values('label')
+            .annotate(val=val_expr)
+            .exclude(label__isnull=True)
+            .exclude(label='')
+            .order_by('label')[:limit]
+        )
+
+        raw = {}
+        for row in rows:
+            label = row['label']
+            if label is None:
+                continue
+            # Normalise datetime objects → ISO date strings
+            if hasattr(label, 'date'):
+                label = label.date().isoformat()
+            elif hasattr(label, 'isoformat'):
+                label = label.isoformat()
+            else:
+                label = str(label)
+                # "2025-11-24T00:00:00" → "2025-11-24"
+                if len(label) > 10 and label[10] in ('T', ' ') and label[:4].isdigit():
+                    label = label[:10]
+            val = row['val']
+            raw[label] = round(float(val), 4) if val is not None else 0
+
+        return {k: v for k, v in sorted(raw.items(), key=lambda kv: self._chart_sort_key(kv[0]))}
+
+    def _python_grouped_agg(self, records, agg_type, field, group_by):
+        """
+        Python-side grouped aggregation (fallback for DB failures).
+
+        `records` is a list of dicts from `.values('data', 'created_at')`.
+        Returns a label→value dict sorted via _chart_sort_key.
+        """
         from collections import defaultdict
 
-        config = widget.query_config or {}
+        sums   = defaultdict(float)
+        counts = defaultdict(int)
+
+        for rec in records:
+            rdata = rec['data'] or {}
+
+            if group_by in ('created_at', '_created_at', 'created_at_date'):
+                label = rec['created_at'].date().isoformat()
+            elif group_by in rdata:
+                raw = rdata[group_by]
+                if raw is None or str(raw).strip() in ('', 'None', 'nan'):
+                    continue
+                raw_str = str(raw)
+                if len(raw_str) > 10 and raw_str[10] in ('T', ' ') and raw_str[:4].isdigit():
+                    raw_str = raw_str[:10]
+                label = raw_str
+            else:
+                continue
+
+            if agg_type == 'count':
+                val = 1.0
+            elif field and field in rdata:
+                try:
+                    val = float(rdata[field])
+                except (ValueError, TypeError):
+                    continue
+            else:
+                val = 1.0 if agg_type == 'count' else 0.0
+
+            sums[label]   += val
+            counts[label] += 1
+
+        if not sums:
+            return {}
+
+        grouped = {k: sums[k] / counts[k] for k in sums} if agg_type == 'avg' else dict(sums)
+        return {
+            str(k): round(v, 4)
+            for k, v in sorted(grouped.items(), key=lambda kv: self._chart_sort_key(kv[0]))
+        }
+
+    def _execute_chart_query(self, widget, limit):
+        """
+        Execute chart widget query and return data formatted for the frontend.
+
+        Aggregations are pushed to the DB via values().annotate().  If the DB
+        path raises (e.g. unsupported SQLite version, malformed JSON data) the
+        method transparently falls back to the Python-side aggregation path and
+        logs a warning so the issue can be investigated without breaking users.
+        """
+        from .models import Record
+
+        config       = widget.query_config or {}
         aggregations = config.get('aggregations', [])
 
         if not aggregations:
@@ -199,9 +355,8 @@ class QueryEngine:
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
 
-        records = list(queryset.values('data', 'created_at')[:limit])
-        if not records:
-            return {"message": "No data", "val": {}}
+        # Python-fallback records are fetched lazily — only if a DB path fails.
+        _fallback_records = None
 
         result = {}
         for agg in aggregations:
@@ -212,99 +367,41 @@ class QueryEngine:
 
             try:
                 if group_by:
-                    # Grouped aggregation — builds {label: value} dict for charts
-                    sums   = defaultdict(float)
-                    counts = defaultdict(int)
-
-                    for rec in records:
-                        rdata = rec['data'] or {}
-
-                        # Resolve the group-by label
-                        if group_by in ('created_at', '_created_at', 'created_at_date'):
-                            label = rec['created_at'].date().isoformat()
-                        elif group_by in rdata:
-                            raw = rdata[group_by]
-                            # Skip None / blank labels
-                            if raw is None or str(raw).strip() in ('', 'None', 'nan'):
-                                continue
-                            # Normalise datetime strings to date-only (YYYY-MM-DD)
-                            # so labels are consistent regardless of whether the value
-                            # was stored with a time component (e.g. "2025-11-24T00:00:00").
-                            raw_str = str(raw)
-                            if len(raw_str) > 10 and raw_str[10] in ('T', ' ') and raw_str[:4].isdigit():
-                                raw_str = raw_str[:10]
-                            label = raw_str
+                    # Attempt DB-side grouped aggregation
+                    try:
+                        result[name] = self._db_grouped_agg(queryset, agg_type, field, group_by, limit)
+                    except Exception as db_exc:
+                        logger.warning(
+                            f"DB grouped agg failed (group_by='{group_by}', agg='{agg_type}'): "
+                            f"{db_exc}. Falling back to Python-side aggregation."
+                        )
+                        if _fallback_records is None:
+                            _fallback_records = list(queryset.values('data', 'created_at')[:limit])
+                        if not _fallback_records:
+                            result[name] = {}
                         else:
-                            continue
-
-                        # Resolve the numeric value for this record
-                        if agg_type == 'count':
-                            val = 1.0
-                        elif field and field in rdata:
-                            try:
-                                val = float(rdata[field])
-                            except (ValueError, TypeError):
-                                continue
-                        else:
-                            val = 1.0 if agg_type == 'count' else 0.0
-
-                        sums[label]   += val
-                        counts[label] += 1
-
-                    if not sums:
-                        result[name] = {}
-                        continue
-
-                    # Compute final value per label
-                    if agg_type == 'avg':
-                        grouped = {k: sums[k] / counts[k] for k in sums}
-                    else:
-                        grouped = dict(sums)
-
-                    # Sort keys chronologically when they look like ISO dates;
-                    # fall back to plain string sort for categorical labels.
-                    def _sort_key(k):
-                        try:
-                            from datetime import date as _date
-                            return (0, _date.fromisoformat(str(k)))
-                        except (ValueError, TypeError):
-                            return (1, str(k))
-
-                    result[name] = {
-                        str(k): round(v, 4)
-                        for k, v in sorted(grouped.items(), key=lambda kv: _sort_key(kv[0]))
-                    }
-
+                            result[name] = self._python_grouped_agg(
+                                _fallback_records, agg_type, field, group_by
+                            )
                 else:
-                    # Scalar aggregation (used by metric widgets)
+                    # Scalar aggregation — reuse the metric path helpers
                     if agg_type == 'count':
-                        result[name] = len(records)
-                    elif field:
-                        vals = []
-                        for rec in records:
-                            rdata = rec['data'] or {}
-                            if field in rdata:
-                                try:
-                                    vals.append(float(rdata[field]))
-                                except (ValueError, TypeError):
-                                    pass
-                        if not vals:
-                            result[name] = 0
-                        elif agg_type == 'sum':
-                            result[name] = sum(vals)
-                        elif agg_type == 'avg':
-                            result[name] = sum(vals) / len(vals)
-                        elif agg_type == 'min':
-                            result[name] = min(vals)
-                        elif agg_type == 'max':
-                            result[name] = max(vals)
-                        else:
-                            result[name] = sum(vals)
+                        result[name] = queryset.count()
+                    elif field and agg_type in ('sum', 'avg', 'min', 'max'):
+                        try:
+                            val = self._db_scalar_agg(queryset, agg_type, field)
+                            result[name] = round(float(val), 4) if val is not None else 0
+                        except Exception as db_exc:
+                            logger.warning(
+                                f"DB scalar agg failed (field='{field}', agg='{agg_type}'): "
+                                f"{db_exc}. Falling back to Python-side aggregation."
+                            )
+                            result[name] = self._python_scalar_agg(queryset, agg_type, field)
                     else:
                         result[name] = 0
 
             except Exception as exc:
-                logger.error(f"Chart aggregation error: {exc}", exc_info=True)
+                logger.error(f"Chart aggregation error for '{name}': {exc}", exc_info=True)
                 result[name] = {"error": str(exc)}
 
         return result
@@ -727,11 +824,11 @@ class DataImportService:
         return schema
     
     def _is_date(self, value):
-        """Check if string is a date"""
+        """Return True if *value* can be parsed as an ISO date string."""
         from django.utils.dateparse import parse_date
         try:
             return parse_date(str(value)) is not None
-        except:
+        except (ValueError, TypeError, AttributeError):
             return False
 
 
