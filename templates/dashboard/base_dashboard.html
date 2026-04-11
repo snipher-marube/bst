@@ -7,6 +7,64 @@
 {% block mobile_menu %}{% endblock %}
 {% block cookie_banner %}{% endblock %}
 {% block main_class %}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+
+{# ── PWA + mobile meta tags ─────────────────────────────────────────────── #}
+{% block extra_head %}
+{# Apple PWA — allows "Add to Home Screen" on iOS #}
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AnalyticsMeta">
+<meta name="mobile-web-app-capable" content="yes">
+{# Theme colour — browser chrome matches our brand on Android #}
+<meta name="theme-color" content="#03466e">
+{# PWA manifest #}
+<link rel="manifest" href="{% static 'manifest.json' %}">
+
+{# Register service worker for offline + caching #}
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('{% static "js/service-worker.js" %}', { scope: '/' })
+      .catch((err) => console.warn('SW registration failed:', err));
+  });
+}
+</script>
+
+{# ── Mobile responsive overrides for the dashboard grid ──────────────────── #}
+<style>
+  /* On small screens the sidebar overlays content (already handled by Alpine),
+     but we also need the widget grid to reflow gracefully. */
+  @media (max-width: 640px) {
+    /* Prevent horizontal overflow on widget titles */
+    .widget-header h3 { font-size: .75rem; }
+
+    /* Stack gridstack items vertically on mobile */
+    .grid-stack > .grid-stack-item {
+      position: static !important;
+      width: 100% !important;
+      margin-bottom: .75rem;
+    }
+    .grid-stack > .grid-stack-item > .grid-stack-item-content {
+      position: static !important;
+      height: auto !important;
+      min-height: 220px;
+    }
+
+    /* Hide resize handles — touch UI has no resize */
+    .ui-resizable-handle { display: none !important; }
+
+    /* Tighten spacing */
+    .p-4.sm\:p-6 { padding: .75rem !important; }
+  }
+
+  /* Touch-friendly tap targets in the topbar */
+  @media (hover: none) {
+    .widget-actions { opacity: 1 !important; }  /* Always visible on touch */
+  }
+</style>
+{% endblock %}
 
 {# ── dashboard shell ────────────────────────────────────────────────────── #}
 {% block content %}

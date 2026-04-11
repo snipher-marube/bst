@@ -18,7 +18,6 @@ from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.core.cache import cache
-import json
 import logging
 import math
 import statistics
@@ -39,6 +38,32 @@ def _acquire_lock(key):
 
 def _release_lock(key):
     cache.delete(f'lock:{key}')
+
+
+# ---------------------------------------------------------------------------
+# LLM budget helper
+# ---------------------------------------------------------------------------
+
+def _get_or_create_budget(workspace):
+    """
+    Return the ``WorkspaceLLMBudget`` for the current calendar month.
+
+    Creates a new row (with the globally configured monthly limit) if none exists.
+    """
+    from django.utils import timezone
+    from django.conf import settings
+    from apps.insights.models import WorkspaceLLMBudget
+
+    today  = timezone.localdate()
+    month  = today.replace(day=1)
+    limit  = getattr(settings, 'LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET', 100_000)
+
+    budget, _ = WorkspaceLLMBudget.objects.get_or_create(
+        workspace=workspace,
+        month=month,
+        defaults={'monthly_limit': limit, 'tokens_used': 0},
+    )
+    return budget
 
 
 # ---------------------------------------------------------------------------
@@ -226,11 +251,16 @@ def _run_insight_generation(workspace_id, task_self):
     from apps.dashboards.services import WorkspaceInsightService
     from apps.workspaces.models import Workspace
     from apps.insights.models import Insight
+    from apps.insights.llm import ClaudeInsightGenerator
     from django.db.models import Exists, OuterRef
     from apps.dashboards.models import Record
 
     workspace = Workspace.objects.get(id=workspace_id)
     owner     = workspace.owner
+
+    # Initialise LLM generator and budget (budget lazily created if LLM available)
+    llm_gen = ClaudeInsightGenerator()
+    budget  = _get_or_create_budget(workspace) if llm_gen.is_available() else None
 
     _broadcast(f'workspace_{workspace_id}', {
         'type':    'insights_generation_progress',
@@ -268,7 +298,9 @@ def _run_insight_generation(workspace_id, task_self):
     total = len(tables)
     for idx, table in enumerate(tables):
         try:
-            new_insights, field_values = _analyse_table(table, workspace, owner)
+            new_insights, field_values = _analyse_table(
+                table, workspace, owner, llm_gen=llm_gen, budget=budget
+            )
             created_insights.extend(new_insights)
             if field_values:
                 numeric_by_table[table.id] = field_values
@@ -283,7 +315,10 @@ def _run_insight_generation(workspace_id, task_self):
         })
 
     # ── Phase 3: cross-table comparison insights ──────────────────────────
-    _create_comparison_insights(tables, numeric_by_table, workspace, owner, created_insights)
+    _create_comparison_insights(
+        tables, numeric_by_table, workspace, owner, created_insights,
+        llm_gen=llm_gen, budget=budget,
+    )
 
     # ── Done ──────────────────────────────────────────────────────────────
     _broadcast(f'workspace_{workspace_id}', {
@@ -301,7 +336,38 @@ def _run_insight_generation(workspace_id, task_self):
 # ---------------------------------------------------------------------------
 # Per-table statistical analysis
 # ---------------------------------------------------------------------------
-def _analyse_table(table, workspace, owner):
+def _enrich_with_llm(insight, insight_type, stats_context, llm_gen, budget):
+    """
+    Replace insight.description with a Claude-generated narrative if budget allows.
+    Updates the insight in-place and saves only the changed fields.
+    """
+    from apps.insights.llm import LLMError
+
+    if llm_gen is None or budget is None:
+        return
+    # Refresh budget from DB to get latest tokens_used
+    budget.refresh_from_db()
+    if not budget.has_capacity(estimated_tokens=300):
+        logger.debug('LLM budget exhausted for workspace=%s', insight.workspace_id)
+        return
+
+    try:
+        result = llm_gen.narrate_insight(insight_type, stats_context)
+        if result.get('narrative'):
+            insight.description      = result['narrative']
+            insight.llm_model        = result['model']
+            insight.prompt_tokens    = result['prompt_tokens']
+            insight.completion_tokens = result['completion_tokens']
+            insight.save(update_fields=[
+                'description', 'llm_model', 'prompt_tokens', 'completion_tokens'
+            ])
+            budget.consume(result['prompt_tokens'] + result['completion_tokens'])
+            logger.debug('LLM narrative written for insight=%s', insight.id)
+    except LLMError as exc:
+        logger.warning('LLM narrate failed insight=%s: %s', insight.id, exc)
+
+
+def _analyse_table(table, workspace, owner, llm_gen=None, budget=None):
     """
     Profile one table and create Insight records.
     Returns (list[Insight], dict[field→values]).
@@ -324,6 +390,13 @@ def _analyse_table(table, workspace, owner):
             source_table_name = table.name,
             created_by       = owner,
         )
+        _enrich_with_llm(insight, 'summary', {
+            'table': table.name,
+            'record_count': table.record_count,
+            'field_count': 0,
+            'numeric_fields': [],
+            'date_fields': [],
+        }, llm_gen, budget)
         return [insight], {}
 
     sample_size = getattr(settings, 'QUERY_ENGINE_PROFILE_SAMPLE', 1000)
@@ -342,6 +415,13 @@ def _analyse_table(table, workspace, owner):
             source_table_name = table.name,
             created_by        = owner,
         )
+        _enrich_with_llm(insight, 'summary', {
+            'table': table.name,
+            'record_count': 0,
+            'field_count': len(schema),
+            'numeric_fields': [],
+            'date_fields': [],
+        }, llm_gen, budget)
         return [insight], {}
 
     numeric_types = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
@@ -374,7 +454,7 @@ def _analyse_table(table, workspace, owner):
         for field, vals in list(field_values.items())[:5]
     ) or 'No numeric fields found.'
 
-    insights.append(Insight.objects.create(
+    _summary_insight = Insight.objects.create(
         workspace         = workspace,
         title             = f'{table.name} Summary',
         description       = (
@@ -390,7 +470,15 @@ def _analyse_table(table, workspace, owner):
             'numeric_fields': list(field_values.keys()),
             'date_fields':    date_fields,
         },
-    ))
+    )
+    _enrich_with_llm(_summary_insight, 'summary', {
+        'table':          table.name,
+        'record_count':   table.record_count,
+        'field_count':    len(schema),
+        'numeric_fields': list(field_values.keys()),
+        'date_fields':    date_fields,
+    }, llm_gen, budget)
+    insights.append(_summary_insight)
 
     # ── Trend insights ────────────────────────────────────────────────────
     # Split sample into first-half / last-half to derive direction
@@ -408,7 +496,7 @@ def _analyse_table(table, workspace, owner):
         else:
             direction, emoji = 'downward', '↓'
 
-        insights.append(Insight.objects.create(
+        _trend_insight = Insight.objects.create(
             workspace         = workspace,
             title             = f'{table.name} — {field} trend {emoji}',
             description       = (
@@ -426,7 +514,17 @@ def _analyse_table(table, workspace, owner):
                 'first_avg': round(first, 4),
                 'last_avg':  round(last, 4),
             },
-        ))
+        )
+        _enrich_with_llm(_trend_insight, 'trend', {
+            'table':        table.name,
+            'field':        field,
+            'direction':    direction,
+            'pct_change':   round(pct, 2),
+            'first_avg':    round(first, 4),
+            'last_avg':     round(last, 4),
+            'record_count': len(vals),
+        }, llm_gen, budget)
+        insights.append(_trend_insight)
 
     # ── Anomaly insights (z-score ≥ 3) ───────────────────────────────────
     for field, vals in field_values.items():
@@ -445,7 +543,7 @@ def _analyse_table(table, workspace, owner):
             continue
 
         pct_outliers = outlier_count / len(vals) * 100
-        insights.append(Insight.objects.create(
+        _anomaly_insight = Insight.objects.create(
             workspace         = workspace,
             title             = f'{table.name} — Anomaly in "{field}"',
             description       = (
@@ -463,7 +561,16 @@ def _analyse_table(table, workspace, owner):
                 'outlier_count': outlier_count,
                 'pct_outliers':  round(pct_outliers, 2),
             },
-        ))
+        )
+        _enrich_with_llm(_anomaly_insight, 'anomaly', {
+            'table':          table.name,
+            'field':          field,
+            'mean':           round(mean, 4),
+            'std':            round(std, 4),
+            'outlier_count':  outlier_count,
+            'pct_outliers':   round(pct_outliers, 2),
+        }, llm_gen, budget)
+        insights.append(_anomaly_insight)
 
     return insights, field_values
 
@@ -471,7 +578,8 @@ def _analyse_table(table, workspace, owner):
 # ---------------------------------------------------------------------------
 # Cross-table comparison insights
 # ---------------------------------------------------------------------------
-def _create_comparison_insights(tables, numeric_by_table, workspace, owner, insights_list):
+def _create_comparison_insights(tables, numeric_by_table, workspace, owner, insights_list,
+                                llm_gen=None, budget=None):
     """
     Create comparison Insight records when 2+ tables share a numeric field name.
     E.g., both "Sales" and "Expenses" have an "amount" field.
@@ -510,4 +618,8 @@ def _create_comparison_insights(tables, numeric_by_table, workspace, owner, insi
             created_by        = owner,
             chart_data        = {'field': field, 'table_averages': chart_data},
         )
+        _enrich_with_llm(insight, 'comparison', {
+            'field':          field,
+            'table_averages': chart_data,
+        }, llm_gen, budget)
         insights_list.append(insight)

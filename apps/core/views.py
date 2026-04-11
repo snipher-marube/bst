@@ -642,5 +642,10 @@ def sitemap_view(request):
         'static': StaticViewSitemap,
         'blog': BlogSitemap,
     }
-    
+
     return sitemap(request, sitemaps)
+
+
+def offline_view(request):
+    """Served by the service worker when the user is offline."""
+    return render(request, 'core/offline.html', status=200)

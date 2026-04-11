@@ -409,9 +409,8 @@ class WidgetDetailAPIView(APIView):
         serializer = WidgetSerializer(widget, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        # Invalidate cache
-        cache_key = f"widget_data_{widget.id}"
-        cache.delete(cache_key)
+        # QueryEngine cache key includes widget.updated_at, so saving the widget
+        # automatically invalidates the old key — no explicit deletion needed.
         return Response(serializer.data)
 
     def delete(self, request, pk):
@@ -433,12 +432,26 @@ class TableImportAPIView(APIView):
         import uuid as uuid_mod
         import pandas as pd
         import numpy as np
+        import os
 
         ws = _require_workspace(request)
         table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         uploaded = request.FILES.get('file')
         if not uploaded:
             return Response({'error': 'No file uploaded'}, status=400)
+
+        # ── File size guard (reject before touching pandas) ────────────────
+        MAX_UPLOAD_BYTES = getattr(settings, 'MAX_IMPORT_FILE_BYTES', 50 * 1024 * 1024)  # 50 MB
+        if uploaded.size > MAX_UPLOAD_BYTES:
+            limit_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+            return Response(
+                {'error': f'File too large. Maximum allowed size is {limit_mb} MB '
+                          f'(uploaded {uploaded.size / 1024 / 1024:.1f} MB).'},
+                status=413,
+            )
+
+        # ── Strip path traversal from filename ────────────────────────────
+        uploaded.name = os.path.basename(uploaded.name)
 
         from apps.dashboards.services import DataImportService
         service = DataImportService()
