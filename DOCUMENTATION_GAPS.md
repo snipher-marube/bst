@@ -1,7 +1,7 @@
 # Documentation Gaps — AnalyticsMeta
 
 Tracks what was missing and what has been written to close each gap.
-Last updated: 2026-04-08
+Last updated: 2026-04-11
 
 ---
 
@@ -98,8 +98,31 @@ Last updated: 2026-04-08
 
 ---
 
+## 8. AI Insights & LLM Integration
+
+| Item | Status | Location |
+|---|---|---|
+| `ClaudeInsightGenerator` API and usage | ✅ Closed | `docs/ai-insights.md` |
+| Token budget enforcement per workspace | ✅ Closed | `docs/ai-insights.md` |
+| Fallback behaviour when API key is absent | ✅ Closed | `docs/ai-insights.md` |
+| `ANTHROPIC_API_KEY` + `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` env vars | ✅ Closed | `README.md` — Environment Variables; `docs/ai-insights.md` |
+| Insight types and what each explains | ✅ Closed | `docs/ai-insights.md` |
+
+---
+
+## 9. Public Dashboard Sharing
+
+| Item | Status | Location |
+|---|---|---|
+| `/d/<uuid>/` public URL behaviour | ✅ Closed | `README.md` — REST API section |
+| Enabling/disabling public sharing | ✅ Closed | `README.md` — REST API section |
+
+---
+
 ## Remaining open items
 
 All previously open items have been closed. The only ongoing maintenance items are:
 
 - **Auto-dashboard generation detail** — the high-level description in `README.md` is sufficient for most contributors; a full field-by-field reference could be added to `docs/widget-configuration.md` if needed.
+- **Data alerts** — once `apps/alerts/` is built, add `docs/alerts.md`.
+- **Webhook ingestion** — once `/api/v1/tables/<id>/ingest/` is built, document authentication and payload schema.

@@ -42,25 +42,20 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ---
 
-### [ ] 2. Real AI/LLM Integration for Insights
-**Status:** Not Started  
-**Impact:** The "AI insights" feature is currently statistical heuristics only — no LLM is called anywhere. This is the main differentiator vs. Metabase/Redash.  
+### [x] 2. Real AI/LLM Integration for Insights
+**Status:** Done (2026-04-11)  
+**Impact:** The "AI insights" feature now calls Claude (`claude-sonnet-4-6`) to produce plain-English narratives alongside statistical analysis. This is the main differentiator vs. Metabase/Redash.  
 **Effort:** Medium
 
-**What to build:**
-- Wire Anthropic Claude (`claude-sonnet-4-6`) to `analyze_workspace_tables()` Celery task
-- Generate plain-English narrative per table: "Your sales grew 23% last month, driven mainly by Nairobi region..."
-- Natural language query interface: user types "show me monthly revenue by region" → auto-generates widget config
-- Anomaly explanations in natural language (currently just a flag in DB)
-- Cost guardrails: token counting + per-workspace monthly LLM budget cap
+**What was built:**
+- `apps/insights/llm.py` — `ClaudeInsightGenerator` wraps the Anthropic SDK; gracefully disabled when `ANTHROPIC_API_KEY` is empty (falls back to heuristic descriptions)
+- `WorkspaceLLMBudget` — per-workspace monthly token cap enforced before each API call; configurable via `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` env var (default: 100,000 tokens)
+- `apps/insights/tasks.py` — statistical analysis runs first; LLM narrative generated from the stats dict; both stored on `Insight`
+- `apps/insights/models.py` — migration `0002_llm_fields` adds `llm_model`, `prompt_tokens`, `completion_tokens` fields
+- `config/settings/base.py` — `ANTHROPIC_API_KEY` and `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` settings
+- 455-line test suite in `apps/insights/tests.py` covers LLM path, fallback path, and budget enforcement
 
-**Files to touch:**
-- `apps/insights/tasks.py` — replace heuristic blocks with LLM calls
-- New: `apps/insights/llm.py` — Claude client wrapper, prompt templates
-- `apps/insights/models.py` — add `llm_model`, `prompt_tokens`, `completion_tokens` fields
-- `.env` — add `ANTHROPIC_API_KEY`
-
-**API:** Use `anthropic` Python SDK, model `claude-sonnet-4-6`
+**Docs:** [docs/ai-insights.md](docs/ai-insights.md)
 
 ---
 
@@ -302,7 +297,7 @@ Mark status as `[x]` when done, `[~]` when in progress.
 | # | Feature | Priority | Status | Effort |
 |---|---------|----------|--------|--------|
 | 1 | Onboarding wizard + sample data | P0 | Done | Medium |
-| 2 | Real AI/LLM integration | P0 | Not Started | Medium |
+| 2 | Real AI/LLM integration | P0 | Done | Medium |
 | 3 | Email notifications | P0 | Done | Low |
 | 4 | Public dashboard viewer | P1 | Done | Low |
 | 5 | Data alerts & thresholds | P1 | Not Started | Medium |
