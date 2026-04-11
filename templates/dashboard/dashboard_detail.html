@@ -145,6 +145,85 @@
     {% endif %}
   </div>
 
+  {# ── AI Insights panel (workspace overview only) ──────────────────── #}
+  {% if ai_insights %}
+  <div class="px-4 sm:px-6 pt-5 pb-1">
+    <div x-data="{ open: true }" class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+      {# Panel header #}
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-50 cursor-pointer select-none"
+           @click="open = !open">
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:#f68712/10;background-color:rgba(246,135,18,.12)">
+            <i class="fas fa-magic text-xs" style="color:#f68712"></i>
+          </div>
+          <span class="text-sm font-semibold text-gray-800">AI Insights</span>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#03466e]/10 text-[#03466e]">
+            {{ ai_insights|length }}
+          </span>
+        </div>
+        <i class="fas text-gray-400 text-sm transition-transform duration-200"
+           :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </div>
+
+      {# Insight cards #}
+      <div x-show="open" x-collapse>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-5">
+          {% for insight in ai_insights %}
+          <div class="rounded-xl border p-4 flex flex-col gap-2
+            {% if insight.insight_type == 'anomaly' %}border-red-100 bg-red-50/40
+            {% elif insight.insight_type == 'trend' %}border-blue-100 bg-blue-50/40
+            {% elif insight.insight_type == 'comparison' %}border-purple-100 bg-purple-50/40
+            {% else %}border-gray-100 bg-gray-50/40{% endif %}">
+
+            {# Badge row #}
+            <div class="flex items-center justify-between">
+              <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full
+                {% if insight.insight_type == 'anomaly' %}bg-red-100 text-red-700
+                {% elif insight.insight_type == 'trend' %}bg-blue-100 text-blue-700
+                {% elif insight.insight_type == 'comparison' %}bg-purple-100 text-purple-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                <i class="fas
+                  {% if insight.insight_type == 'anomaly' %}fa-exclamation-triangle
+                  {% elif insight.insight_type == 'trend' %}fa-chart-line
+                  {% elif insight.insight_type == 'comparison' %}fa-balance-scale
+                  {% else %}fa-info-circle{% endif %} text-[9px]"></i>
+                {{ insight.get_insight_type_display }}
+              </span>
+              {% if insight.llm_model %}
+              <span class="text-[10px] text-gray-400 flex items-center gap-1">
+                <i class="fas fa-robot text-[9px]"></i> AI
+              </span>
+              {% endif %}
+            </div>
+
+            {# Title #}
+            <p class="text-xs font-semibold text-gray-800 leading-snug">{{ insight.title }}</p>
+
+            {# Narrative #}
+            <p class="text-xs text-gray-600 leading-relaxed flex-1">{{ insight.description }}</p>
+
+            {# Footer: table source + token count #}
+            <div class="flex items-center justify-between pt-1 border-t border-white/60">
+              {% if insight.source_table_name %}
+              <span class="text-[10px] text-gray-400">
+                <i class="fas fa-table text-[9px] mr-0.5"></i>{{ insight.source_table_name }}
+              </span>
+              {% else %}<span></span>{% endif %}
+              {% if insight.prompt_tokens %}
+              <span class="text-[10px] text-gray-300">
+                {{ insight.prompt_tokens|add:insight.completion_tokens }} tokens
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="p-4 sm:p-6">
     {# Empty state #}
     <div id="emptyState" class="bg-white rounded-xl border border-dashed border-gray-300 py-20 text-center">

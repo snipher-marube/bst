@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Offline – AnalyticsMeta</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, system-ui, sans-serif;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #374151;
+    }
+    .card {
+      background: #fff;
+      border-radius: 1rem;
+      padding: 2.5rem 2rem;
+      max-width: 380px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    .icon {
+      width: 64px; height: 64px;
+      background: #eff6ff;
+      border-radius: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.25rem;
+      font-size: 1.75rem;
+    }
+    h1 { font-size: 1.25rem; font-weight: 700; color: #03466e; margin-bottom: .5rem; }
+    p  { font-size: .875rem; color: #6b7280; line-height: 1.6; margin-bottom: 1.5rem; }
+    .btn {
+      display: inline-block;
+      background: #f68712;
+      color: #fff;
+      padding: .625rem 1.5rem;
+      border-radius: .625rem;
+      font-size: .875rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover { background: #e07810; }
+    .status {
+      margin-top: 1.25rem;
+      font-size: .75rem;
+      color: #9ca3af;
+    }
+    #statusDot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>You're Offline</h1>
+    <p>
+      It looks like you've lost your internet connection.
+      AnalyticsMeta needs a connection to load your dashboards.
+    </p>
+    <button class="btn" onclick="window.location.reload()">Try Again</button>
+    <p class="status">
+      <span id="statusDot"></span>
+      <span id="statusText">No internet connection</span>
+    </p>
+  </div>
+
+  <script>
+    function updateStatus() {
+      const dot  = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      if (navigator.onLine) {
+        dot.style.background = '#22c55e';
+        text.textContent = 'Connection restored — reloading…';
+        setTimeout(() => window.location.href = '/dashboard/analytics/', 1000);
+      } else {
+        dot.style.background = '#ef4444';
+        text.textContent = 'No internet connection';
+      }
+    }
+    window.addEventListener('online',  updateStatus);
+    window.addEventListener('offline', updateStatus);
+    updateStatus();
+  </script>
+</body>
+</html>

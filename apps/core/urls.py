@@ -24,4 +24,5 @@ urlpatterns = [
     path('health/json/', views.health_check, name='health_json'),
     path('health/liveness/', views.liveness_probe, name='liveness'),
     path('health/readiness/', views.readiness_probe, name='readiness'),
+    path('offline/', views.offline_view, name='offline'),
 ]

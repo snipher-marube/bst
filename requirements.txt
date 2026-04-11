@@ -1,3 +1,4 @@
+anthropic>=0.40.0
 amqp==5.3.1
 asgiref==3.11.1
 asttokens==3.0.1

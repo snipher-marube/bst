@@ -452,6 +452,16 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         service = WorkspaceInsightService()
         dashboard = service.generate_workspace_overview(workspace, request.user)
 
+        # Kick off LLM insight generation asynchronously so the user isn't blocked
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        try:
+            from apps.insights.tasks import analyze_workspace_tables
+            task = analyze_workspace_tables.delay(str(workspace.id))
+            _logger.info('analyze_workspace_tables dispatched task_id=%s workspace=%s', task.id, workspace.id)
+        except Exception as exc:
+            _logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
+
         messages.success(request, f'Successfully generated insights in "{dashboard.name}"!')
         return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
 
@@ -663,13 +673,21 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+
         # Get all tables for widget creation
         context['tables'] = DataTable.objects.filter(
             workspace=self.object.workspace,
             is_active=True
         )
-        
+
+        # Load LLM-generated Insight records when this is the workspace overview dashboard
+        if self.object.slug == 'workspace-overview':
+            from apps.insights.models import Insight
+            context['ai_insights'] = list(
+                Insight.objects.filter(workspace=self.object.workspace)
+                .order_by('insight_type', '-created_at')
+            )
+
         # Serialize dashboard data with proper positions
         dashboard_data = {
             'id': str(self.object.id),

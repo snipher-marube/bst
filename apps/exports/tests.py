@@ -5,6 +5,13 @@ from apps.dashboards.factories import UserFactory, WorkspaceFactory, DataTableWi
 from apps.dashboards.models import Record
 
 
+def _stream_content(resp):
+    """Consume a StreamingHttpResponse and return bytes, or return .content for regular responses."""
+    if hasattr(resp, 'streaming_content'):
+        return b''.join(resp.streaming_content)
+    return resp.content
+
+
 class TestExportTableView(TestCase):
     """Tests for the export_table view (CSV, JSON, Excel formats)."""
 
@@ -48,32 +55,38 @@ class TestExportTableView(TestCase):
     def test_csv_export_default_format(self):
         resp = self.client.get(self._url())
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp['Content-Type'], 'text/csv')
+        # StreamingHttpResponse includes charset in Content-Type
+        self.assertIn('text/csv', resp['Content-Type'])
         self.assertIn('attachment', resp['Content-Disposition'])
         self.assertIn('.csv', resp['Content-Disposition'])
 
     def test_csv_export_explicit_format(self):
         resp = self.client.get(self._url('csv'))
         self.assertEqual(resp.status_code, 200)
-        content = resp.content.decode()
+        # StreamingHttpResponse: read via streaming_content
+        content = _stream_content(resp).decode()
         self.assertIn('Alice', content)
         self.assertIn('Bob', content)
         self.assertIn('customer', content)
 
     def test_csv_export_empty_table(self):
-        """Exporting a table with no records returns an empty CSV (no error)."""
+        """Exporting a table with no records returns a header-only CSV (no error)."""
         Record.objects.filter(table=self.table).delete()
         resp = self.client.get(self._url('csv'))
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp['Content-Type'], 'text/csv')
+        self.assertIn('text/csv', resp['Content-Type'])
+        # Should still have a header row
+        content = _stream_content(resp).decode()
+        self.assertIn('_id', content)
 
     # ── JSON ──────────────────────────────────────────────────────────────────
 
     def test_json_export(self):
         resp = self.client.get(self._url('json'))
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp['Content-Type'], 'application/json')
-        data = json.loads(resp.content)
+        self.assertIn('application/json', resp['Content-Type'])
+        # StreamingHttpResponse: consume the stream
+        data = json.loads(_stream_content(resp))
         self.assertIsInstance(data, list)
         self.assertEqual(len(data), 2)
         names = {row['customer'] for row in data}
@@ -81,7 +94,7 @@ class TestExportTableView(TestCase):
 
     def test_json_export_includes_meta_fields(self):
         resp = self.client.get(self._url('json'))
-        rows = json.loads(resp.content)
+        rows = json.loads(_stream_content(resp))
         self.assertIn('_id', rows[0])
         self.assertIn('_created_at', rows[0])
 
@@ -90,10 +103,7 @@ class TestExportTableView(TestCase):
     def test_excel_export(self):
         resp = self.client.get(self._url('excel'))
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(
-            'spreadsheetml.sheet',
-            resp['Content-Type'],
-        )
+        self.assertIn('spreadsheetml.sheet', resp['Content-Type'])
         self.assertIn('.xlsx', resp['Content-Disposition'])
 
     def test_excel_export_empty_table(self):
@@ -105,7 +115,6 @@ class TestExportTableView(TestCase):
 
     def test_no_workspace_returns_404(self):
         """If current_workspace is not set the view returns 404 JSON."""
-        # Create a user with no workspace
         other_user = UserFactory()
         c = DjangoClient()
         c.force_login(other_user)

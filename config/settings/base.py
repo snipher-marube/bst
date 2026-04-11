@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from decouple import config
-import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().resolve().parent.parent
@@ -415,6 +414,24 @@ QUERY_ENGINE_PROFILE_SAMPLE = int(config('QUERY_ENGINE_PROFILE_SAMPLE', default=
 IMPORT_BATCH_SIZE = int(config('IMPORT_BATCH_SIZE', default=200))
 # How long (seconds) widget query results are cached in Redis
 WIDGET_CACHE_TTL = int(config('WIDGET_CACHE_TTL', default=300))
+# Maximum file size (bytes) accepted by the import endpoint — default 50 MB
+MAX_IMPORT_FILE_BYTES = int(config('MAX_IMPORT_FILE_BYTES', default=50 * 1024 * 1024))
+# Django core upload limits — prevents request body DOS before Django processes the file
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_IMPORT_FILE_BYTES   # files above this go to temp disk
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_IMPORT_FILE_BYTES   # max request body size
+
+# ============================================================================
+# LLM / AI SETTINGS
+# ============================================================================
+# Anthropic API key — required for LLM-enhanced insights (optional feature)
+ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
+# Claude model to use for insight narratives
+CLAUDE_INSIGHT_MODEL = config('CLAUDE_INSIGHT_MODEL', default='claude-sonnet-4-6')
+# Monthly token budget per workspace (input + output combined).
+# Set to 0 to disable LLM insights entirely.
+LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET = int(
+    config('LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET', default=100_000)
+)
 
 # ============================================================================
 # WEBSOCKET / CHANNELS TUNING

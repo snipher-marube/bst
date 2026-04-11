@@ -1,5 +1,6 @@
 import uuid
 import json
+import re
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -446,6 +447,10 @@ class Widget(models.Model):
     # Aggregation types the query engine actually supports.
     ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct'}
 
+    # Only these characters are allowed in field / group_by names.  This blocks
+    # injection attempts (SQL, ORM __field traversal, path separators, etc.).
+    _SAFE_FIELD_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,128}$')
+
     # Visualization configuration — blank=True because {} is a valid empty config.
     viz_config = JSONField(default=dict, blank=True)
 
@@ -517,6 +522,22 @@ class Widget(models.Model):
                             f"Allowed: {', '.join(sorted(self.ALLOWED_AGG_TYPES))}."
                         )}
                     )
+                # Validate field and group_by names — only safe identifier chars.
+                for key in ('field', 'group_by', 'name'):
+                    val = agg.get(key)
+                    if val is not None:
+                        if not isinstance(val, str):
+                            raise ValidationError(
+                                {'query_config': f"aggregations[{i}].{key} must be a string."}
+                            )
+                        if not self._SAFE_FIELD_RE.match(val):
+                            raise ValidationError(
+                                {'query_config': (
+                                    f"aggregations[{i}].{key} '{val}' contains invalid "
+                                    f"characters. Use only letters, digits, underscores, "
+                                    f"dots, and hyphens (max 128 chars)."
+                                )}
+                            )
 
         # ── Filters shape ────────────────────────────────────────────────
         filters = qc.get('filters')
@@ -529,6 +550,26 @@ class Widget(models.Model):
                 raise ValidationError(
                     {'query_config': "query_config.filters may contain at most 50 items."}
                 )
+            # Validate field names in filters.
+            for j, f in enumerate(filters):
+                if not isinstance(f, dict):
+                    raise ValidationError(
+                        {'query_config': f"filters[{j}] must be an object."}
+                    )
+                field_val = f.get('field')
+                if field_val is not None:
+                    if not isinstance(field_val, str):
+                        raise ValidationError(
+                            {'query_config': f"filters[{j}].field must be a string."}
+                        )
+                    if not self._SAFE_FIELD_RE.match(field_val):
+                        raise ValidationError(
+                            {'query_config': (
+                                f"filters[{j}].field '{field_val}' contains invalid "
+                                f"characters. Use only letters, digits, underscores, "
+                                f"dots, and hyphens (max 128 chars)."
+                            )}
+                        )
 
     def save(self, *args, **kwargs):
         """Run full_clean() so query_config validation fires on every save path."""
