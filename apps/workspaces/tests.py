@@ -400,3 +400,23 @@ class TestWorkspaceViews(TestCase):
                 workspace=self.workspace, user=member
             ).exists()
         )
+
+    def test_invite_email_failure_does_not_expose_token(self):
+        """Security: when email sending fails the token must not appear in the
+        user-facing flash message (DASHBOARD_BOTTLENECKS 9e)."""
+        with patch(
+            'apps.workspaces.views.send_mail',
+            side_effect=Exception('SMTP error'),
+        ):
+            self.client.post(
+                f'/workspaces/{self.workspace.id}/invite/',
+                {'email': 'newguy@test.com', 'role': 'viewer'},
+            )
+
+        # Retrieve the message that was stored in the session
+        from django.contrib.messages import get_messages
+        from django.test import RequestFactory
+        resp = self.client.get(f'/dashboard/members/')
+        messages_text = ' '.join(str(m) for m in get_messages(resp.wsgi_request))
+        self.assertNotIn('/workspaces/invite/', messages_text,
+                         "Invitation URL (with token) must not appear in flash messages")

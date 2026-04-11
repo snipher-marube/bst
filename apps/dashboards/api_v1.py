@@ -409,9 +409,8 @@ class WidgetDetailAPIView(APIView):
         serializer = WidgetSerializer(widget, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        # Invalidate cache
-        cache_key = f"widget_data_{widget.id}"
-        cache.delete(cache_key)
+        # QueryEngine cache key includes widget.updated_at, so saving the widget
+        # automatically invalidates the old key — no explicit deletion needed.
         return Response(serializer.data)
 
     def delete(self, request, pk):

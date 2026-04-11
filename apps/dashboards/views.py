@@ -756,6 +756,57 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
         return redirect(self.success_url)
 
 
+class PublicDashboardView(TemplateView):
+    """
+    Unauthenticated, read-only view for a shared dashboard.
+
+    URL: ``/d/<public_uuid>/``
+    Renders only when ``dashboard.is_public`` is True; returns 404 otherwise.
+    """
+
+    template_name = 'dashboard/public_dashboard.html'
+
+    def get(self, request, public_uuid, **kwargs):
+        dashboard = get_object_or_404(
+            Dashboard,
+            public_uuid=public_uuid,
+            is_public=True,
+            is_active=True,
+        )
+        # Build the same widget-enriched dict used by DashboardDetailView so the
+        # template can reuse the same Plotly rendering logic.
+        widgets_data = []
+        for widget in dashboard.widgets.all().select_related('table').order_by('created_at'):
+            try:
+                wdata = widget.get_data(limit=100)
+            except Exception as exc:
+                logger.warning("Public dashboard widget %s data error: %s", widget.id, exc)
+                wdata = {"error": str(exc)}
+            widgets_data.append({
+                'id': str(widget.id),
+                'widget_type': widget.widget_type,
+                'title': widget.title,
+                'query_config': widget.query_config,
+                'viz_config': widget.viz_config,
+                'position': widget.position or {'x': 0, 'y': 0, 'w': 4, 'h': 4},
+                'widget_data': wdata,
+            })
+
+        dashboard_data = {
+            'id': str(dashboard.id),
+            'name': dashboard.name,
+            'description': dashboard.description,
+            'workspace_name': dashboard.workspace.name,
+            'layout_config': dashboard.layout_config,
+            'widgets': widgets_data,
+        }
+
+        context = self.get_context_data(**kwargs)
+        context['dashboard'] = dashboard
+        context['dashboard_data'] = dashboard_data
+        return self.render_to_response(context)
+
+
 class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
     """
     Workspace settings page — GET to view, POST to mutate.

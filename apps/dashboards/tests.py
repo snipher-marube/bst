@@ -1823,3 +1823,55 @@ class TestInsightEngineWidgetCompleteness(TestCase):
         table   = self._build_from_csv('text_only.csv', schema)
         insights = self.svc._generate_table_insights(table)
         self._check(insights, 'text_only.csv')
+
+
+# ---------------------------------------------------------------------------
+# Public dashboard view
+# ---------------------------------------------------------------------------
+
+class TestPublicDashboardView(TestCase):
+    """
+    Tests for the unauthenticated public dashboard view at /d/<public_uuid>/.
+    """
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.dashboard = DashboardFactory(workspace=self.workspace, is_public=True)
+
+    def test_public_dashboard_returns_200_for_public(self):
+        resp = self.client.get(f'/d/{self.dashboard.public_uuid}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_public_dashboard_no_login_required(self):
+        """Anonymous users must be able to access the page."""
+        from django.test import Client
+        anon = Client()
+        resp = anon.get(f'/d/{self.dashboard.public_uuid}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_public_dashboard_contains_dashboard_name(self):
+        resp = self.client.get(f'/d/{self.dashboard.public_uuid}/')
+        self.assertContains(resp, self.dashboard.name)
+
+    def test_private_dashboard_returns_404(self):
+        private = DashboardFactory(workspace=self.workspace, is_public=False)
+        resp = self.client.get(f'/d/{private.public_uuid}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_nonexistent_uuid_returns_404(self):
+        import uuid
+        resp = self.client.get(f'/d/{uuid.uuid4()}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_inactive_dashboard_returns_404(self):
+        from django.utils import timezone
+        self.dashboard.is_active = False
+        self.dashboard.deleted_at = timezone.now()
+        self.dashboard.save()
+        resp = self.client.get(f'/d/{self.dashboard.public_uuid}/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_powered_by_branding_present(self):
+        resp = self.client.get(f'/d/{self.dashboard.public_uuid}/')
+        self.assertContains(resp, 'AnalyticsMeta')

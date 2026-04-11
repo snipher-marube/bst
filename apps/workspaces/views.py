@@ -195,8 +195,8 @@ def invite_member(request, workspace_id):
         )
         messages.success(request, f'Invitation sent to {email}.')
     except Exception as e:
-        logger.error(f"Failed to send invitation email: {e}")
-        messages.warning(request, f'Invitation created but email delivery failed. Share this link manually: {accept_url}')
+        logger.error("Failed to send invitation email to %s: %s — accept_url=%s", email, e, accept_url)
+        messages.warning(request, 'Invitation created but email delivery failed. Please contact support to resend the invite.')
 
     return redirect('dashboard:members')
 

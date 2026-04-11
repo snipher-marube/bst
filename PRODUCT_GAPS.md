@@ -85,8 +85,8 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ## P1 — Core Product Quality
 
-### [ ] 4. Public Dashboard Viewer
-**Status:** Not Started  
+### [x] 4. Public Dashboard Viewer
+**Status:** Done (2026-04-11)  
 **Impact:** `public_uuid` field exists on Dashboard but there is no public-facing URL — sharing with stakeholders who don't have accounts is impossible.  
 **Effort:** Low
 
@@ -304,7 +304,7 @@ Mark status as `[x]` when done, `[~]` when in progress.
 | 1 | Onboarding wizard + sample data | P0 | Done | Medium |
 | 2 | Real AI/LLM integration | P0 | Not Started | Medium |
 | 3 | Email notifications | P0 | Done | Low |
-| 4 | Public dashboard viewer | P1 | Not Started | Low |
+| 4 | Public dashboard viewer | P1 | Done | Low |
 | 5 | Data alerts & thresholds | P1 | Not Started | Medium |
 | 6 | Test suite (70% coverage) | P1 | Not Started | High |
 | 7 | Webhook data ingestion | P2 | Not Started | Medium |

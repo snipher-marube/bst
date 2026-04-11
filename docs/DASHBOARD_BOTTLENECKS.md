@@ -526,8 +526,8 @@ capture the invitation token from the page source.
 | 6 | Bulk import not atomic | MEDIUM | Fixed | `services.py` |
 | 7 | Missing composite index on Record | MEDIUM | Fixed | `models.py`, migration `0003` |
 | 8 | Hardcoded tuning constants | LOW | Fixed | `services.py`, `settings/base.py` |
-| 9a | Widget serializer cache staleness | LOW | Backlog | — |
-| 9b | Python JSON aggregation at scale | MEDIUM | Backlog | — |
+| 9a | Widget serializer cache staleness | LOW | Fixed | `api_v1.py` — dead `widget_data_{id}` key removed; `QueryEngine` key uses `updated_at` |
+| 9b | Python JSON aggregation at scale | MEDIUM | Fixed | `services.py` — DB-side `Cast` + `Annotate` path added (2026-04-10) |
 | 9c | AuditLog retention policy | LOW | Backlog | — |
 | 9d | WebSocket connection limits | MEDIUM | Backlog | — |
-| 9e | Invitation URL in error message | LOW | Backlog | — |
+| 9e | Invitation URL in error message | LOW | Fixed | `workspaces/views.py` — token logged server-side only; generic message shown to user |
