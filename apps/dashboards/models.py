@@ -704,3 +704,138 @@ class ImportJob(models.Model):
         if self.total_rows == 0:
             return 0
         return min(100, int((self.processed_rows / self.total_rows) * 100))
+
+
+class DataAlert(models.Model):
+    """
+    Threshold-based alert on a numeric field in a DataTable.
+
+    When the Celery beat task ``check_data_alerts`` runs, it evaluates
+    ``current_value <operator> threshold`` for every active alert.  On a
+    trigger, it creates a ``Notification`` for every member of the workspace
+    and optionally sends email if the member's preferences allow it.
+
+    Cooldown: a triggered alert will not fire again for ``cooldown_minutes``
+    (default 60) to avoid notification storms.
+    """
+    OPERATOR_CHOICES = [
+        ('gt',  'Greater than'),
+        ('gte', 'Greater than or equal'),
+        ('lt',  'Less than'),
+        ('lte', 'Less than or equal'),
+        ('eq',  'Equal to'),
+    ]
+    AGGREGATE_CHOICES = [
+        ('sum',   'Sum'),
+        ('avg',   'Average'),
+        ('count', 'Count'),
+        ('min',   'Minimum'),
+        ('max',   'Maximum'),
+    ]
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace    = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='alerts')
+    table        = models.ForeignKey(DataTable, on_delete=models.CASCADE, related_name='alerts')
+    created_by   = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    name         = models.CharField(max_length=150)
+    field_name   = models.CharField(max_length=100, help_text="Column in the DataTable to aggregate")
+    aggregate    = models.CharField(max_length=10, choices=AGGREGATE_CHOICES, default='sum')
+    operator     = models.CharField(max_length=5,  choices=OPERATOR_CHOICES)
+    threshold    = models.FloatField()
+
+    is_active      = models.BooleanField(default=True)
+    cooldown_minutes = models.PositiveIntegerField(default=60)
+
+    # Populated by the check task
+    last_triggered = models.DateTimeField(null=True, blank=True)
+    last_value     = models.FloatField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['workspace', 'is_active']),
+            models.Index(fields=['table', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_aggregate_display()} {self.field_name} {self.get_operator_display()} {self.threshold})"
+
+    def is_in_cooldown(self):
+        """Return True if the alert fired recently and should be suppressed."""
+        if not self.last_triggered:
+            return False
+        from datetime import timedelta
+        return timezone.now() < self.last_triggered + timedelta(minutes=self.cooldown_minutes)
+
+    def evaluate(self, current_value: float) -> bool:
+        """Return True when the condition is met."""
+        ops = {
+            'gt':  current_value >  self.threshold,
+            'gte': current_value >= self.threshold,
+            'lt':  current_value <  self.threshold,
+            'lte': current_value <= self.threshold,
+            'eq':  abs(current_value - self.threshold) < 1e-9,
+        }
+        return ops.get(self.operator, False)
+
+
+class WebhookEndpoint(models.Model):
+    """
+    Workspace-scoped webhook ingestion endpoint.
+
+    A client POSTs a JSON payload to ``/webhook/ingest/<token>/``.
+    The view validates the ``X-Hub-Signature-256`` HMAC header
+    (HMAC-SHA256 of the raw request body with ``secret`` as key)
+    and creates ``Record`` rows in the target ``DataTable``.
+
+    The payload must be either:
+    - a JSON object   → treated as a single record
+    - a JSON array    → each element treated as one record
+
+    ``is_active=False`` returns HTTP 404 so endpoints can be
+    disabled without deleting them.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace  = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='webhook_endpoints')
+    table      = models.ForeignKey(DataTable, on_delete=models.CASCADE, related_name='webhook_endpoints')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    name       = models.CharField(max_length=150)
+    # The routing token embedded in the URL — random, not guessable
+    token      = models.CharField(max_length=64, unique=True, db_index=True)
+    # HMAC signing secret — shown to the user once, stored hashed-ish (plain for now, rotate on regenerate)
+    secret     = models.CharField(max_length=128)
+
+    is_active  = models.BooleanField(default=True)
+
+    # Telemetry
+    total_requests  = models.PositiveIntegerField(default=0)
+    last_request_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['workspace', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"WebhookEndpoint({self.name}, workspace={self.workspace_id})"
+
+    @staticmethod
+    def generate_token():
+        """Return a URL-safe 32-byte hex token."""
+        import secrets
+        return secrets.token_hex(32)
+
+    @staticmethod
+    def generate_secret():
+        """Return a 32-byte URL-safe secret."""
+        import secrets
+        return secrets.token_urlsafe(32)

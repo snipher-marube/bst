@@ -21,6 +21,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from apps.dashboards.views import PublicDashboardView
+from apps.dashboards.api_v1 import WebhookIngestView
 
 
 urlpatterns = [
@@ -35,6 +36,8 @@ urlpatterns = [
     path('reports/', include('apps.reports.urls', namespace='reports')),
     # Public shared dashboard (no login required)
     path('d/<uuid:public_uuid>/', PublicDashboardView.as_view(), name='public_dashboard'),
+    # Webhook ingest (public, HMAC-authenticated)
+    path('webhook/ingest/<str:token>/', WebhookIngestView.as_view(), name='webhook_ingest'),
     # Dashboard API URLs (legacy)
     path('api/', include('apps.dashboards.urls_api')),
     # REST API v1

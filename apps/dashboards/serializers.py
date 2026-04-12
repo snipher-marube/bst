@@ -10,7 +10,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
-from apps.dashboards.models import DataTable, Record, Dashboard, Widget
+from apps.dashboards.models import DataTable, Record, Dashboard, Widget, DataAlert, WebhookEndpoint
 from apps.workspaces.models import Workspace
 
 import logging
@@ -83,6 +83,58 @@ class DataTableSerializer(serializers.ModelSerializer):
 
     def get_workspace_name(self, obj):
         return obj.workspace.name if obj.workspace else None
+
+
+# ---------------------------------------------------------------------------
+# DataAlert
+# ---------------------------------------------------------------------------
+
+class DataAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DataAlert
+        fields = [
+            'id', 'workspace', 'table', 'name', 'field_name',
+            'aggregate', 'operator', 'threshold', 'is_active',
+            'cooldown_minutes', 'last_triggered', 'last_value',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'workspace', 'last_triggered', 'last_value',
+            'created_at', 'updated_at',
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'workspace', 'table'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
+
+
+# ---------------------------------------------------------------------------
+# WebhookEndpoint
+# ---------------------------------------------------------------------------
+
+class WebhookEndpointSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebhookEndpoint
+        fields = [
+            'id', 'workspace', 'table', 'name', 'token', 'secret',
+            'is_active', 'total_requests', 'last_request_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'workspace', 'token', 'secret',
+            'total_requests', 'last_request_at',
+            'created_at', 'updated_at',
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'workspace', 'table'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
 
 
 # ---------------------------------------------------------------------------

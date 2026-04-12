@@ -1875,3 +1875,491 @@ class TestPublicDashboardView(TestCase):
     def test_powered_by_branding_present(self):
         resp = self.client.get(f'/d/{self.dashboard.public_uuid}/')
         self.assertContains(resp, 'AnalyticsMeta')
+
+
+# ===========================================================================
+# Phase 2 Tests
+# ===========================================================================
+
+import hashlib
+import hmac as hmac_mod
+import json as _json
+
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
+
+from apps.dashboards.factories import (
+    DataAlertFactory, WebhookEndpointFactory,
+)
+from apps.dashboards.models import DataAlert, WebhookEndpoint, AuditLog
+
+
+# ---------------------------------------------------------------------------
+# DataAlert model
+# ---------------------------------------------------------------------------
+
+class TestDataAlertModel(TestCase):
+
+    def _make_alert(self, operator='gt', threshold=100.0):
+        table = DataTableFactory()
+        return DataAlertFactory(
+            workspace=table.workspace,
+            table=table,
+            operator=operator,
+            threshold=threshold,
+            cooldown_minutes=60,
+        )
+
+    def test_evaluate_gt_true(self):
+        alert = self._make_alert('gt', 100.0)
+        self.assertTrue(alert.evaluate(101.0))
+
+    def test_evaluate_gt_false(self):
+        alert = self._make_alert('gt', 100.0)
+        self.assertFalse(alert.evaluate(99.0))
+
+    def test_evaluate_lte(self):
+        alert = self._make_alert('lte', 50.0)
+        self.assertTrue(alert.evaluate(50.0))
+        self.assertFalse(alert.evaluate(50.01))
+
+    def test_evaluate_eq(self):
+        alert = self._make_alert('eq', 42.0)
+        self.assertTrue(alert.evaluate(42.0))
+        self.assertFalse(alert.evaluate(42.1))
+
+    def test_is_in_cooldown_false_when_never_triggered(self):
+        alert = self._make_alert()
+        self.assertFalse(alert.is_in_cooldown())
+
+    def test_is_in_cooldown_true_when_recently_triggered(self):
+        from datetime import timedelta
+        alert = self._make_alert()
+        alert.last_triggered = timezone.now() - timedelta(minutes=5)
+        alert.save(update_fields=['last_triggered'])
+        self.assertTrue(alert.is_in_cooldown())
+
+    def test_is_in_cooldown_false_after_cooldown_period(self):
+        from datetime import timedelta
+        alert = self._make_alert()
+        alert.last_triggered = timezone.now() - timedelta(minutes=120)
+        alert.save(update_fields=['last_triggered'])
+        self.assertFalse(alert.is_in_cooldown())
+
+    def test_str(self):
+        alert = self._make_alert('gt', 100.0)
+        self.assertIn('Alert', str(alert))
+
+
+# ---------------------------------------------------------------------------
+# DataAlert API
+# ---------------------------------------------------------------------------
+
+class TestDataAlertAPI(TestCase):
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table = DataTableFactory(workspace=self.workspace)
+        self.token, _ = Token.objects.get_or_create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+
+    def test_list_alerts_empty(self):
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/alerts/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, [])
+
+    def test_create_alert(self):
+        data = {
+            'table': str(self.table.id),
+            'name': 'Revenue Alert',
+            'field_name': 'revenue',
+            'aggregate': 'sum',
+            'operator': 'gt',
+            'threshold': 5000.0,
+        }
+        resp = self.client.post(
+            f'/api/v1/workspaces/{self.workspace.id}/alerts/',
+            data=_json.dumps(data),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['name'], 'Revenue Alert')
+        self.assertTrue(DataAlert.objects.filter(workspace=self.workspace).exists())
+
+    def test_get_alert_detail(self):
+        alert = DataAlertFactory(workspace=self.workspace, table=self.table)
+        resp = self.client.get(f'/api/v1/alerts/{alert.id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['id'], str(alert.id))
+
+    def test_patch_alert(self):
+        alert = DataAlertFactory(workspace=self.workspace, table=self.table, threshold=100.0)
+        resp = self.client.patch(
+            f'/api/v1/alerts/{alert.id}/',
+            data=_json.dumps({'threshold': 200.0}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        alert.refresh_from_db()
+        self.assertEqual(alert.threshold, 200.0)
+
+    def test_delete_alert(self):
+        alert = DataAlertFactory(workspace=self.workspace, table=self.table)
+        resp = self.client.delete(f'/api/v1/alerts/{alert.id}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(DataAlert.objects.filter(pk=alert.pk).exists())
+
+    def test_create_alert_wrong_workspace_table_rejected(self):
+        other_table = DataTableFactory()  # belongs to a different workspace
+        data = {
+            'table': str(other_table.id),
+            'name': 'Bad Alert',
+            'field_name': 'x',
+            'aggregate': 'sum',
+            'operator': 'gt',
+            'threshold': 1.0,
+        }
+        resp = self.client.post(
+            f'/api/v1/workspaces/{self.workspace.id}/alerts/',
+            data=_json.dumps(data),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unauthenticated_rejected(self):
+        anon = APIClient()
+        resp = anon.get(f'/api/v1/workspaces/{self.workspace.id}/alerts/')
+        self.assertEqual(resp.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# WebhookEndpoint API
+# ---------------------------------------------------------------------------
+
+class TestWebhookEndpointAPI(TestCase):
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table = DataTableFactory(workspace=self.workspace)
+        self.token, _ = Token.objects.get_or_create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+
+    def test_list_webhooks_empty(self):
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/webhooks/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, [])
+
+    def test_create_webhook(self):
+        data = {'table': str(self.table.id), 'name': 'My Webhook'}
+        resp = self.client.post(
+            f'/api/v1/workspaces/{self.workspace.id}/webhooks/',
+            data=_json.dumps(data),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertIn('token', resp.data)
+        self.assertIn('secret', resp.data)
+        self.assertEqual(resp.data['name'], 'My Webhook')
+
+    def test_get_webhook_detail(self):
+        wh = WebhookEndpointFactory(workspace=self.workspace, table=self.table)
+        resp = self.client.get(f'/api/v1/webhooks/{wh.id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['id'], str(wh.id))
+
+    def test_patch_webhook_name(self):
+        wh = WebhookEndpointFactory(workspace=self.workspace, table=self.table)
+        resp = self.client.patch(
+            f'/api/v1/webhooks/{wh.id}/',
+            data=_json.dumps({'name': 'Renamed'}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        wh.refresh_from_db()
+        self.assertEqual(wh.name, 'Renamed')
+
+    def test_delete_webhook(self):
+        wh = WebhookEndpointFactory(workspace=self.workspace, table=self.table)
+        resp = self.client.delete(f'/api/v1/webhooks/{wh.id}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(WebhookEndpoint.objects.filter(pk=wh.pk).exists())
+
+    def test_regenerate_secret(self):
+        wh = WebhookEndpointFactory(workspace=self.workspace, table=self.table)
+        old_secret = wh.secret
+        resp = self.client.post(f'/api/v1/webhooks/{wh.id}/regenerate-secret/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('secret', resp.data)
+        wh.refresh_from_db()
+        self.assertNotEqual(wh.secret, old_secret)
+
+
+# ---------------------------------------------------------------------------
+# Webhook ingest view
+# ---------------------------------------------------------------------------
+
+class TestWebhookIngestView(TestCase):
+
+    def setUp(self):
+        self.table = DataTableFactory(
+            schema=[{'name': 'value', 'type': 'number', 'required': False}]
+        )
+        self.wh = WebhookEndpointFactory(workspace=self.table.workspace, table=self.table)
+
+    def _sign(self, body: bytes) -> str:
+        return 'sha256=' + hmac_mod.new(
+            self.wh.secret.encode('utf-8'), body, hashlib.sha256
+        ).hexdigest()
+
+    def _post(self, payload, sign=True, bad_sig=False):
+        from django.test import Client
+        client = Client()
+        body = _json.dumps(payload).encode()
+        sig = 'sha256=bad' if bad_sig else (self._sign(body) if sign else '')
+        return client.generic(
+            'POST',
+            f'/webhook/ingest/{self.wh.token}/',
+            data=body,
+            content_type='application/json',
+            HTTP_X_HUB_SIGNATURE_256=sig,
+        )
+
+    def test_valid_object_payload_creates_record(self):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            resp = self._post({'value': 42})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['created'], 1)
+
+    def test_valid_array_payload(self):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            resp = self._post([{'value': 1}, {'value': 2}])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['created'], 2)
+
+    def test_invalid_signature_rejected(self):
+        resp = self._post({'value': 1}, bad_sig=True)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_missing_signature_rejected(self):
+        resp = self._post({'value': 1}, sign=False)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_inactive_endpoint_returns_404(self):
+        self.wh.is_active = False
+        self.wh.save()
+        resp = self._post({'value': 1})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unknown_token_returns_404(self):
+        from django.test import Client
+        body = b'{}'
+        sig = 'sha256=' + hmac_mod.new(b'secret', body, hashlib.sha256).hexdigest()
+        resp = Client().generic(
+            'POST', '/webhook/ingest/unknowntoken/',
+            data=body, content_type='application/json',
+            HTTP_X_HUB_SIGNATURE_256=sig,
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_telemetry_incremented(self):
+        before = self.wh.total_requests
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            self._post({'value': 5})
+        self.wh.refresh_from_db()
+        self.assertEqual(self.wh.total_requests, before + 1)
+        self.assertIsNotNone(self.wh.last_request_at)
+
+
+# ---------------------------------------------------------------------------
+# Audit Log API
+# ---------------------------------------------------------------------------
+
+class TestAuditLogAPI(TestCase):
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.token, _ = Token.objects.get_or_create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+        # Create some audit log entries
+        for i in range(3):
+            AuditLog.objects.create(
+                workspace=self.workspace,
+                user=self.user,
+                action='view',
+                content_type='DataTable',
+                object_id=DataTableFactory(workspace=self.workspace).id,
+                object_repr=f'Table {i}',
+            )
+
+    def test_list_audit_logs(self):
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/audit-logs/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 3)
+
+    def test_filter_by_action(self):
+        resp = self.client.get(
+            f'/api/v1/workspaces/{self.workspace.id}/audit-logs/?action=view'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 3)
+
+    def test_filter_by_wrong_action_returns_empty(self):
+        resp = self.client.get(
+            f'/api/v1/workspaces/{self.workspace.id}/audit-logs/?action=delete'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 0)
+
+    def test_viewer_member_forbidden(self):
+        viewer = UserFactory()
+        from apps.workspaces.models import WorkspaceMembership
+        WorkspaceMembership.objects.create(workspace=self.workspace, user=viewer, role='viewer')
+        viewer_token, _ = Token.objects.get_or_create(user=viewer)
+        viewer_client = APIClient()
+        viewer_client.credentials(HTTP_AUTHORIZATION=f'Token {viewer_token.key}')
+        viewer_client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+        resp = viewer_client.get(f'/api/v1/workspaces/{self.workspace.id}/audit-logs/')
+        self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Workspace Usage API
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceUsageAPI(TestCase):
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.token, _ = Token.objects.get_or_create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+
+    def test_usage_returns_expected_keys(self):
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/usage/')
+        self.assertEqual(resp.status_code, 200)
+        for key in ('total_tables', 'total_records', 'member_count',
+                    'estimated_storage_mb', 'workspace_id'):
+            self.assertIn(key, resp.data)
+
+    def test_usage_counts_tables(self):
+        DataTableFactory(workspace=self.workspace)
+        DataTableFactory(workspace=self.workspace)
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/usage/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['total_tables'], 2)
+
+    def test_usage_counts_members(self):
+        from apps.workspaces.models import WorkspaceMembership
+        extra = UserFactory()
+        WorkspaceMembership.objects.create(workspace=self.workspace, user=extra, role='editor')
+        resp = self.client.get(f'/api/v1/workspaces/{self.workspace.id}/usage/')
+        self.assertEqual(resp.data['member_count'], 2)  # owner + editor
+
+
+# ---------------------------------------------------------------------------
+# Celery tasks — prune_audit_logs and check_data_alerts
+# ---------------------------------------------------------------------------
+
+class TestPruneAuditLogsTask(TestCase):
+
+    @override_settings(AUDIT_LOG_RETENTION_DAYS=90)
+    def test_deletes_old_entries(self):
+        from datetime import timedelta
+        from apps.dashboards.tasks import prune_audit_logs
+        ws = WorkspaceFactory()
+        table = DataTableFactory(workspace=ws)
+        # Old entry (should be deleted)
+        old = AuditLog.objects.create(
+            workspace=ws, user=ws.owner, action='view',
+            content_type='DataTable', object_id=table.id, object_repr='old',
+        )
+        AuditLog.objects.filter(pk=old.pk).update(
+            timestamp=timezone.now() - timedelta(days=100)
+        )
+        # Recent entry (should survive)
+        AuditLog.objects.create(
+            workspace=ws, user=ws.owner, action='view',
+            content_type='DataTable', object_id=table.id, object_repr='recent',
+        )
+        result = prune_audit_logs.apply().get()
+        self.assertEqual(result['deleted'], 1)
+        self.assertEqual(AuditLog.objects.filter(workspace=ws).count(), 1)
+
+    @override_settings(AUDIT_LOG_RETENTION_DAYS=90)
+    def test_no_entries_to_delete(self):
+        from apps.dashboards.tasks import prune_audit_logs
+        result = prune_audit_logs.apply().get()
+        self.assertEqual(result['deleted'], 0)
+
+
+class TestCheckDataAlertsTask(TestCase):
+
+    def setUp(self):
+        self.table = DataTableFactory(
+            schema=[{'name': 'amount', 'type': 'number', 'required': False}]
+        )
+        self.workspace = self.table.workspace
+        self.user = self.workspace.owner
+
+    def _create_records(self, values):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            for v in values:
+                Record.objects.create(
+                    table=self.table, data={'amount': v}, created_by=self.user
+                )
+
+    def test_alert_fires_when_condition_met(self):
+        from apps.dashboards.tasks import check_data_alerts
+        from apps.notifications.models import Notification
+        self._create_records([2000, 3000, 4000])
+        DataAlertFactory(
+            workspace=self.workspace, table=self.table,
+            field_name='amount', aggregate='sum', operator='gt', threshold=5000.0,
+        )
+        result = check_data_alerts.apply().get()
+        self.assertEqual(result['triggered'], 1)
+        self.assertTrue(Notification.objects.filter(user=self.user).exists())
+
+    def test_alert_does_not_fire_when_condition_not_met(self):
+        from apps.dashboards.tasks import check_data_alerts
+        from apps.notifications.models import Notification
+        self._create_records([100, 200])
+        DataAlertFactory(
+            workspace=self.workspace, table=self.table,
+            field_name='amount', aggregate='sum', operator='gt', threshold=1_000_000.0,
+        )
+        result = check_data_alerts.apply().get()
+        self.assertEqual(result['triggered'], 0)
+        self.assertFalse(Notification.objects.filter(user=self.user).exists())
+
+    def test_alert_respects_cooldown(self):
+        from datetime import timedelta
+        from apps.dashboards.tasks import check_data_alerts
+        from apps.notifications.models import Notification
+        self._create_records([2000, 3000])
+        alert = DataAlertFactory(
+            workspace=self.workspace, table=self.table,
+            field_name='amount', aggregate='sum', operator='gt', threshold=1.0,
+            cooldown_minutes=60,
+        )
+        # Simulate it was already triggered 10 minutes ago
+        DataAlert.objects.filter(pk=alert.pk).update(
+            last_triggered=timezone.now() - timedelta(minutes=10)
+        )
+        result = check_data_alerts.apply().get()
+        self.assertEqual(result['triggered'], 0)

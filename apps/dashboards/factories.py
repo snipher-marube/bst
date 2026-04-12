@@ -134,6 +134,34 @@ class ImportJobFactory(DjangoModelFactory):
     total_rows = 0
 
 
+class DataAlertFactory(DjangoModelFactory):
+    class Meta:
+        model = 'dashboards.DataAlert'
+
+    workspace   = factory.SubFactory(WorkspaceFactory)
+    table       = factory.SubFactory(DataTableFactory, workspace=factory.SelfAttribute('..workspace'))
+    created_by  = factory.LazyAttribute(lambda obj: obj.workspace.owner)
+    name        = factory.Sequence(lambda n: f'Alert {n}')
+    field_name  = 'amount'
+    aggregate   = 'sum'
+    operator    = 'gt'
+    threshold   = 1000.0
+    is_active   = True
+
+
+class WebhookEndpointFactory(DjangoModelFactory):
+    class Meta:
+        model = 'dashboards.WebhookEndpoint'
+
+    workspace   = factory.SubFactory(WorkspaceFactory)
+    table       = factory.SubFactory(DataTableFactory, workspace=factory.SelfAttribute('..workspace'))
+    created_by  = factory.LazyAttribute(lambda obj: obj.workspace.owner)
+    name        = factory.Sequence(lambda n: f'Webhook {n}')
+    token       = factory.LazyFunction(lambda: __import__('secrets').token_hex(32))
+    secret      = factory.LazyFunction(lambda: __import__('secrets').token_urlsafe(32))
+    is_active   = True
+
+
 # ---------------------------------------------------------------------------
 # Subscriptions
 # ---------------------------------------------------------------------------
