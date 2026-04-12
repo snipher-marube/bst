@@ -41,4 +41,19 @@ urlpatterns = [
     # Team
     path('workspaces/<uuid:workspace_id>/members/', api_v1.TeamMemberListAPIView.as_view(), name='api_v1_members'),
     path('workspaces/<uuid:workspace_id>/members/<int:user_id>/', api_v1.TeamMemberDetailAPIView.as_view(), name='api_v1_member_detail'),
+
+    # Data Alerts
+    path('workspaces/<uuid:workspace_id>/alerts/', api_v1.DataAlertListCreateAPIView.as_view(), name='api_v1_alerts'),
+    path('alerts/<uuid:pk>/', api_v1.DataAlertDetailAPIView.as_view(), name='api_v1_alert_detail'),
+
+    # Webhook Endpoints
+    path('workspaces/<uuid:workspace_id>/webhooks/', api_v1.WebhookEndpointListCreateAPIView.as_view(), name='api_v1_webhooks'),
+    path('webhooks/<uuid:pk>/', api_v1.WebhookEndpointDetailAPIView.as_view(), name='api_v1_webhook_detail'),
+    path('webhooks/<uuid:pk>/regenerate-secret/', api_v1.WebhookEndpointRegenerateSecretAPIView.as_view(), name='api_v1_webhook_regenerate_secret'),
+
+    # Audit Log
+    path('workspaces/<uuid:workspace_id>/audit-logs/', api_v1.AuditLogListAPIView.as_view(), name='api_v1_audit_logs'),
+
+    # Workspace Usage Analytics
+    path('workspaces/<uuid:workspace_id>/usage/', api_v1.WorkspaceUsageAPIView.as_view(), name='api_v1_workspace_usage'),
 ]

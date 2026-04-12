@@ -41,6 +41,37 @@ RATE_LIMIT_WINDOW   = int(getattr(settings, 'WS_RATE_LIMIT_WINDOW',   10))    # 
 RATE_LIMIT_MAX_MSGS = int(getattr(settings, 'WS_RATE_LIMIT_MAX_MSGS', 30))    # per window
 # Server-side heartbeat: close connection if no message in this many seconds
 HEARTBEAT_TIMEOUT   = int(getattr(settings, 'WS_HEARTBEAT_TIMEOUT',   90))    # seconds
+# Max concurrent WebSocket connections per user (across all consumer types)
+WS_MAX_CONNECTIONS  = int(getattr(settings, 'WS_MAX_CONNECTIONS_PER_USER', 10))
+
+# ---------------------------------------------------------------------------
+# Connection-limit helpers (Redis counters)
+# ---------------------------------------------------------------------------
+
+def _conn_key(user_id: int) -> str:
+    return f'ws:conn:{user_id}'
+
+
+def _acquire_connection(user_id: int) -> bool:
+    """
+    Increment the per-user connection counter.
+    Returns True if the connection is allowed, False if the limit is reached.
+    Uses Redis INCR + EXPIRE so the counter self-heals on restart.
+    """
+    key   = _conn_key(user_id)
+    count = cache.get(key, 0) + 1
+    if count > WS_MAX_CONNECTIONS:
+        return False
+    cache.set(key, count, timeout=86400)   # 24-hour TTL safety net
+    return True
+
+
+def _release_connection(user_id: int) -> None:
+    """Decrement the per-user connection counter (floor at 0)."""
+    key   = _conn_key(user_id)
+    count = cache.get(key, 0)
+    if count > 0:
+        cache.set(key, count - 1, timeout=86400)
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +154,18 @@ class DashboardConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
+        if not await database_sync_to_async(_acquire_connection)(self.user.id):
+            logger.warning('WS rejected — connection limit reached (user=%s)', self.user.email)
+            await self.close(code=4429)
+            return
+        self._conn_acquired = True
+
         has_access = await self.check_dashboard_access()
         if not has_access:
             logger.warning('WS rejected — no access (user=%s dashboard=%s)',
                            self.user.email, self.dashboard_id)
+            await database_sync_to_async(_release_connection)(self.user.id)
+            self._conn_acquired = False
             await self.close(code=4003)
             return
 

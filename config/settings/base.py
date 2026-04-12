@@ -343,6 +343,26 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     'socket_timeout': 10,
 }
 
+# ── Celery Beat Schedule ────────────────────────────────────────────────────
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    # Purge AuditLog rows older than AUDIT_LOG_RETENTION_DAYS (default 90 days)
+    # Runs daily at 02:30 UTC to avoid peak hours.
+    'prune-audit-logs-daily': {
+        'task':     'dashboards.prune_audit_logs',
+        'schedule': crontab(hour=2, minute=30),
+    },
+    # Evaluate DataAlerts every 15 minutes
+    'check-data-alerts': {
+        'task':     'dashboards.check_data_alerts',
+        'schedule': crontab(minute='*/15'),
+    },
+}
+
+# Retention days for AuditLog (overridable per-environment)
+AUDIT_LOG_RETENTION_DAYS = config('AUDIT_LOG_RETENTION_DAYS', default=90, cast=int)
+
 # Channel layers (using Redis)
 CHANNEL_LAYERS = {
     'default': {
@@ -441,6 +461,8 @@ WS_RATE_LIMIT_WINDOW   = int(config('WS_RATE_LIMIT_WINDOW',   default=10))   # s
 WS_RATE_LIMIT_MAX_MSGS = int(config('WS_RATE_LIMIT_MAX_MSGS', default=30))   # per window
 # Idle timeout — server closes connection after this many seconds with no ping
 WS_HEARTBEAT_TIMEOUT   = int(config('WS_HEARTBEAT_TIMEOUT',   default=90))   # seconds
+# Max simultaneous WebSocket connections per authenticated user (all consumer types combined)
+WS_MAX_CONNECTIONS_PER_USER = int(config('WS_MAX_CONNECTIONS_PER_USER', default=10))
 
 # ============================================================================
 # LOGGING CONFIGURATION

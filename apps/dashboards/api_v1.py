@@ -22,7 +22,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
-from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob
+from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint
 from .permissions import HasWorkspaceAccess, CanEditData, CanManageWorkspace
 from .serializers import (
     WorkspaceSerializer,
@@ -30,6 +30,8 @@ from .serializers import (
     RecordSerializer,
     DashboardSerializer,
     WidgetSerializer,
+    DataAlertSerializer,
+    WebhookEndpointSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -634,3 +636,286 @@ class TeamMemberDetailAPIView(APIView):
             return Response({'error': 'Cannot remove the workspace owner'}, status=400)
         membership.delete()
         return Response(status=204)
+
+
+# ---------------------------------------------------------------------------
+# DATA ALERTS
+# ---------------------------------------------------------------------------
+
+class DataAlertListCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = DataAlert.objects.filter(workspace=ws).order_by('-created_at')
+        return Response(DataAlertSerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        # Verify the referenced table belongs to this workspace
+        table_id = request.data.get('table')
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+        serializer = DataAlertSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        alert = serializer.save(workspace=ws, table=table, created_by=request.user)
+        return Response(DataAlertSerializer(alert, context={'request': request}).data, status=201)
+
+
+class DataAlertDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def _get_alert(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(DataAlert, pk=pk, workspace=ws)
+
+    def get(self, request, pk):
+        return Response(DataAlertSerializer(self._get_alert(pk, request), context={'request': request}).data)
+
+    def patch(self, request, pk):
+        alert = self._get_alert(pk, request)
+        serializer = DataAlertSerializer(alert, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        self._get_alert(pk, request).delete()
+        return Response(status=204)
+
+
+# ---------------------------------------------------------------------------
+# WEBHOOK ENDPOINTS
+# ---------------------------------------------------------------------------
+
+class WebhookEndpointListCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = WebhookEndpoint.objects.filter(workspace=ws).order_by('-created_at')
+        return Response(WebhookEndpointSerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        table_id = request.data.get('table')
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+        serializer = WebhookEndpointSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        endpoint = serializer.save(
+            workspace=ws,
+            table=table,
+            created_by=request.user,
+            token=WebhookEndpoint.generate_token(),
+            secret=WebhookEndpoint.generate_secret(),
+        )
+        return Response(WebhookEndpointSerializer(endpoint, context={'request': request}).data, status=201)
+
+
+class WebhookEndpointDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def _get_endpoint(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(WebhookEndpoint, pk=pk, workspace=ws)
+
+    def get(self, request, pk):
+        return Response(WebhookEndpointSerializer(self._get_endpoint(pk, request), context={'request': request}).data)
+
+    def patch(self, request, pk):
+        endpoint = self._get_endpoint(pk, request)
+        serializer = WebhookEndpointSerializer(endpoint, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        self._get_endpoint(pk, request).delete()
+        return Response(status=204)
+
+
+class WebhookEndpointRegenerateSecretAPIView(APIView):
+    """Rotate the signing secret for a webhook endpoint."""
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanManageWorkspace]
+
+    def post(self, request, pk):
+        ws = _require_workspace(request)
+        endpoint = get_object_or_404(WebhookEndpoint, pk=pk, workspace=ws)
+        endpoint.secret = WebhookEndpoint.generate_secret()
+        endpoint.save(update_fields=['secret', 'updated_at'])
+        return Response({'secret': endpoint.secret})
+
+
+# ---------------------------------------------------------------------------
+# WEBHOOK INGEST  (public — no authentication required)
+# ---------------------------------------------------------------------------
+
+class WebhookIngestView(APIView):
+    """
+    Public endpoint: ``POST /webhook/ingest/<token>/``
+
+    Validates the ``X-Hub-Signature-256`` HMAC header, then creates Record
+    rows in the target DataTable from the JSON payload.
+
+    Payload formats accepted:
+    - JSON object  → one record
+    - JSON array   → one record per element
+    """
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, token):
+        import hashlib
+        import hmac as _hmac_mod
+
+        endpoint = WebhookEndpoint.objects.filter(token=token, is_active=True).first()
+        if not endpoint:
+            return Response(status=404)
+
+        # ── HMAC verification ─────────────────────────────────────────────
+        sig_header = request.META.get('HTTP_X_HUB_SIGNATURE_256', '')
+        raw_body = request.body
+        expected = 'sha256=' + _hmac_mod.new(
+            endpoint.secret.encode('utf-8'),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not _hmac_mod.compare_digest(sig_header, expected):
+            logger.warning('Webhook HMAC mismatch endpoint=%s', endpoint.id)
+            return Response({'error': 'Invalid signature'}, status=401)
+
+        # ── Parse payload ─────────────────────────────────────────────────
+        try:
+            payload = json.loads(raw_body)
+        except (json.JSONDecodeError, ValueError):
+            return Response({'error': 'Invalid JSON payload'}, status=400)
+
+        if isinstance(payload, dict):
+            rows = [payload]
+        elif isinstance(payload, list):
+            rows = payload
+        else:
+            return Response({'error': 'Payload must be a JSON object or array'}, status=400)
+
+        if not rows:
+            return Response({'created': 0})
+
+        # ── Create records ────────────────────────────────────────────────
+        table = endpoint.table
+        created = 0
+        errors = []
+        for i, row in enumerate(rows[:1000]):  # hard cap: 1000 records per request
+            if not isinstance(row, dict):
+                errors.append({'index': i, 'error': 'Each element must be a JSON object'})
+                continue
+            try:
+                Record.objects.create(table=table, data=row)
+                created += 1
+            except Exception as exc:
+                errors.append({'index': i, 'error': str(exc)})
+
+        # ── Update telemetry ──────────────────────────────────────────────
+        from django.db.models import F as _F
+        WebhookEndpoint.objects.filter(pk=endpoint.pk).update(
+            total_requests=_F('total_requests') + 1,
+            last_request_at=timezone.now(),
+        )
+
+        response_data = {'created': created}
+        if errors:
+            response_data['errors'] = errors[:10]  # first 10 only
+        return Response(response_data, status=200 if created else 400)
+
+
+# ---------------------------------------------------------------------------
+# AUDIT LOG
+# ---------------------------------------------------------------------------
+
+class AuditLogListAPIView(APIView):
+    """
+    Read-only list of AuditLog entries for a workspace.
+    Only admins and owners may view the full audit log.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanManageWorkspace]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        page  = max(int(request.GET.get('page', 1)), 1)
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        offset = (page - 1) * limit
+
+        qs = AuditLog.objects.filter(workspace=ws).order_by('-timestamp')
+
+        # Optional filters
+        action = request.GET.get('action')
+        if action:
+            qs = qs.filter(action=action)
+        content_type = request.GET.get('content_type')
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+
+        data = [
+            {
+                'id':           str(entry.id) if hasattr(entry, 'id') else None,
+                'user_id':      entry.user_id,
+                'user_email':   entry.user.email if entry.user else None,
+                'action':       entry.action,
+                'content_type': entry.content_type,
+                'object_id':    str(entry.object_id),
+                'object_repr':  entry.object_repr,
+                'changes':      entry.changes,
+                'ip_address':   entry.ip_address,
+                'timestamp':    entry.timestamp,
+            }
+            for entry in qs.select_related('user')[offset: offset + limit]
+        ]
+        return Response({'count': qs.count(), 'page': page, 'limit': limit, 'results': data})
+
+
+# ---------------------------------------------------------------------------
+# WORKSPACE USAGE ANALYTICS
+# ---------------------------------------------------------------------------
+
+class WorkspaceUsageAPIView(APIView):
+    """
+    Aggregate usage statistics for a workspace.
+    Returns table count, total records, estimated storage, import history, etc.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        from django.db.models import Sum, Count as DbCount, Max
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+
+        tables_qs = DataTable.objects.filter(workspace=ws, is_active=True)
+        agg = tables_qs.aggregate(
+            total_tables=DbCount('id'),
+            total_records=Sum('record_count'),
+        )
+
+        recent_import = (
+            ImportJob.objects
+            .filter(workspace=ws, status='completed')
+            .order_by('-completed_at')
+            .values('id', 'file_name', 'success_rows', 'completed_at')
+            .first()
+        )
+
+        member_count = WorkspaceMembership.objects.filter(workspace=ws).count()
+
+        total_records = agg['total_records'] or 0
+        estimated_storage_mb = round(total_records * 1024 / (1024 ** 2), 2)  # ~1 KB per record
+
+        from apps.insights.models import Insight
+        insight_count = Insight.objects.filter(workspace=ws).count()
+
+        return Response({
+            'workspace_id':        str(ws.id),
+            'workspace_name':      ws.name,
+            'total_tables':        agg['total_tables'] or 0,
+            'total_records':       total_records,
+            'estimated_storage_mb': estimated_storage_mb,
+            'member_count':        member_count,
+            'insight_count':       insight_count,
+            'recent_import':       recent_import,
+        })
