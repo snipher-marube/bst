@@ -1,51 +1,59 @@
-from django.urls import path
-from . import views
-from . import debug
+"""
+URL configuration for config project.
 
-app_name = 'dashboard'
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/6.0/topics/http/urls/
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  path('', views.home, name='home')
+Class-based views
+    1. Add an import:  from other_app.views import Home
+    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
+Including another URLconf
+    1. Import the include() function: from django.urls import include, path
+    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+"""
+import sys
+from django.contrib import admin
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from apps.dashboards.views import PublicDashboardView
+from apps.dashboards.api_v1 import WebhookIngestView
+
 
 urlpatterns = [
-    # Main dashboard views
-    path('analytics/', views.DashboardHomeView.as_view(), name='home'),
-    
-    # Workspace management
-    path('workspaces/', views.WorkspaceListView.as_view(), name='workspaces'),
-    path('workspaces/create/', views.WorkspaceCreateView.as_view(), name='workspace_create'),
-    path('workspaces/<uuid:pk>/switch/', views.switch_workspace, name='workspace_switch'),
-    
-    # Table management
-    path('tables/', views.TableView.as_view(), name='tables'),
-    path('tables/create/', views.TableCreateView.as_view(), name='table_create'),
-    path('tables/create/import/', views.TableCreateFromImportView.as_view(), name='table_create_import'),
-    path('tables/<uuid:pk>/', views.TableDetailView.as_view(), name='table_detail'),
-    path('tables/<uuid:pk>/edit/', views.TableEditView.as_view(), name='table_edit'),
-    path('tables/<uuid:pk>/delete/', views.TableDeleteView.as_view(), name='table_delete'),
-    path('tables/<uuid:pk>/import/', views.TableImportView.as_view(), name='table_import'),
-    
-    # Record management (data entry)
-    path('tables/<uuid:table_id>/records/', views.RecordListView.as_view(), name='record_list'),
-    path('tables/<uuid:table_id>/records/create/', views.RecordCreateView.as_view(), name='record_create'),
-    path('tables/<uuid:table_id>/records/<uuid:record_id>/edit/', views.RecordEditView.as_view(), name='record_edit'),
-    path('tables/<uuid:table_id>/records/<uuid:record_id>/delete/', views.RecordDeleteView.as_view(), name='record_delete'),
-    
-    # Dashboard management
-    path('dashboards/generate-insights/', views.GenerateWorkspaceInsightsView.as_view(), name='generate_insights'),
-    path('dashboards/<uuid:pk>/', views.DashboardDetailView.as_view(), name='dashboard_detail'),
-    path('dashboards/<uuid:pk>/edit/', views.DashboardEditView.as_view(), name='dashboard_edit'),
-    path('dashboards/<uuid:pk>/delete/', views.DashboardDeleteView.as_view(), name='dashboard_delete'),
-    
-    # Settings and account
-    path('settings/', views.WorkspaceSettingsView.as_view(), name='settings'),
-    path('members/', views.TeamMembersView.as_view(), name='members'),
-    path('activity/', views.ActivityLogView.as_view(), name='activity'),
-    path('billing/', views.BillingView.as_view(), name='billing'),
-    path('profile/', views.ProfileView.as_view(), name='profile'),
-
-    # Export (delegates to exports app)
-    path('tables/<uuid:table_id>/export/', views.TableExportView.as_view(), name='table_export'),
-
-    # Debug endpoint
-    path('debug/dashboard/<uuid:pk>/', debug.debug_dashboard, name='debug_dashboard'),
-
-    
+    path('admin/', admin.site.urls),
+    path('', include('apps.core.urls')),
+    path("accounts/", include("allauth.urls")),
+    path('newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
+    path('dashboard/', include('apps.dashboards.urls', namespace='dashboard')),
+    path('subscriptions/', include('apps.subscriptions.urls', namespace='subscriptions')),
+    path('workspaces/', include('apps.workspaces.urls', namespace='workspaces')),
+    path('exports/', include('apps.exports.urls', namespace='exports')),
+    path('reports/', include('apps.reports.urls', namespace='reports')),
+    # Public shared dashboard (no login required)
+    path('d/<uuid:public_uuid>/', PublicDashboardView.as_view(), name='public_dashboard'),
+    # Webhook ingest (public, HMAC-authenticated)
+    path('webhook/ingest/<str:token>/', WebhookIngestView.as_view(), name='webhook_ingest'),
+    # Dashboard API URLs (legacy)
+    path('api/', include('apps.dashboards.urls_api')),
+    # REST API v1
+    path('api/v1/', include('apps.dashboards.urls_api_v1')),
+    # OpenAPI schema & interactive docs
+    path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
+
+
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+    if 'debug_toolbar' in settings.INSTALLED_APPS:
+        import debug_toolbar
+        urlpatterns = [path('__debug__/', include(debug_toolbar.urls))] + urlpatterns
