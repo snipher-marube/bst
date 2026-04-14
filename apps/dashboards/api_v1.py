@@ -8,6 +8,7 @@ import io
 import json
 import logging
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
@@ -24,6 +25,7 @@ from rest_framework.views import APIView
 from apps.workspaces.models import Workspace, WorkspaceMembership
 from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint
 from .permissions import HasWorkspaceAccess, CanEditData, CanManageWorkspace
+from .webhook_crypto import encrypt_secret, decrypt_secret
 from .serializers import (
     WorkspaceSerializer,
     DataTableSerializer,
@@ -701,14 +703,19 @@ class WebhookEndpointListCreateAPIView(APIView):
         table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         serializer = WebhookEndpointSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
+        plaintext_secret = WebhookEndpoint.generate_secret()
         endpoint = serializer.save(
             workspace=ws,
             table=table,
             created_by=request.user,
             token=WebhookEndpoint.generate_token(),
-            secret=WebhookEndpoint.generate_secret(),
+            secret=encrypt_secret(plaintext_secret),
         )
-        return Response(WebhookEndpointSerializer(endpoint, context={'request': request}).data, status=201)
+        # Return plaintext secret exactly once — it is not recoverable from
+        # the API after this response.
+        data = WebhookEndpointSerializer(endpoint, context={'request': request}).data
+        data['secret'] = plaintext_secret
+        return Response(data, status=201)
 
 
 class WebhookEndpointDetailAPIView(APIView):
@@ -740,9 +747,11 @@ class WebhookEndpointRegenerateSecretAPIView(APIView):
     def post(self, request, pk):
         ws = _require_workspace(request)
         endpoint = get_object_or_404(WebhookEndpoint, pk=pk, workspace=ws)
-        endpoint.secret = WebhookEndpoint.generate_secret()
+        plaintext_secret = WebhookEndpoint.generate_secret()
+        endpoint.secret = encrypt_secret(plaintext_secret)
         endpoint.save(update_fields=['secret', 'updated_at'])
-        return Response({'secret': endpoint.secret})
+        # Return plaintext exactly once — store it immediately, it won't be shown again.
+        return Response({'secret': plaintext_secret})
 
 
 # ---------------------------------------------------------------------------
@@ -774,8 +783,9 @@ class WebhookIngestView(APIView):
         # ── HMAC verification ─────────────────────────────────────────────
         sig_header = request.META.get('HTTP_X_HUB_SIGNATURE_256', '')
         raw_body = request.body
+        plaintext_key = endpoint.get_plaintext_secret().encode('utf-8')
         expected = 'sha256=' + _hmac_mod.new(
-            endpoint.secret.encode('utf-8'),
+            plaintext_key,
             raw_body,
             hashlib.sha256,
         ).hexdigest()

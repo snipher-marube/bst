@@ -116,15 +116,19 @@ class DataAlertSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class WebhookEndpointSerializer(serializers.ModelSerializer):
+    # `secret` is excluded from routine list/detail responses — the ciphertext
+    # stored in the DB is not meaningful to clients and the plaintext is only
+    # returned once (on creation and on explicit rotation).  The creation and
+    # regenerate-secret views inject the plaintext into the response manually.
     class Meta:
         model = WebhookEndpoint
         fields = [
-            'id', 'workspace', 'table', 'name', 'token', 'secret',
+            'id', 'workspace', 'table', 'name', 'token',
             'is_active', 'total_requests', 'last_request_at',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'workspace', 'token', 'secret',
+            'id', 'workspace', 'token',
             'total_requests', 'last_request_at',
             'created_at', 'updated_at',
         ]

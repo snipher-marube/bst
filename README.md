@@ -52,6 +52,10 @@ AnalyticsMeta lets any business owner define their own data schema — no SQL, n
 | AI insights | Plain-English narratives powered by Claude (`claude-sonnet-4-6`) via Celery |
 | Public dashboard sharing | Shareable read-only URL (`/d/<uuid>/`) — no login required |
 | Real-time collaboration | Django Channels + Redis WebSocket push |
+| Data alerts | Threshold-based notifications via Celery beat (every 15 min) |
+| Webhook ingestion | Push JSON records from any external system via HMAC-signed endpoint |
+| Audit log | Immutable record of every create/update/delete/export action |
+| Usage analytics | Per-workspace counts — tables, records, storage, members, insights |
 | Exports & reports | CSV, Excel, and PDF via ReportLab |
 | Billing | M-Pesa STK Push (Safaricom Daraja) — KES-denominated plans |
 | PWA | Installable Progressive Web App with offline support via Service Worker |
@@ -66,9 +70,11 @@ Extended documentation lives in the [`docs/`](docs/) folder.
 |---|---|---|
 | API authentication & token examples | [docs/api-authentication.md](docs/api-authentication.md) | Complete |
 | OpenAPI schema & Swagger UI setup | [docs/openapi-schema.md](docs/openapi-schema.md) | Complete |
-| WebSocket events reference | [docs/websockets.md](docs/websockets.md) | Complete |
+| WebSocket events, limits & heartbeat | [docs/websockets.md](docs/websockets.md) | Complete |
 | Widget `query_config` & `viz_config` | [docs/widget-configuration.md](docs/widget-configuration.md) | Complete |
 | AI insights — LLM integration & budget | [docs/ai-insights.md](docs/ai-insights.md) | Complete |
+| Data alerts — thresholds & notifications | [docs/data-alerts.md](docs/data-alerts.md) | Complete |
+| Webhook ingestion — HMAC, payload format | [docs/webhooks.md](docs/webhooks.md) | Complete |
 | Google & LinkedIn OAuth setup | [docs/oauth-setup.md](docs/oauth-setup.md) | Complete |
 | Render.com deployment guide | [docs/render-deployment.md](docs/render-deployment.md) | Complete |
 | Dashboard performance bottlenecks | [docs/DASHBOARD_BOTTLENECKS.md](docs/DASHBOARD_BOTTLENECKS.md) | Complete |

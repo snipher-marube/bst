@@ -3,8 +3,15 @@ apps/subscriptions/tests.py
 ============================
 Tests for Plan, Subscription, and MpesaTransaction models.
 """
+import hashlib
+import hmac
 import json
+import time
+from datetime import timedelta
+from unittest.mock import patch, MagicMock
+
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.dashboards.factories import (
     UserFactory, WorkspaceFactory, PlanFactory, SubscriptionFactory,
@@ -303,6 +310,102 @@ class TestStripeWebhook(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Stripe webhook — signature verification
+# ---------------------------------------------------------------------------
+
+class TestStripeWebhookSignatureVerification(TestCase):
+    """
+    Verify that stripe_webhook enforces HMAC-SHA256 signature checking when
+    STRIPE_WEBHOOK_SECRET is configured, and falls back gracefully (dev mode)
+    when it is not.
+    """
+
+    WEBHOOK_URL = '/subscriptions/webhook/stripe/'
+    SECRET      = 'whsec_test_secret_key_for_unit_tests'
+
+    def _make_stripe_header(self, payload: bytes, secret: str, timestamp: int = None) -> str:
+        """Build a valid Stripe-Signature header for the given payload and secret."""
+        ts  = timestamp or int(time.time())
+        signed_payload = f"{ts}.{payload.decode()}"
+        mac = hmac.new(secret.encode(), signed_payload.encode(), hashlib.sha256).hexdigest()
+        return f"t={ts},v1={mac}"
+
+    def test_valid_signature_accepted(self):
+        """POST with a correctly signed payload returns 200."""
+        payload = json.dumps({
+            'id': 'evt_sig_valid',
+            'type': 'invoice.paid',
+            'data': {'object': {'customer': 'cus_sig_test'}},
+        }).encode()
+        header = self._make_stripe_header(payload, self.SECRET)
+
+        with patch('django.conf.settings.STRIPE_WEBHOOK_SECRET', self.SECRET):
+            import stripe
+            with patch.object(
+                stripe.Webhook,
+                'construct_event',
+                return_value=json.loads(payload),
+            ):
+                resp = self.client.post(
+                    self.WEBHOOK_URL,
+                    data=payload,
+                    content_type='application/json',
+                    HTTP_STRIPE_SIGNATURE=header,
+                )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_invalid_signature_rejected(self):
+        """POST with a tampered payload (wrong signature) returns 400."""
+        payload = json.dumps({
+            'id': 'evt_sig_bad',
+            'type': 'invoice.paid',
+            'data': {'object': {'customer': 'cus_sig_test'}},
+        }).encode()
+        bad_header = "t=9999999999,v1=deadeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddead"
+
+        with patch('django.conf.settings.STRIPE_WEBHOOK_SECRET', self.SECRET):
+            import stripe
+            with patch.object(
+                stripe.Webhook,
+                'construct_event',
+                side_effect=stripe.error.SignatureVerificationError("bad sig", bad_header),
+            ):
+                resp = self.client.post(
+                    self.WEBHOOK_URL,
+                    data=payload,
+                    content_type='application/json',
+                    HTTP_STRIPE_SIGNATURE=bad_header,
+                )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_no_secret_skips_verification_dev_mode(self):
+        """When STRIPE_WEBHOOK_SECRET is empty, verification is skipped (dev mode)."""
+        payload = json.dumps({
+            'id': 'evt_nosecret',
+            'type': 'invoice.paid',
+            'data': {'object': {'customer': 'cus_dev'}},
+        }).encode()
+
+        with patch('django.conf.settings.STRIPE_WEBHOOK_SECRET', ''):
+            resp = self.client.post(
+                self.WEBHOOK_URL,
+                data=payload,
+                content_type='application/json',
+            )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_invalid_json_with_no_secret_returns_400(self):
+        """Malformed JSON body returns 400 even in dev mode (no secret)."""
+        with patch('django.conf.settings.STRIPE_WEBHOOK_SECRET', ''):
+            resp = self.client.post(
+                self.WEBHOOK_URL,
+                data=b'not { valid json',
+                content_type='application/json',
+            )
+        self.assertEqual(resp.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
 # M-Pesa callback
 # ---------------------------------------------------------------------------
 
@@ -513,3 +616,142 @@ class TestStripeEventHandlers(TestCase):
                          content_type='application/json')
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.status, 'cancelled')
+
+
+# ---------------------------------------------------------------------------
+# Grace period model methods
+# ---------------------------------------------------------------------------
+
+class TestSubscriptionGracePeriod(TestCase):
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.plan      = PlanFactory(tier='starter')
+        self.sub       = SubscriptionFactory(
+            workspace=self.workspace,
+            plan=self.plan,
+            status='active',
+            stripe_customer_id='cus_grace_test',
+        )
+
+    def test_start_grace_period_sets_fields(self):
+        self.sub.start_grace_period()
+        self.assertEqual(self.sub.status, 'past_due')
+        self.assertIsNotNone(self.sub.grace_period_ends_at)
+        # Should expire ~7 days from now
+        delta = self.sub.grace_period_ends_at - timezone.now()
+        self.assertAlmostEqual(delta.days, Subscription.GRACE_PERIOD_DAYS - 1, delta=1)
+        self.assertEqual(self.sub.dunning_stage, Subscription.DUNNING_INITIAL)
+
+    def test_start_grace_period_is_idempotent(self):
+        """Calling start_grace_period twice should not reset the countdown."""
+        self.sub.start_grace_period()
+        first_expiry = self.sub.grace_period_ends_at
+        self.sub.start_grace_period()
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.grace_period_ends_at, first_expiry)
+
+    def test_clear_grace_period_restores_active(self):
+        self.sub.start_grace_period()
+        self.sub.clear_grace_period()
+        self.assertEqual(self.sub.status, 'active')
+        self.assertIsNone(self.sub.grace_period_ends_at)
+        self.assertEqual(self.sub.dunning_stage, Subscription.DUNNING_INITIAL)
+
+    def test_invoice_failed_webhook_starts_grace_period(self):
+        """invoice.payment_failed Stripe event opens a grace period."""
+        payload = json.dumps({
+            'id': 'evt_grace_start',
+            'type': 'invoice.payment_failed',
+            'data': {'object': {'customer': 'cus_grace_test'}},
+        })
+        with patch('apps.subscriptions.tasks.send_dunning_email_task') as mock_task:
+            mock_task.delay = MagicMock()
+            from django.test import Client
+            c = Client()
+            c.post('/subscriptions/webhook/stripe/', data=payload, content_type='application/json')
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, 'past_due')
+        self.assertIsNotNone(self.sub.grace_period_ends_at)
+
+    def test_invoice_paid_clears_grace_period(self):
+        """invoice.paid Stripe event clears any open grace period."""
+        self.sub.start_grace_period()
+        payload = json.dumps({
+            'id': 'evt_grace_clear',
+            'type': 'invoice.paid',
+            'data': {'object': {'customer': 'cus_grace_test'}},
+        })
+        from django.test import Client
+        c = Client()
+        c.post('/subscriptions/webhook/stripe/', data=payload, content_type='application/json')
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, 'active')
+        self.assertIsNone(self.sub.grace_period_ends_at)
+
+
+# ---------------------------------------------------------------------------
+# process_grace_periods Celery task
+# ---------------------------------------------------------------------------
+
+class TestProcessGracePeriods(TestCase):
+
+    def _make_past_due_sub(self, grace_days_remaining, dunning_stage=0):
+        user      = UserFactory()
+        workspace = WorkspaceFactory(owner=user)
+        plan      = PlanFactory(tier='starter')
+        sub       = SubscriptionFactory(
+            workspace=workspace,
+            plan=plan,
+            status='past_due',
+            grace_period_ends_at=timezone.now() + timedelta(days=grace_days_remaining),
+            dunning_stage=dunning_stage,
+        )
+        return sub
+
+    def test_sends_day3_email_at_day3(self):
+        sub = self._make_past_due_sub(grace_days_remaining=4, dunning_stage=0)
+        with patch('apps.subscriptions.tasks.send_dunning_email') as mock_email:
+            from apps.subscriptions.tasks import process_grace_periods
+            process_grace_periods()
+        mock_email.assert_called_once_with(sub, stage=1)
+        sub.refresh_from_db()
+        self.assertEqual(sub.dunning_stage, Subscription.DUNNING_DAY3)
+
+    def test_sends_day7_email_at_day7(self):
+        sub = self._make_past_due_sub(grace_days_remaining=1, dunning_stage=1)
+        with patch('apps.subscriptions.tasks.send_dunning_email') as mock_email:
+            from apps.subscriptions.tasks import process_grace_periods
+            process_grace_periods()
+        mock_email.assert_called_once_with(sub, stage=2)
+        sub.refresh_from_db()
+        self.assertEqual(sub.dunning_stage, Subscription.DUNNING_DAY7)
+
+    def test_downgrades_after_grace_expires(self):
+        sub = self._make_past_due_sub(grace_days_remaining=-1, dunning_stage=2)
+        with patch('apps.subscriptions.tasks.send_dunning_email'):
+            from apps.subscriptions.tasks import process_grace_periods
+            process_grace_periods()
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, 'cancelled')
+        self.assertIsNone(sub.grace_period_ends_at)
+        self.assertEqual(sub.dunning_stage, Subscription.DUNNING_EXPIRED)
+        self.assertEqual(sub.workspace.tier, 'free')
+
+    def test_does_not_resend_day3_if_already_sent(self):
+        sub = self._make_past_due_sub(grace_days_remaining=4, dunning_stage=1)
+        with patch('apps.subscriptions.tasks.send_dunning_email') as mock_email:
+            from apps.subscriptions.tasks import process_grace_periods
+            process_grace_periods()
+        mock_email.assert_not_called()
+
+    def test_no_action_for_early_grace(self):
+        """Subscriptions with > 4 days left stay at stage 0 — no email yet."""
+        sub = self._make_past_due_sub(grace_days_remaining=6, dunning_stage=0)
+        with patch('apps.subscriptions.tasks.send_dunning_email') as mock_email:
+            from apps.subscriptions.tasks import process_grace_periods
+            process_grace_periods()
+        mock_email.assert_not_called()
+        sub.refresh_from_db()
+        self.assertEqual(sub.dunning_stage, 0)

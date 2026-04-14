@@ -2113,8 +2113,10 @@ class TestWebhookIngestView(TestCase):
         self.wh = WebhookEndpointFactory(workspace=self.table.workspace, table=self.table)
 
     def _sign(self, body: bytes) -> str:
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        plaintext = decrypt_secret(self.wh.secret)
         return 'sha256=' + hmac_mod.new(
-            self.wh.secret.encode('utf-8'), body, hashlib.sha256
+            plaintext.encode('utf-8'), body, hashlib.sha256
         ).hexdigest()
 
     def _post(self, payload, sign=True, bad_sig=False):
@@ -2363,3 +2365,79 @@ class TestCheckDataAlertsTask(TestCase):
         )
         result = check_data_alerts.apply().get()
         self.assertEqual(result['triggered'], 0)
+
+
+# ---------------------------------------------------------------------------
+# File upload rate limiting
+# ---------------------------------------------------------------------------
+
+class TestFileUploadRateLimit(TestCase):
+    """
+    Verify that the FileUploadThrottle fires HTTP 429 when the per-user
+    import rate is exceeded.
+
+    We override the throttle rate to '1/minute' so the test only needs to
+    send two requests rather than 31.
+    """
+
+    def setUp(self):
+        from django.test import Client as DjangoClient
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace)
+        self.client    = DjangoClient()
+        self.client.force_login(self.user)
+        session = self.client.session
+        session['current_workspace_id'] = str(self.workspace.id)
+        session.save()
+
+    def _post_import(self):
+        import io as _io
+        f = _io.BytesIO(b"name\nalice\n")
+        f.name = 'test.csv'
+        return self.client.post(
+            f'/api/v1/tables/{self.table.id}/import/',
+            data={'file': f},
+        )
+
+    def test_throttle_class_is_applied_to_import_endpoint(self):
+        """The import view must have FileUploadThrottle in its throttle_classes."""
+        from apps.dashboards.api_v1 import TableImportAPIView, FileUploadThrottle
+        self.assertIn(FileUploadThrottle, TableImportAPIView.throttle_classes)
+
+    def test_file_upload_scope_is_configured(self):
+        """'file_upload' scope must appear in DEFAULT_THROTTLE_RATES."""
+        from django.conf import settings
+        rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+        self.assertIn('file_upload', rates)
+        # Rate string must be parseable (e.g. '30/hour')
+        rate_str = rates['file_upload']
+        self.assertRegex(rate_str, r'^\d+/(second|minute|hour|day)$')
+
+    def test_throttle_blocks_on_limit(self):
+        """When allow_request returns False the endpoint must respond with 429."""
+        from apps.dashboards.api_v1 import FileUploadThrottle
+
+        call_count = {'n': 0}
+
+        def mock_allow(self_throttle, request, view):
+            call_count['n'] += 1
+            # DRF's wait() accesses self.history; initialise it to avoid AttributeError.
+            self_throttle.history = []
+            self_throttle.now = 0
+            return call_count['n'] <= 1  # allow first, block second
+
+        fake_task = MagicMock()
+        fake_task.id = 'fake-celery-task-id'
+
+        with patch.object(FileUploadThrottle, 'allow_request', mock_allow), \
+             patch('apps.dashboards.services.DataImportService.parse_file') as mock_parse, \
+             patch('apps.insights.tasks.run_async_import') as mock_task_cls:
+            mock_task_cls.delay.return_value = fake_task
+            import pandas as pd
+            mock_parse.return_value = pd.DataFrame({'name': ['alice']})
+            resp1 = self._post_import()
+            resp2 = self._post_import()
+
+        self.assertIn(resp1.status_code, [200, 201, 202])
+        self.assertEqual(resp2.status_code, 429)

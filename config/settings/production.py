@@ -104,13 +104,6 @@ STATIC_ROOT = BASE_DIR / '../staticfiles'
 MEDIA_ROOT = BASE_DIR / '../static/media'
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stripe
-# ─────────────────────────────────────────────────────────────────────────────
-STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
-STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
-STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
-
-# ─────────────────────────────────────────────────────────────────────────────
 # M-Pesa Daraja — all required; no safe defaults in production
 # ─────────────────────────────────────────────────────────────────────────────
 MPESA_SANDBOX = False

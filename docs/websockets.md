@@ -190,6 +190,56 @@ This means **widgets update in real time** whenever any team member adds or edit
 
 | Code | Meaning |
 |---|---|
+| `4000` | Heartbeat timeout — no ping received within `WS_HEARTBEAT_TIMEOUT` seconds |
 | `4001` | Unauthenticated — user is not logged in |
 | `4003` | Forbidden — user is not a member of this workspace |
+| `4429` | Connection limit reached — see below |
 | `1000` | Normal closure |
+
+---
+
+## Connection limits
+
+To prevent resource exhaustion, each authenticated user is limited to **`WS_MAX_CONNECTIONS_PER_USER`** simultaneous WebSocket connections across all three consumer types combined.
+
+If a new connection would exceed the limit, the server sends close code `4429` and rejects the connection immediately.
+
+The counter is stored in Redis with a 24-hour TTL as a safety net for ungraceful disconnects. The key is `ws:conn:<user_id>`.
+
+### Configuration
+
+```env
+# config/settings/base.py (overridable via environment variable)
+WS_MAX_CONNECTIONS_PER_USER=10   # default
+```
+
+### Rate limiting
+
+Each connection also has a sliding-window message rate limit:
+
+```env
+WS_RATE_LIMIT_WINDOW=10     # seconds (default)
+WS_RATE_LIMIT_MAX_MSGS=30   # max messages per window (default)
+```
+
+Exceeding the rate limit sends `{ "type": "rate_limited", "retry_after": <seconds> }` and drops the message — the connection is not closed.
+
+---
+
+## Heartbeat / idle timeout
+
+The server monitors each connection for idle time. If no message is received within `WS_HEARTBEAT_TIMEOUT` seconds (default: 90), the connection is closed with code `4000`.
+
+Send a `ping` message periodically to keep the connection alive:
+
+```javascript
+setInterval(() => {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+    }
+}, 30000);  // every 30 seconds
+```
+
+```env
+WS_HEARTBEAT_TIMEOUT=90    # seconds (default)
+```
