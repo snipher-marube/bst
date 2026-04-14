@@ -88,6 +88,7 @@ pytokens==0.4.1
 redis==7.4.0
 reportlab==4.4.10
 requests==2.33.1
+stripe>=10.0.0
 service-identity==24.2.0
 six==1.17.0
 sqlparse==0.5.5

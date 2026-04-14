@@ -112,6 +112,8 @@ from django.utils import timezone
 from django_ratelimit.decorators import ratelimit
 
 from apps.workspaces.models import Workspace
+import stripe
+
 from .models import Plan, Subscription, StripeWebhookEvent, MpesaTransaction, PLAN_LIMITS
 from .mpesa_service import MpesaService
 
@@ -227,14 +229,15 @@ def stripe_webhook(request):
     Receive and process inbound Stripe webhook events.
 
     .. note::
-        Stripe signature verification is **commented out** until real Stripe
-        keys are configured.  Uncomment the ``stripe.Webhook.construct_event``
-        block and add ``STRIPE_WEBHOOK_SECRET`` to the environment before going
-        live with Stripe.
+        **Signature verification is enforced whenever** ``STRIPE_WEBHOOK_SECRET``
+        is set in the environment (required in production).  Without the secret
+        (development only) verification is skipped and a warning is logged.
+        Never leave ``STRIPE_WEBHOOK_SECRET`` unset in production.
 
     Flow
     ----
-    1. Parse raw JSON body from Stripe.
+    1. Verify the ``Stripe-Signature`` header against ``STRIPE_WEBHOOK_SECRET``
+       using ``stripe.Webhook.construct_event`` (returns 400 on failure).
     2. Check ``StripeWebhookEvent`` table for duplicate ``stripe_event_id``
        (idempotency guard — Stripe retries failed deliveries).
     3. Persist the raw payload as a new ``StripeWebhookEvent`` row so it can
@@ -256,20 +259,33 @@ def stripe_webhook(request):
     * All others                          → logged at DEBUG, ignored.
     """
     payload        = request.body
-    webhook_secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')  # noqa: F841
+    webhook_secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
+    sig_header     = request.META.get('HTTP_STRIPE_SIGNATURE', '')
 
-    # ---- Signature verification (uncomment when Stripe keys are configured) ----
-    # import stripe
-    # sig_header = request.META.get('HTTP_STRIPE_SIGNATURE', '')
-    # try:
-    #     event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-    # except (ValueError, stripe.error.SignatureVerificationError):
-    #     return HttpResponse(status=400)
-
-    try:
-        event_data = json.loads(payload)
-    except json.JSONDecodeError:
-        return HttpResponse(status=400)
+    if webhook_secret:
+        # Production path: verify Stripe's HMAC signature before trusting the payload.
+        try:
+            stripe_event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+            event_data   = stripe_event  # already a parsed dict-like object
+        except ValueError:
+            # Payload is not valid JSON or cannot be decoded.
+            logger.warning("Stripe webhook: invalid payload")
+            return HttpResponse(status=400)
+        except stripe.error.SignatureVerificationError:
+            # Signature mismatch — reject immediately.
+            logger.warning("Stripe webhook: signature verification failed")
+            return HttpResponse(status=400)
+    else:
+        # Development / test path: no secret configured, skip verification.
+        # This branch must NEVER be reached in production.
+        logger.warning(
+            "Stripe webhook: STRIPE_WEBHOOK_SECRET is not set — "
+            "skipping signature verification (development mode only)"
+        )
+        try:
+            event_data = json.loads(payload)
+        except json.JSONDecodeError:
+            return HttpResponse(status=400)
 
     event_id   = event_data.get('id', '')
     event_type = event_data.get('type', '')
@@ -383,34 +399,39 @@ def _handle_invoice_paid(data_obj: dict) -> None:
 
     Relevant after recovering from ``'past_due'`` — Stripe fires
     ``invoice.paid`` / ``invoice.payment_succeeded`` when a previously failed
-    charge eventually succeeds.
+    charge eventually succeeds.  Also clears any open grace period so the
+    dunning email sequence stops.
 
     Silently ignores unknown ``customer`` IDs (e.g. old Stripe test data).
     """
     customer_id = data_obj.get('customer', '')
     try:
         sub = Subscription.objects.get(stripe_customer_id=customer_id)
-        sub.status = 'active'
-        sub.save(update_fields=['status'])
+        sub.clear_grace_period()
     except Subscription.DoesNotExist:
         pass
 
 
 def _handle_invoice_failed(data_obj: dict) -> None:
     """
-    Mark a subscription ``'past_due'`` when a Stripe invoice payment fails.
+    Open a 7-day grace period when a Stripe invoice payment fails.
 
-    Stripe retries failed invoices on a configurable schedule.  The workspace
-    remains accessible while ``'past_due'`` — you may want to add a dunning
-    banner to the dashboard template to prompt the user to update their card.
+    Calls ``Subscription.start_grace_period()`` which sets status to
+    ``'past_due'``, records the expiry timestamp, and resets ``dunning_stage``
+    to 0.  The ``process_grace_periods`` Celery Beat task then drives the
+    day-0 → day-3 → day-7 dunning email sequence and eventually downgrades
+    the workspace after the grace window closes.
 
     Silently ignores unknown ``customer`` IDs.
     """
+    from apps.subscriptions.tasks import send_dunning_email_task
+
     customer_id = data_obj.get('customer', '')
     try:
         sub = Subscription.objects.get(stripe_customer_id=customer_id)
-        sub.status = 'past_due'
-        sub.save(update_fields=['status'])
+        sub.start_grace_period()
+        # Fire day-0 email immediately (async so the webhook returns fast).
+        send_dunning_email_task.delay(str(sub.id), stage=0)
     except Subscription.DoesNotExist:
         pass
 

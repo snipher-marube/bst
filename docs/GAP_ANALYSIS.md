@@ -21,12 +21,11 @@ Each gap has an **Impact** (user/business effect) and **Effort** (engineering co
 
 ## P0 — Critical (Fix Before GA Launch)
 
-### 1. Stripe Webhook Signature Verification is Commented Out
+### 1. ~~Stripe Webhook Signature Verification is Commented Out~~ ✅ CLOSED 2026-04-14
 
-**File:** `apps/subscriptions/views.py` (Stripe webhook handler)
-**Risk:** Anyone can POST fake payment events → fraudulent plan upgrades
-**Fix:** Uncomment `stripe.WebhookSignature.verify_header()`, load `STRIPE_WEBHOOK_SECRET` from env
-**Effort:** Low (30 min) | **Impact:** CRITICAL — security vulnerability
+**Fix applied:** `stripe` package added to requirements; `stripe.Webhook.construct_event()` now enforced
+in production (when `STRIPE_WEBHOOK_SECRET` is set). Dev mode logs a warning and skips verification.
+`STRIPE_WEBHOOK_SECRET` moved to `base.py` so it resolves in all environments. 4 new tests added.
 
 ---
 
@@ -39,41 +38,44 @@ Each gap has an **Impact** (user/business effect) and **Effort** (engineering co
 
 ---
 
-### 3. No Grace Period on Subscription Failure
+### 3. ~~No Grace Period on Subscription Failure~~ ✅ CLOSED 2026-04-14
 
-**Problem:** Payment fails → subscription immediately downgrades → user loses access to data mid-month
-**Fix:**
-- Add `grace_period_ends_at` field to `Subscription`
-- On failed payment: set status = `past_due`, grant 7-day grace
-- Send dunning emails at day 0, day 3, day 7
-- Downgrade only after grace expires
-**Effort:** Medium (2 days) | **Impact:** High — reduces involuntary churn
-
----
-
-### 4. Webhook Secret Stored in Plaintext
-
-**File:** `apps/dashboards/models.py` → `WebhookEndpoint.secret`
-**Risk:** DB dump exposes all webhook secrets
-**Fix:** Store HMAC of secret; verify incoming signature against stored hash. On regeneration, issue new plaintext once then hash+store.
-**Effort:** Low (1 day) | **Impact:** Medium-High — security hardening
+**Fix applied:**
+- `grace_period_ends_at` + `dunning_stage` fields added to `Subscription` (migration 0004)
+- `start_grace_period()` opens 7-day window; `clear_grace_period()` resets on payment recovery
+- `_handle_invoice_failed` now calls `start_grace_period()` + fires day-0 email via `send_dunning_email_task.delay()`
+- `_handle_invoice_paid` now calls `clear_grace_period()` to cancel the dunning sequence
+- `apps/subscriptions/tasks.py`: `process_grace_periods` Celery Beat task (daily 08:00 UTC)
+  advances dunning stage (day-3 → day-7) and downgrades expired workspaces to free
+- `apps/subscriptions/emails.py`: `send_dunning_email()` direct transactional email helper
+- `templates/notifications/email/billing_dunning.html`: branded dunning email template
+- 10 new tests added (model methods, Stripe webhook integration, task sequence)
 
 ---
 
-### 5. No File Upload Rate Limiting
+### 4. ~~Webhook Secret Stored in Plaintext~~ ✅ CLOSED 2026-04-14
 
-**Problem:** Import endpoint accepts 50 MB files with no per-user rate limit. Abuse vector for resource exhaustion.
-**Fix:** Add a dedicated throttle class on `POST /api/v1/tables/<id>/import/` — e.g., 10 imports/hour per workspace
-**Effort:** Low (2 hours) | **Impact:** Medium — prevents resource abuse
+**Fix applied:** Fernet symmetric encryption (AES-128-CBC + HMAC-SHA256) via `apps/dashboards/webhook_crypto.py`.
+Key derived from `settings.SECRET_KEY` via SHA-256. Migration 0007 widened column + encrypted all existing rows.
+`get_plaintext_secret()` decrypts on demand for HMAC verification. Plaintext returned only on creation/regeneration.
+Serializer no longer exposes the `secret` field in list/detail responses. Factory updated. 13 tests passing.
 
 ---
 
-### 6. Celery Beat Scheduler Removed (Beat Job Missing)
+### 5. ~~No File Upload Rate Limiting~~ ✅ ALREADY IMPLEMENTED (verified 2026-04-14)
 
-**Recent commit:** `365da45 removed beat`
-**Problem:** Periodic tasks (alert evaluation every 15 min, audit log pruning, usage stats) no longer run automatically.
-**Fix:** Restore `CELERY_BEAT_SCHEDULE` in settings or re-add the beat service to Docker Compose
-**Effort:** Low (1 hour) | **Impact:** High — data alerts are silent, audit log grows unbounded
+`FileUploadThrottle(UserRateThrottle, scope='file_upload')` existed and was applied to `TableImportAPIView`.
+`DEFAULT_THROTTLE_RATES['file_upload'] = '30/hour'` configured in settings. Also fixed a pre-existing
+`NameError` (`settings` not imported in `api_v1.py`). 3 tests added verifying throttle class,
+rate config, and 429 response behaviour.
+
+---
+
+### 6. ~~Celery Beat Scheduler Removed~~ ✅ NOT A GAP (2026-04-14)
+
+Commit `365da45` only removed binary SQLite beat-schedule files from git tracking (correct hygiene).
+`CELERY_BEAT_SCHEDULE` is defined in settings, `celery-beat` service is in both compose files, and
+tasks are properly registered. No action required.
 
 ---
 

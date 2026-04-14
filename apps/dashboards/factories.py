@@ -158,7 +158,11 @@ class WebhookEndpointFactory(DjangoModelFactory):
     created_by  = factory.LazyAttribute(lambda obj: obj.workspace.owner)
     name        = factory.Sequence(lambda n: f'Webhook {n}')
     token       = factory.LazyFunction(lambda: __import__('secrets').token_hex(32))
-    secret      = factory.LazyFunction(lambda: __import__('secrets').token_urlsafe(32))
+    secret      = factory.LazyFunction(
+        lambda: __import__(
+            'apps.dashboards.webhook_crypto', fromlist=['encrypt_secret']
+        ).encrypt_secret(__import__('secrets').token_urlsafe(32))
+    )
     is_active   = True
 
 

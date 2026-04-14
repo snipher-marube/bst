@@ -358,6 +358,13 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'dashboards.check_data_alerts',
         'schedule': crontab(minute='*/15'),
     },
+    # Advance dunning sequence for past_due subscriptions and downgrade
+    # workspaces whose grace period has expired. Runs daily at 08:00 UTC so
+    # owners receive reminder emails at a reasonable hour.
+    'process-grace-periods-daily': {
+        'task':     'subscriptions.process_grace_periods',
+        'schedule': crontab(hour=8, minute=0),
+    },
 }
 
 # Retention days for AuditLog (overridable per-environment)
@@ -416,6 +423,15 @@ SPECTACULAR_SETTINGS = {
         'displayRequestDuration': True,
     },
 }
+
+# ── Stripe ──────────────────────────────────────────────────────────────────
+# All three default to '' so development works without Stripe keys.
+# In production, set real values via environment variables.
+# STRIPE_WEBHOOK_SECRET is required for signature verification — if left
+# empty the webhook handler will log a warning and skip verification (dev only).
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_SECRET_KEY      = config('STRIPE_SECRET_KEY',      default='')
+STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET',  default='')
 
 # Session configuration - use Redis for sessions in production
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'

@@ -807,8 +807,11 @@ class WebhookEndpoint(models.Model):
     name       = models.CharField(max_length=150)
     # The routing token embedded in the URL — random, not guessable
     token      = models.CharField(max_length=64, unique=True, db_index=True)
-    # HMAC signing secret — shown to the user once, stored hashed-ish (plain for now, rotate on regenerate)
-    secret     = models.CharField(max_length=128)
+    # HMAC signing secret — stored as Fernet ciphertext (encrypted at rest).
+    # Use get_plaintext_secret() to recover the value for HMAC verification.
+    # The plaintext is shown to the user exactly once: on creation and on
+    # explicit secret rotation via the regenerate-secret endpoint.
+    secret     = models.CharField(max_length=256)
 
     is_active  = models.BooleanField(default=True)
 
@@ -836,6 +839,17 @@ class WebhookEndpoint(models.Model):
 
     @staticmethod
     def generate_secret():
-        """Return a 32-byte URL-safe secret."""
+        """Return a new 32-byte URL-safe plaintext secret."""
         import secrets
         return secrets.token_urlsafe(32)
+
+    def get_plaintext_secret(self) -> str:
+        """
+        Decrypt and return the plaintext signing secret.
+
+        The DB column stores a Fernet ciphertext.  Call this method whenever
+        you need the actual bytes used as the HMAC key (i.e. in the webhook
+        ingestion view).
+        """
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        return decrypt_secret(self.secret)
