@@ -475,9 +475,13 @@ class Widget(models.Model):
     # Aggregation types the query engine actually supports.
     ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct'}
 
-    # Only these characters are allowed in field / group_by names.  This blocks
-    # injection attempts (SQL, ORM __field traversal, path separators, etc.).
-    _SAFE_FIELD_RE = re.compile(r'^[A-Za-z0-9_ .\-]{1,128}$')
+    # Field/group_by names may contain any printable character that real-world
+    # column names use (spaces, parentheses, slashes, %, #, etc.).
+    # Blocked: null bytes, newlines (log/header injection), double-quote and
+    # single-quote (SQL identifier/string injection), semicolon (statement
+    # terminator).  Everything else is safe — the ORM engine only does dict
+    # key lookups; the DB engine wraps every name in _qi() double-quotes.
+    _SAFE_FIELD_RE = re.compile(r'^[^\x00\n\r"\';\x7f]{1,128}$')
 
     # Visualization configuration — blank=True because {} is a valid empty config.
     viz_config = JSONField(default=dict, blank=True)

@@ -2058,7 +2058,7 @@ class DataSourceQueryEngine:
     def _validate_identifier(name: str) -> bool:
         """Return True only when *name* is safe to embed as a SQL identifier."""
         import re
-        return bool(re.match(r'^[A-Za-z0-9_ .\-]{1,128}$', name or ''))
+        return bool(re.match(r'^[^\x00\n\r"\';\x7f]{1,128}$', name or ''))
 
     @staticmethod
     def _validate_agg_type(agg_type: str) -> bool:
