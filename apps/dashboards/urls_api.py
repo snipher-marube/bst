@@ -26,11 +26,16 @@ urlpatterns = [
          name='api-widget-data'),
     
     # List all dashboards
-    path('dashboards/', 
-         api.DashboardListAPIView.as_view(), 
+    path('dashboards/',
+         api.DashboardListAPIView.as_view(),
          name='api-dashboards'),
-     
-     path('dashboards/<uuid:dashboard_id>/update_layout/', 
-         api.DashboardLayoutAPIView.as_view(), 
+
+    path('dashboards/<uuid:dashboard_id>/update_layout/',
+         api.DashboardLayoutAPIView.as_view(),
          name='api-dashboard-layout'),
+
+    # Dashboard filter-bar config
+    path('dashboards/<uuid:dashboard_id>/filter-config/',
+         api.DashboardFilterConfigAPIView.as_view(),
+         name='api-dashboard-filter-config'),
 ]

@@ -29,12 +29,13 @@ in production (when `STRIPE_WEBHOOK_SECRET` is set). Dev mode logs a warning and
 
 ---
 
-### 2. PDF Report Rendering is a Stub
+### 2. ~~PDF Report Rendering is a Stub~~ ✅ CLOSED 2026-04-15
 
-**File:** `apps/reports/tasks.py`
-**Problem:** `ReportJob` model exists, PDF task is scaffolded but returns nothing. Users on paid plans who trigger PDF reports get a job that never completes.
-**Fix:** Implement ReportLab / WeasyPrint rendering inside the Celery task; render dashboard widget data to a structured PDF layout
-**Effort:** Medium (2–3 days) | **Impact:** High — paid feature unusable
+**Fix applied:**
+- `apps/reports/generators.py`: `build_dashboard_pdf()` — full ReportLab A4 layout: cover page, executive summary (KPI grid + top 3 insights), per-widget sections (chart PNG + data table ≤ 15 rows), AI Insights appendix, branded header/footer on every page.
+- `apps/reports/charts.py`: matplotlib-based server-side chart rendering — `render_line_chart`, `render_bar_chart`, `render_pie_chart`, `render_kpi_card`, `extract_chart_data`. Non-interactive `Agg` backend; returns PNG bytes for embedding in PDF.
+- `apps/reports/tasks.generate_pdf_report`: now calls `build_dashboard_pdf()`, persists PDF to `MEDIA_ROOT/reports/<workspace>/<job>.pdf`, sets `job.pdf_path` + `job.status = done`.
+- `reportlab` and `matplotlib` already in `requirements.txt` (both pinned).
 
 ---
 
@@ -81,50 +82,71 @@ tasks are properly registered. No action required.
 
 ## P1 — Important for Adoption
 
-### 7. Direct Database Connectors Missing
+### 7. ~~Direct Database Connectors Missing~~ ✅ CLOSED 2026-04-15
 
-**Current state:** Only CSV / Excel file import + webhook JSON ingestion
-**Gap:** Enterprise users want to connect directly to PostgreSQL, MySQL, BigQuery, or Snowflake
-**Fix:** Build a `DataSource` model with a `connector_type` enum. Start with PostgreSQL (psycopg3 already installed). Execute user-scoped read-only queries via a connection pool.
-**Effort:** High (1–2 weeks) | **Impact:** High — #1 enterprise blocker
-
----
-
-### 8. Google Sheets Connector Missing
-
-**Gap:** Most SME users manage data in Google Sheets. No native connector.
-**Fix:** Google Sheets API v4; use service account credentials stored per workspace. Pull on demand or schedule sync.
-**Effort:** Medium (3–4 days) | **Impact:** High — SME market differentiator
+**Fix applied (PostgreSQL):**
+- `DataSource` model in `apps/dashboards/models.py`: UUID PK, `connector_type` (postgresql/mysql), `host/port/database/username`, Fernet-encrypted `_password` (same scheme as WebhookEndpoint secrets), `ssl_mode`, `extra_options`, `last_tested_at/ok/error`, soft-delete via `is_active`.
+- `get_plaintext_password()` / `set_password()` / `get_dsn()` helpers on the model.
+- `DataSourceQueryEngine` in `apps/dashboards/services.py`: routes widget queries against external PostgreSQL databases. Supports metric, table, chart widget types. Translates structured `query_config` to parameterised SQL — no raw SQL from user input possible. Identifier safety validated via `_SAFE_FIELD_RE`. Statement timeout enforced (30 s). `list_tables()` + `list_columns()` for schema discovery.
+- `Widget.data_source` FK + `Widget.source_table_name` CharField — `QueryEngine.execute_widget_query` routes to `DataSourceQueryEngine` when these are set.
+- REST API: `GET/POST /api/v1/workspaces/<id>/data-sources/`, `GET/PATCH/DELETE /api/v1/data-sources/<id>/`, `POST /api/v1/data-sources/<id>/test/`, `GET /api/v1/data-sources/<id>/schema/`.
+- Migration 0010: `DataSource` table + `Widget` connector fields.
+- 23 tests added (model encryption roundtrip, CRUD API, connection test OK/fail, schema endpoint, query engine metric/table/chart/injection-safety).
+- **Note:** MySQL support is scaffolded (connector_type choice) but the driver is not yet wired. BigQuery/Snowflake deferred.
 
 ---
 
-### 9. Dashboard-Level Filter Bar (Cross-Widget Filters)
+### 8. ~~Google Sheets Connector Missing~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Each widget is independently queried. No global time-range picker or dimension filter that applies to all widgets on a dashboard simultaneously.
-**Fix:**
-- Add `Dashboard.filter_config` JSONField (filter fields + default values)
-- Pass active filter values to `Widget.execute_query()` as parameter overrides
-- Render filter bar in dashboard detail view (Alpine.js + HTMX)
-**Effort:** Medium (3–4 days) | **Impact:** High — core BI usability gap
-
----
-
-### 10. Scheduled Report Delivery
-
-**Problem:** Reports are generated on demand only. No automated email delivery.
-**Fix:**
-- Add `ReportSchedule` model (cron expression, recipients, format)
-- Celery Beat task: evaluate schedules → generate PDF → email
-- UI: schedule form on report detail page
-**Effort:** Medium (2–3 days) | **Impact:** High — automation is table stakes for BI tools
+**Fix applied:**
+- `DataSource.CONNECTOR_GOOGLE_SHEETS = 'google_sheets'` added to `DataSource` model (migration 0012).
+- Two new encrypted fields: `google_credentials_enc` (service-account JSON, Fernet) and `google_spreadsheet_id`.
+- DB connector fields (`host`, `database`, `username`) made optional (`blank=True, default=''`) so they are not required for Sheets.
+- `set_google_credentials()` / `get_google_credentials()` encrypt/decrypt with the same Fernet scheme as webhook secrets.
+- `GoogleSheetsQueryEngine` in `services.py`: authenticates via `google-auth` service account, reads worksheets as pandas DataFrames with `gspread`, supports all aggregation types (count/sum/avg/min/max), group-by, filters, table mode, and column-type inference.
+- `QueryEngine.execute_widget_query()`: routes to `GoogleSheetsQueryEngine` when `connector_type == 'google_sheets'`.
+- `DataSourceSerializer`: updated — `google_credentials_json` (write-only), `has_google_credentials` (read-only), `google_spreadsheet_id`; `validate()` enforces the right required fields per connector type.
+- `DataSourceTestAPIView` / `DataSourceSchemaAPIView`: route to `GoogleSheetsQueryEngine.test_connection()` / `list_tables()` / `list_columns()` for Sheets.
+- `GoogleSheetsConnectView` at `/dashboard/integrations/google-sheets/` — step-by-step setup guide + connection form (Alpine.js, test-before-save flow).
+- `settings.html`: "Data Connectors" card with direct link to the Google Sheets setup page.
+- Dependencies added to `requirements.txt`: `gspread>=6.0.0`, `google-auth>=2.0.0`, `google-auth-oauthlib>=1.0.0`.
 
 ---
 
-### 11. Incremental / Delta Imports
+### 9. ~~Dashboard-Level Filter Bar (Cross-Widget Filters)~~ ✅ CLOSED 2026-04-14
 
-**Problem:** Webhook ingestion replaces all records (full overwrite). Large datasets re-import entirely on every update.
-**Fix:** Support `upsert` mode keyed on a user-defined `primary_key` field. Add `import_mode` param to import endpoint: `replace | append | upsert`.
-**Effort:** Medium (2 days) | **Impact:** Medium-High — efficiency + data integrity
+**Fix applied:**
+- `Dashboard.filter_config` JSONField added (migration 0008). Schema: `{"filters": [{"field", "label", "type", "options"?}]}`
+- `QueryEngine.execute_widget_query()` now accepts `extra_filters=None`; merged with widget-level filters before DB query. Cache key includes extra_filters; baseline cache bypassed when extra_filters present.
+- `_execute_metric_query`, `_execute_table_query`, `_execute_chart_query` all accept and apply `extra_filters`.
+- `WidgetDataAPIView.get()`: reads `?filters=<json>` query param; validates it is a JSON array; returns 400 otherwise.
+- `DashboardFilterConfigAPIView` added: `PATCH /api/dashboards/<id>/filter-config/`; saves filter_config on dashboard.
+- `DashboardDetailView.get_context_data()`: includes `filter_config` in `dashboard_data` JSON.
+- `dashboard_detail.html`: Alpine.js `filterBar()` component renders select/date/text controls from `filter_config.filters`; calls `refreshWidget()` for all widgets with active filters on change; debounced text inputs; "Clear" button resets all.
+- 12 tests added (model field, PATCH endpoint, QueryEngine extra_filters, WidgetDataAPIView filter param validation).
+
+---
+
+### 10. ~~Scheduled Report Delivery~~ ✅ CLOSED 2026-04-14
+
+**Fix applied:**
+- `ReportSchedule` model added to `apps/reports/models.py` (migration 0003): `cron_expression`, `recipients` (JSONField), `report_format`, `is_active`, `last_sent_at`, `next_send_at`, `created_by`.
+- `compute_next_send(after=None)` method on `ReportSchedule`: uses `croniter` to advance `next_send_at`; returns `None` and logs warning if cron is invalid or library missing. `croniter>=6.0.0` added to `requirements.txt`.
+- `process_report_schedules` Celery task (name: `apps.reports.tasks.process_report_schedules`): queries schedules with `next_send_at__lte=now`, creates a `ReportJob` per due schedule, fires `deliver_scheduled_report.delay()`, advances `next_send_at`. Registered in `CELERY_BEAT_SCHEDULE` at `*/15` minute cadence.
+- `deliver_scheduled_report` task: triggers `generate_pdf_report.delay()` if job is pending, retries (max 3×60s) until done/failed, then emails PDF to all recipients via `django.core.mail.EmailMessage`. Skips if no recipients or job failed.
+- 8 tests added covering: `compute_next_send` valid/invalid, Beat task fire/skip/inactive logic, email delivery and skip paths.
+
+---
+
+### 11. ~~Incremental / Delta Imports~~ ✅ CLOSED 2026-04-14
+
+**Fix applied:**
+- `ImportJob` model: added `import_mode` (replace/append/upsert, default=append) and `primary_key_field` fields (migration 0009).
+- `DataImportService.import_data()`: now accepts `import_mode` and `primary_key_field`. Replace mode soft-deletes all existing active records before inserting. Upsert mode uses row-by-row `update/create` keyed on `primary_key_field`; rows missing the PK value fall back to insert. Append and replace modes use the fast bulk_create path.
+- `TableImportAPIView`: reads `import_mode` and `primary_key` from form data; validates; passes to `ImportJob`. Returns 400 if `upsert` mode specified without `primary_key`.
+- `WebhookIngestView`: reads `?import_mode=` and `?primary_key=` query params. All three modes supported. Wraps all record writes in `transaction.atomic()`.
+- `run_async_import` Celery task: passes `import_mode` / `primary_key_field` from `ImportJob` to `DataImportService`.
+- 8 tests: append preserves existing, replace soft-deletes, upsert update/insert/mixed, webhook mode validation.
 
 ---
 
@@ -136,11 +158,17 @@ tasks are properly registered. No action required.
 
 ---
 
-### 13. Batch Operations API
+### 13. ~~Batch Operations API~~ ✅ CLOSED 2026-04-14
 
-**Problem:** Inserting or updating records requires one HTTP call per record. Slow for large syncs.
-**Fix:** Add `POST /api/v1/tables/<id>/records/batch/` that accepts an array of up to 500 records. Support `create`, `update`, `upsert`, `delete` operations.
-**Effort:** Low (1 day) | **Impact:** Medium — developer experience
+**Fix applied:**
+- `RecordBatchAPIView` added to `apps/dashboards/api_v1.py`.
+- Route: `POST /api/v1/tables/<table_id>/records/batch/`
+- Accepts a JSON array of up to 500 operation objects, each with an `op` field (`create | update | upsert | delete`).
+- All operations run inside a single `transaction.atomic()` block so partial failures do not leave dirty data.
+- Response: `{created, updated, deleted, errors[]}`. Errors include `{index, op, error}` for debugging.
+- URL registered in `urls_api_v1.py`.
+- Fixed latent bug in `permissions.py`: `HasWorkspaceAccess`, `CanEditData`, `CanManageWorkspace` all called `request.data.get()` which fails when the request body is a JSON array; guarded with `isinstance(request.data, dict)`.
+- 11 tests covering all four ops, validation, and mixed success/error batch.
 
 ---
 
@@ -163,42 +191,48 @@ tasks are properly registered. No action required.
 
 ---
 
-### 16. Monitoring & Observability
+### 16. ~~Monitoring & Observability~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Health check endpoints exist but no metrics exported. No alerting on task queue depth or slow queries.
-**Fix:**
-- Add `django-prometheus` → expose `/metrics` endpoint
-- Integrate Sentry for error tracking (`SENTRY_DSN` env var)
-- Add Celery task duration + failure rate metrics
-- Ship logs to structured format (structlog) for ELK/Loki ingestion
-**Effort:** Low-Medium (2 days) | **Impact:** High — operations blind without this
-
----
-
-### 17. Database Backup Strategy
-
-**Problem:** No backup policy documented or automated. Single PostgreSQL instance = single point of failure.
-**Fix:**
-- Document pg_dump cron job (daily full + WAL archiving)
-- For Render.com: enable automated backups in render.yaml
-- For self-hosted: provide backup script + restoration runbook in docs
-**Effort:** Low (1 day) | **Impact:** High — data loss risk
+**Fix applied:**
+- `apps/core/metrics.py`: custom Prometheus counters/histograms via `prometheus_client` (HTTP requests, HTTP latency, Celery task counts by state, Celery task duration, import job counts, insight generation counts, anomaly counts). Celery task lifecycle signals wired at app startup.
+- `apps/core/middleware.py`: `PrometheusMiddleware` — records `http_requests_total` and `http_request_duration_seconds`; converts concrete paths to URL templates to prevent cardinality explosion. Added as first middleware in `MIDDLEWARE`.
+- `apps/core/views.py`: `metrics_view` at `GET /metrics/` — serves `text/plain; version=0.0.4` Prometheus scrape format. Restrict at reverse-proxy in production.
+- `apps/core/apps.py`: `CoreConfig.ready()` imports metrics module to register signals at startup.
+- `sentry-sdk[django]` + `prometheus-client` added to `requirements.txt`.
+- Sentry init gated on `SENTRY_DSN` env var: Django, Celery, Redis, and Logging integrations wired. `SENTRY_TRACES_SAMPLE_RATE` defaults to 5%. PII disabled.
+- `structlog` configured project-wide for JSON structured logging (was installed but not configured).
+- Note: `django-prometheus` (pinned to Django <6) is incompatible with our Django 6 stack — custom implementation used instead.
 
 ---
 
-### 18. Anomaly Detection — Auto-Triggered
+### 17. ~~Database Backup Strategy~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Anomaly detection logic exists in `apps/insights/tasks.py` but is never auto-triggered. Users must manually request insights.
-**Fix:** Wire anomaly detection into the Celery Beat schedule — evaluate all active workspace tables daily. Create an `Insight` record automatically if anomaly score exceeds threshold. Send a notification.
-**Effort:** Low (1 day) | **Impact:** Medium — proactive intelligence is a product differentiator
+**Fix applied:**
+- `docs/BACKUP_RUNBOOK.md` created: daily pg_dump cron job, WAL archiving via `archive_command`, point-in-time recovery procedure, retention policy (7 daily + 4 weekly), restoration test checklist.
+- Render.com: `disk` service in `render.yaml` with `backupRetentionDays: 7`; documented manual snapshot procedure via Render dashboard.
+- Media files: `MEDIA_ROOT` backup script targets PDF reports directory; rsync to S3-compatible object store.
+- Runbook covers: backup verification, full restore walkthrough, partial restore from WAL, contact escalation path.
+
+**How to apply:** See `docs/BACKUP_RUNBOOK.md` for the complete runbook.
 
 ---
 
-### 19. Dark Mode
+### 18. ~~Anomaly Detection — Auto-Triggered~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Dark mode toggle exists in user settings (template + field) but the CSS is not wired up to a Tailwind `dark:` class strategy.
-**Fix:** Add `dark` class to `<html>` tag based on user preference. Ensure all Tailwind utility classes have `dark:` variants. Persist preference via Alpine.js + cookie.
-**Effort:** Low-Medium (1–2 days) | **Impact:** Medium — increasingly a baseline expectation
+**Fix applied:**
+- `auto_trigger_anomaly_detection` Celery task added to `apps/insights/tasks.py`. Fan-out task: queries all active workspaces with at least one active table + records; fires `analyze_workspace_tables.delay()` for each.
+- `_notify_anomaly_insights` helper added: creates `Notification` records for all workspace members when anomaly-type insights are found during the daily run. Notification links to `/insights/` with metadata (anomaly count, source tables).
+- `CELERY_BEAT_SCHEDULE`: `auto-anomaly-detection-daily` registered at `crontab(hour=3, minute=0)` UTC.
+- 8 tests added (fan-out dispatch, workspace filtering, notification creation, member-scoped single notification).
+
+---
+
+### 19. ~~Dark Mode~~ ✅ CLOSED 2026-04-15
+
+**Fix applied:**
+- `static/css/dark.css`: comprehensive CSS override approach — body/page, dashboard shell, topbar, cards, border colours, text palette (gray-500→gray-900), form inputs/selects, tables (header/rows/hover), shadows, badges, scrollbars, smooth 0.2 s transitions. No Tailwind rebuild required.
+- `templates/base.html`: `<html x-data="themeManager()" :class="{ dark: isDark }">` + pre-paint inline script reads `localStorage['am-theme']` and applies `.dark` before first paint (prevents flash-of-wrong-theme). `AMTheme` vanilla JS object handles apply/toggle; `themeManager()` Alpine component bridges to reactive bindings.
+- `templates/includes/header.html` + `templates/dashboard/base_dashboard.html`: toggle button (`#theme-toggle-btn`) + icon (`#theme-icon`) wired to `AMTheme.toggle()`. Icon flips moon↔sun. Preference persisted to `localStorage['am-theme']`. OS `prefers-color-scheme` respected when no stored preference.
 
 ---
 

@@ -466,6 +466,27 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
 
 
+class GoogleSheetsConnectView(LoginRequiredMixin, TemplateView):
+    """
+    Step-by-step setup page for connecting a Google Sheets data source.
+    Serves the guide + connection form at /dashboard/integrations/google-sheets/.
+    """
+    template_name = 'dashboard/google_sheets_connect.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        context['workspace_id'] = str(workspace.id) if workspace else ''
+        context['back_url']     = reverse('dashboard:settings')
+        context['steps'] = [
+            'Create a GCP project & enable Sheets API',
+            'Create a service account & download JSON key',
+            'Share your sheet with the service account email',
+            'Paste credentials below and save',
+        ]
+        return context
+
+
 class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
     """Create a brand new table from an imported file"""
     template_name = 'dashboard/table_import.html'
@@ -695,6 +716,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             'description': self.object.description,
             'slug': self.object.slug,
             'layout_config': self.object.layout_config,
+            'filter_config': self.object.filter_config or {},
             'is_public': self.object.is_public,
             'public_uuid': str(self.object.public_uuid),
             'created_at': self.object.created_at.isoformat(),

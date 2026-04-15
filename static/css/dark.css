@@ -1,0 +1,174 @@
+/**
+ * dark.css — AnalyticsMeta dark mode overrides
+ *
+ * Activated by adding the `dark` class to the <html> element.
+ * Managed by Alpine.js themeManager() in base.html; preference
+ * stored in localStorage under the key "am-theme".
+ *
+ * Strategy: override CSS custom properties and targeted selectors
+ * rather than Tailwind utilities (no rebuild needed).
+ */
+
+/* ── Base page ─────────────────────────────────────────────────────────── */
+html.dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* ── Dashboard shell background ─────────────────────────────────────────── */
+html.dark .bg-\[#f8fafc\],
+html.dark [class*="bg-gray-50"],
+html.dark .bg-white {
+  background-color: #1e293b !important;
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+html.dark header.h-14 {
+  background-color: #1e293b !important;
+  border-bottom-color: #334155 !important;
+}
+
+html.dark header.h-14 h1,
+html.dark header.h-14 .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+html.dark header.h-14 .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark header.h-14 .hover\:bg-gray-100:hover,
+html.dark header.h-14 button:hover {
+  background-color: #334155 !important;
+}
+
+html.dark header.h-14 .border-gray-200 {
+  border-color: #475569 !important;
+}
+
+html.dark header.h-14 .text-gray-600 {
+  color: #94a3b8 !important;
+}
+
+/* ── Cards and panels ──────────────────────────────────────────────────── */
+html.dark .bg-white,
+html.dark [class*="bg-white"] {
+  background-color: #1e293b !important;
+  color: #e2e8f0;
+}
+
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark [class*="border-gray-1"],
+html.dark [class*="border-gray-2"] {
+  border-color: #334155 !important;
+}
+
+/* ── Text ─────────────────────────────────────────────────────────────── */
+html.dark .text-gray-900 { color: #f1f5f9 !important; }
+html.dark .text-gray-800 { color: #e2e8f0 !important; }
+html.dark .text-gray-700 { color: #cbd5e1 !important; }
+html.dark .text-gray-600 { color: #94a3b8 !important; }
+html.dark .text-gray-500 { color: #64748b !important; }
+
+/* ── Form inputs & selects ─────────────────────────────────────────────── */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #0f172a !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #0a8043 !important;
+  box-shadow: 0 0 0 3px rgba(10, 128, 67, 0.25) !important;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+html.dark table thead {
+  background-color: #0f172a !important;
+}
+
+html.dark table thead th {
+  color: #94a3b8 !important;
+  border-bottom-color: #334155 !important;
+}
+
+html.dark table tbody tr {
+  border-bottom-color: #334155 !important;
+}
+
+html.dark table tbody tr:hover {
+  background-color: #1e293b !important;
+}
+
+html.dark table tbody td {
+  color: #cbd5e1 !important;
+}
+
+/* ── Shadows → softer in dark mode ─────────────────────────────────────── */
+html.dark .shadow,
+html.dark .shadow-sm,
+html.dark .shadow-md {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ── Badges and tags ────────────────────────────────────────────────────── */
+html.dark .bg-gray-100 { background-color: #334155 !important; color: #e2e8f0 !important; }
+html.dark .bg-gray-200 { background-color: #475569 !important; color: #e2e8f0 !important; }
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+html.dark * {
+  scrollbar-color: #334155 #1e293b;
+}
+
+html.dark ::-webkit-scrollbar { width: 8px; height: 8px; }
+html.dark ::-webkit-scrollbar-track { background: #1e293b; }
+html.dark ::-webkit-scrollbar-thumb { background-color: #475569; border-radius: 4px; }
+html.dark ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+
+/* ── Dark mode toggle button ─────────────────────────────────────────────── */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.theme-toggle:hover {
+  background-color: #f3f4f6;
+  color: #03466e;
+}
+
+html.dark .theme-toggle {
+  color: #94a3b8;
+}
+
+html.dark .theme-toggle:hover {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+
+/* ── Smooth transition on theme switch ─────────────────────────────────── */
+html, html * {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Disable transitions on interactive elements that have their own animations */
+html button, html a, html input, html select, html textarea {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+              transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}

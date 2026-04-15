@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+import json
 import logging
 
 from .models import Dashboard, Widget, DataTable, Workspace
@@ -173,12 +174,19 @@ class DashboardLayoutAPIView(APIView):
         
 class WidgetDataAPIView(APIView):
     """
-    API endpoint for refreshing widget data
+    API endpoint for refreshing widget data.
+
+    Accepts an optional ``?filters=<json>`` query param containing a JSON
+    array of dashboard-level filter objects:
+        [{"field": "region", "operator": "eq", "value": "EMEA"}]
+
+    When filters are present the cache is bypassed and results are returned
+    live so the filter bar always reflects current data.
     """
     permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
-    
+
     def get(self, request, widget_id):
-        """Get fresh data for a widget"""
+        """Get fresh data for a widget, optionally scoped by dashboard filters."""
         try:
             workspace = request.user.current_workspace
             widget = get_object_or_404(
@@ -186,27 +194,80 @@ class WidgetDataAPIView(APIView):
                 id=widget_id,
                 dashboard__workspace=workspace
             )
-            
-            # Clear cache and get fresh data
+
+            # Parse optional dashboard-level filters from query string
+            extra_filters = []
+            raw_filters = request.query_params.get('filters')
+            if raw_filters:
+                try:
+                    parsed = json.loads(raw_filters)
+                except (json.JSONDecodeError, ValueError):
+                    return Response(
+                        {'error': 'filters must be a valid JSON array'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if not isinstance(parsed, list):
+                    return Response(
+                        {'error': 'filters must be a JSON array'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                extra_filters = parsed
+
             from .services import QueryEngine
             from django.core.cache import cache
-            
-            # Generate and delete cache key
+
             engine = QueryEngine()
-            cache_key = engine._generate_cache_key(widget)
-            cache.delete(cache_key)
-            
-            # Get fresh data
-            data = widget.get_data(limit=100)
-            
+
+            # Only bust the baseline cache when no extra_filters are in play
+            if not extra_filters:
+                cache_key = engine._generate_cache_key(widget)
+                cache.delete(cache_key)
+
+            data = engine.execute_widget_query(widget, limit=100, extra_filters=extra_filters)
+
             return Response({'data': data}, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             logger.error(f"Error refreshing widget data: {str(e)}", exc_info=True)
             return Response(
                 {'error': f'Failed to refresh data: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class DashboardFilterConfigAPIView(APIView):
+    """
+    PATCH /api/dashboards/<dashboard_id>/filter-config/
+
+    Saves the filter bar configuration for a dashboard.
+    Body: {"filters": [...]}
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
+
+    def patch(self, request, dashboard_id):
+        workspace = request.user.current_workspace
+        dashboard = get_object_or_404(
+            Dashboard,
+            id=dashboard_id,
+            workspace=workspace,
+            is_active=True,
+        )
+
+        filter_config = request.data.get('filter_config')
+        if filter_config is None:
+            return Response(
+                {'error': 'filter_config is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(filter_config, dict):
+            return Response(
+                {'error': 'filter_config must be a JSON object'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dashboard.filter_config = filter_config
+        dashboard.save(update_fields=['filter_config', 'updated_at'])
+        return Response({'filter_config': dashboard.filter_config}, status=status.HTTP_200_OK)
 
 
 class DashboardListAPIView(APIView):

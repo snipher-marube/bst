@@ -34,6 +34,9 @@ urlpatterns = [
     path('dashboards/<uuid:pk>/edit/', views.DashboardEditView.as_view(), name='dashboard_edit'),
     path('dashboards/<uuid:pk>/delete/', views.DashboardDeleteView.as_view(), name='dashboard_delete'),
     
+    # Integrations
+    path('integrations/google-sheets/', views.GoogleSheetsConnectView.as_view(), name='google_sheets_connect'),
+
     # Settings and account
     path('settings/', views.WorkspaceSettingsView.as_view(), name='settings'),
     path('members/', views.TeamMembersView.as_view(), name='members'),

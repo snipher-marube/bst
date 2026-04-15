@@ -173,7 +173,13 @@ def run_async_import(self, import_job_id):
 
     try:
         df     = pd.read_json(cache.get(f'import_df_{job.file_path}') or job.file_path, orient='split')
-        result = DataImportService().import_data(table=job.table, df=df, user=job.created_by)
+        result = DataImportService().import_data(
+            table=job.table,
+            df=df,
+            user=job.created_by,
+            import_mode=getattr(job, 'import_mode', 'append'),
+            primary_key_field=getattr(job, 'primary_key_field', ''),
+        )
 
         job.status         = 'completed'
         job.success_rows   = result['success']
@@ -319,6 +325,11 @@ def _run_insight_generation(workspace_id, task_self):
         tables, numeric_by_table, workspace, owner, created_insights,
         llm_gen=llm_gen, budget=budget,
     )
+
+    # ── Phase 4: notify workspace members of new anomaly findings ────────
+    anomaly_insights = [i for i in created_insights if i.insight_type == 'anomaly']
+    if anomaly_insights:
+        _notify_anomaly_insights(workspace, anomaly_insights)
 
     # ── Done ──────────────────────────────────────────────────────────────
     _broadcast(f'workspace_{workspace_id}', {
@@ -623,3 +634,123 @@ def _create_comparison_insights(tables, numeric_by_table, workspace, owner, insi
             'table_averages': chart_data,
         }, llm_gen, budget)
         insights_list.append(insight)
+
+
+# ---------------------------------------------------------------------------
+# Anomaly notification helper
+# ---------------------------------------------------------------------------
+
+def _notify_anomaly_insights(workspace, anomaly_insights: list):
+    """
+    Send in-app Notification records to all workspace members for each
+    anomaly insight found during the daily analysis run.
+
+    Only fires if at least one anomaly insight was created.
+    """
+    try:
+        from apps.notifications.models import Notification
+        from apps.workspaces.models import WorkspaceMembership
+
+        members = list(
+            WorkspaceMembership.objects.filter(workspace=workspace)
+            .select_related('user')
+        )
+        if not members:
+            return
+
+        count = len(anomaly_insights)
+        table_names = list({i.source_table_name for i in anomaly_insights if i.source_table_name})
+        tables_str  = ', '.join(sorted(table_names)[:3])
+        if len(table_names) > 3:
+            tables_str += f' (+{len(table_names) - 3} more)'
+
+        title   = f'{count} anomal{"y" if count == 1 else "ies"} detected in your data'
+        message = (
+            f'Automated analysis found {count} statistical anomal'
+            f'{"y" if count == 1 else "ies"} '
+            + (f'in {tables_str}. ' if tables_str else '')
+            + 'Open the Insights panel to review.'
+        )
+
+        for membership in members:
+            Notification.notify(
+                user=membership.user,
+                title=title,
+                message=message,
+                notif_type='warning',
+                workspace=workspace,
+                action_url='/insights/',
+                metadata={
+                    'anomaly_count':   count,
+                    'source_tables':   table_names,
+                    'triggered_by':    'auto_anomaly_detection',
+                },
+            )
+        logger.info(
+            'Anomaly notifications sent workspace=%s count=%d members=%d',
+            workspace.id, count, len(members),
+        )
+    except Exception:
+        logger.exception('_notify_anomaly_insights failed workspace=%s', workspace.id)
+
+
+# ---------------------------------------------------------------------------
+# Auto-trigger Beat task — fires analyze_workspace_tables for every active
+# workspace that has at least one table with records.
+# ---------------------------------------------------------------------------
+
+@shared_task(
+    name='insights.auto_trigger_anomaly_detection',
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def auto_trigger_anomaly_detection(self):
+    """
+    Fan-out task: queue ``analyze_workspace_tables`` for every active workspace
+    that has at least one active DataTable with data.
+
+    Registered in CELERY_BEAT_SCHEDULE to run daily at 03:00 UTC so results
+    are ready before the working day starts.
+
+    Returns a summary dict: {dispatched: N, skipped: N}.
+    """
+    try:
+        from apps.workspaces.models import Workspace
+        from apps.dashboards.models import DataTable, Record
+        from django.db.models import Exists, OuterRef
+
+        _has_active_table = DataTable.objects.filter(
+            workspace=OuterRef('pk'),
+            is_active=True,
+        ).filter(
+            Exists(Record.objects.filter(table=OuterRef('pk'), is_active=True))
+        )
+
+        workspaces = Workspace.objects.filter(
+            is_active=True,
+        ).filter(Exists(_has_active_table))
+
+        dispatched = 0
+        skipped    = 0
+        for ws in workspaces:
+            try:
+                analyze_workspace_tables.delay(str(ws.id))
+                dispatched += 1
+                logger.info('auto_trigger_anomaly_detection: queued workspace=%s', ws.id)
+            except Exception as exc:
+                logger.warning(
+                    'auto_trigger_anomaly_detection: failed to queue workspace=%s: %s',
+                    ws.id, exc,
+                )
+                skipped += 1
+
+        logger.info(
+            'auto_trigger_anomaly_detection: dispatched=%d skipped=%d',
+            dispatched, skipped,
+        )
+        return {'dispatched': dispatched, 'skipped': skipped}
+
+    except Exception as exc:
+        logger.exception('auto_trigger_anomaly_detection: unexpected error')
+        raise self.retry(exc=exc)

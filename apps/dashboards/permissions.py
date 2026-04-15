@@ -16,10 +16,11 @@ class HasWorkspaceAccess(permissions.BasePermission):
             return False
         
         # Try to get workspace from multiple sources
+        _data = request.data if isinstance(request.data, dict) else {}
         workspace_id = (
-            request.headers.get('X-Workspace-ID') or 
+            request.headers.get('X-Workspace-ID') or
             request.GET.get('workspace') or
-            request.data.get('workspace_id')
+            _data.get('workspace_id')
         )
         
         # If no workspace_id provided, try to get from user's current workspace
@@ -70,10 +71,11 @@ class CanEditData(permissions.BasePermission):
         # For create operations, check if user has edit rights in workspace
         if request.method == 'POST':
             # Try to get workspace from request
+            _data = request.data if isinstance(request.data, dict) else {}
             workspace_id = (
-                request.headers.get('X-Workspace-ID') or 
+                request.headers.get('X-Workspace-ID') or
                 request.GET.get('workspace') or
-                request.data.get('workspace_id')
+                _data.get('workspace_id')
             )
             
             if not workspace_id and hasattr(request.user, 'current_workspace') and request.user.current_workspace:
@@ -130,10 +132,11 @@ class CanManageWorkspace(permissions.BasePermission):
     """
 
     def has_permission(self, request, view):
+        _data = request.data if isinstance(request.data, dict) else {}
         workspace_id = (
             request.headers.get('X-Workspace-ID') or
             request.GET.get('workspace') or
-            request.data.get('workspace_id') or
+            _data.get('workspace_id') or
             (str(request.user.current_workspace.id)
              if hasattr(request.user, 'current_workspace') and request.user.current_workspace
              else None)

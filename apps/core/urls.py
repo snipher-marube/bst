@@ -25,4 +25,7 @@ urlpatterns = [
     path('health/liveness/', views.liveness_probe, name='liveness'),
     path('health/readiness/', views.readiness_probe, name='readiness'),
     path('offline/', views.offline_view, name='offline'),
+
+    # Prometheus metrics scrape endpoint (restrict at reverse-proxy in prod)
+    path('metrics/', views.metrics_view, name='metrics'),
 ]
