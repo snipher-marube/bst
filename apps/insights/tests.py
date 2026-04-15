@@ -578,3 +578,126 @@ class TestLLMIntegration(TestCase):
             'field_count': 2, 'numeric_fields': [], 'date_fields': [],
         })
         self.assertEqual(result['model'], settings.CLAUDE_INSIGHT_MODEL)
+
+
+# ===========================================================================
+# Gap #18 — Auto-triggered anomaly detection
+# ===========================================================================
+
+from unittest.mock import call as _call
+from apps.insights.tasks import auto_trigger_anomaly_detection, _notify_anomaly_insights
+from apps.dashboards.factories import DataTableFactory, RecordFactory
+
+
+class TestAutoTriggerAnomalyDetection(TestCase):
+    """auto_trigger_anomaly_detection fans out to workspaces with data."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.ws1  = WorkspaceFactory(owner=self.user, is_active=True)
+        self.ws2  = WorkspaceFactory(owner=self.user, is_active=True)
+
+    def test_dispatches_for_workspaces_with_data(self):
+        tbl = DataTableFactory(workspace=self.ws1, is_active=True)
+        RecordFactory(table=tbl, is_active=True)
+
+        with patch('apps.insights.tasks.analyze_workspace_tables') as mock_task:
+            mock_task.delay = MagicMock()
+            result = auto_trigger_anomaly_detection()
+
+        self.assertEqual(result['dispatched'], 1)
+        self.assertEqual(result['skipped'],    0)
+        mock_task.delay.assert_called_once_with(str(self.ws1.id))
+
+    def test_skips_workspaces_without_data(self):
+        # ws2 has no tables/records
+        with patch('apps.insights.tasks.analyze_workspace_tables') as mock_task:
+            mock_task.delay = MagicMock()
+            result = auto_trigger_anomaly_detection()
+
+        self.assertEqual(result['dispatched'], 0)
+        mock_task.delay.assert_not_called()
+
+    def test_skips_inactive_workspaces(self):
+        tbl = DataTableFactory(workspace=self.ws1, is_active=True)
+        RecordFactory(table=tbl, is_active=True)
+        self.ws1.is_active = False
+        self.ws1.save()
+
+        with patch('apps.insights.tasks.analyze_workspace_tables') as mock_task:
+            mock_task.delay = MagicMock()
+            result = auto_trigger_anomaly_detection()
+
+        self.assertEqual(result['dispatched'], 0)
+
+    def test_dispatches_multiple_workspaces(self):
+        for ws in (self.ws1, self.ws2):
+            tbl = DataTableFactory(workspace=ws, is_active=True)
+            RecordFactory(table=tbl, is_active=True)
+
+        with patch('apps.insights.tasks.analyze_workspace_tables') as mock_task:
+            mock_task.delay = MagicMock()
+            result = auto_trigger_anomaly_detection()
+
+        self.assertEqual(result['dispatched'], 2)
+        self.assertEqual(mock_task.delay.call_count, 2)
+
+
+class TestNotifyAnomalyInsights(TestCase):
+    """_notify_anomaly_insights creates Notification records for members."""
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        # owner is automatically a member via WorkspaceFactory
+        from apps.insights.models import Insight
+        self.insight = Insight.objects.create(
+            workspace=self.workspace,
+            title='Sales — Anomaly in "amount"',
+            description='2 outliers detected.',
+            insight_type='anomaly',
+            source_table_name='Sales',
+            created_by=self.user,
+        )
+
+    def test_creates_notification_for_member(self):
+        from apps.notifications.models import Notification
+        before = Notification.objects.count()
+        _notify_anomaly_insights(self.workspace, [self.insight])
+        after  = Notification.objects.count()
+        self.assertGreater(after, before)
+
+    def test_notification_title_contains_anomaly(self):
+        from apps.notifications.models import Notification
+        _notify_anomaly_insights(self.workspace, [self.insight])
+        notif = Notification.objects.filter(workspace=self.workspace).latest('created_at')
+        self.assertIn('anomaly', notif.title.lower())
+
+    def test_no_notification_when_no_members(self):
+        from apps.notifications.models import Notification
+        from apps.workspaces.models import WorkspaceMembership
+        # Remove all memberships
+        WorkspaceMembership.objects.filter(workspace=self.workspace).delete()
+        before = Notification.objects.count()
+        _notify_anomaly_insights(self.workspace, [self.insight])
+        self.assertEqual(Notification.objects.count(), before)
+
+    def test_multiple_anomalies_single_notification_per_member(self):
+        from apps.notifications.models import Notification
+        from apps.insights.models import Insight
+        ins2 = Insight.objects.create(
+            workspace=self.workspace,
+            title='Orders — Anomaly in "quantity"',
+            description='1 outlier.',
+            insight_type='anomaly',
+            source_table_name='Orders',
+            created_by=self.user,
+        )
+        _notify_anomaly_insights(self.workspace, [self.insight, ins2])
+        # One notification per member (not per insight)
+        member_count = self.workspace.members.count()
+        notifs = Notification.objects.filter(
+            workspace=self.workspace,
+            notif_type='warning',
+        ).count()
+        self.assertEqual(notifs, member_count)

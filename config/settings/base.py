@@ -63,6 +63,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Must be first — starts request timer for Prometheus latency histograms
+    'apps.core.middleware.PrometheusMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -365,6 +367,18 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'subscriptions.process_grace_periods',
         'schedule': crontab(hour=8, minute=0),
     },
+    # Evaluate ReportSchedule records and fire delivery for any that are due.
+    # Runs every 15 minutes — max schedule latency is therefore 15 minutes.
+    'process-report-schedules': {
+        'task':     'apps.reports.tasks.process_report_schedules',
+        'schedule': crontab(minute='*/15'),
+    },
+    # Run statistical anomaly detection across all active workspaces.
+    # Fires daily at 03:00 UTC — results are ready before the working day starts.
+    'auto-anomaly-detection-daily': {
+        'task':     'insights.auto_trigger_anomaly_detection',
+        'schedule': crontab(hour=3, minute=0),
+    },
 }
 
 # Retention days for AuditLog (overridable per-environment)
@@ -533,3 +547,74 @@ LOGGING = {
         },
     },
 }
+
+# ── Structlog — structured JSON logging ────────────────────────────────────
+import structlog  # noqa: E402
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt='iso'),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+# ── Sentry — error tracking (opt-in via SENTRY_DSN env var) ───────────────
+SENTRY_DSN = config('SENTRY_DSN', default='')
+
+if SENTRY_DSN:
+    import sentry_sdk  # noqa: E402
+    from sentry_sdk.integrations.django import DjangoIntegration  # noqa: E402
+    from sentry_sdk.integrations.celery import CeleryIntegration  # noqa: E402
+    from sentry_sdk.integrations.redis import RedisIntegration    # noqa: E402
+    from sentry_sdk.integrations.logging import LoggingIntegration # noqa: E402
+    import logging as _logging  # noqa: E402
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(
+                transaction_style='url',
+                http_methods_to_capture=('GET', 'POST', 'PUT', 'PATCH', 'DELETE'),
+            ),
+            CeleryIntegration(monitor_beat_tasks=True),
+            RedisIntegration(),
+            LoggingIntegration(
+                level=_logging.INFO,        # breadcrumbs from INFO+
+                event_level=_logging.ERROR, # errors from ERROR+ only
+            ),
+        ],
+        # Capture 5% of transactions for performance monitoring (adjust in prod)
+        traces_sample_rate=config('SENTRY_TRACES_SAMPLE_RATE', default=0.05, cast=float),
+        # Release tag — populated by CI via GIT_COMMIT env var
+        release=config('GIT_COMMIT', default=None),
+        environment=config('DJANGO_ENV', default='development'),
+        send_default_pii=False,  # GDPR: do not send user IP / email to Sentry
+    )
+
+# ── Prometheus ─────────────────────────────────────────────────────────────
+# Custom PrometheusMiddleware in apps.core.middleware instruments HTTP requests.
+# Celery task metrics are wired via signal handlers in apps.core.metrics.
+# The /metrics endpoint is served by apps.core.views.metrics_view.
+# ── SAML 2.0 SP credentials ────────────────────────────────────────────────
+# Optional: provide a self-signed or CA-issued certificate + private key for
+# signing AuthnRequests and SP metadata.  Leave blank for development; the
+# IdP will not require request signing in most dev setups.
+#
+# In production, generate with:
+#   openssl req -x509 -newkey rsa:2048 -keyout saml.key -out saml.crt \
+#       -days 3650 -nodes -subj "/CN=analyticsmeta-sp"
+# Then set SAML_SP_CERT / SAML_SP_KEY in your .env to the base64 body
+# (without PEM headers) of saml.crt / saml.key respectively.
+SAML_SP_CERT = config('SAML_SP_CERT', default='')
+SAML_SP_KEY  = config('SAML_SP_KEY',  default='')

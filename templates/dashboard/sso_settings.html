@@ -1,0 +1,277 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
+
+{% block title %}SSO / SAML Settings — AnalyticsMeta{% endblock %}
+
+{% block content %}
+{% include 'includes/header.html' %}
+
+<div class="max-w-2xl mx-auto px-4 py-8" x-data="ssoSettings()">
+
+  {# ── Page header ──────────────────────────────────────────────── #}
+  <div class="flex items-center gap-3 mb-6">
+    <div class="w-10 h-10 rounded-lg bg-[#03466e]/10 flex items-center justify-center">
+      <i class="fas fa-id-badge text-[#03466e]"></i>
+    </div>
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">SAML 2.0 Single Sign-On</h1>
+      <p class="text-sm text-gray-500">Allow your team to sign in via Okta, Azure AD, Google Workspace, or any SAML 2.0 IdP.</p>
+    </div>
+  </div>
+
+  {# ── Messages ─────────────────────────────────────────────────── #}
+  {% if messages %}
+  {% for message in messages %}
+  <div class="mb-4 rounded-lg border px-4 py-3 text-sm flex items-center gap-2
+    {% if message.tags == 'success' %}bg-emerald-50 border-emerald-200 text-emerald-800
+    {% elif message.tags == 'error' %}bg-red-50 border-red-200 text-red-800
+    {% else %}bg-blue-50 border-blue-200 text-blue-800{% endif %}">
+    <i class="fas {% if message.tags == 'success' %}fa-check-circle{% elif message.tags == 'error' %}fa-times-circle{% else %}fa-info-circle{% endif %}"></i>
+    {{ message }}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {# ── SP Metadata (informational, shown when SSO is configured) ── #}
+  {% if sso %}
+  <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm">
+    <p class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+      <i class="fas fa-info-circle"></i> Service Provider Details
+    </p>
+    <p class="text-blue-700 mb-3 text-xs">Give these URLs to your IdP administrator when registering AnalyticsMeta as a SAML Service Provider.</p>
+    <div class="space-y-2">
+      <div>
+        <span class="text-xs font-medium text-blue-600 uppercase tracking-wide">SP Metadata URL</span>
+        <div class="flex gap-2 mt-0.5">
+          <input type="text" readonly value="{{ metadata_url }}" id="metadataUrl"
+                 class="flex-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-blue-800 focus:outline-none">
+          <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('metadataUrl').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})"
+                  class="px-2.5 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs hover:bg-blue-200 transition whitespace-nowrap">Copy</button>
+        </div>
+      </div>
+      <div>
+        <span class="text-xs font-medium text-blue-600 uppercase tracking-wide">ACS URL</span>
+        <div class="flex gap-2 mt-0.5">
+          <input type="text" readonly value="{{ acs_url }}" id="acsUrl"
+                 class="flex-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-blue-800 focus:outline-none">
+          <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('acsUrl').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})"
+                  class="px-2.5 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs hover:bg-blue-200 transition whitespace-nowrap">Copy</button>
+        </div>
+      </div>
+      <div>
+        <span class="text-xs font-medium text-blue-600 uppercase tracking-wide">Entity ID</span>
+        <div class="flex gap-2 mt-0.5">
+          <input type="text" readonly value="{{ sp_entity_id }}" id="entityId"
+                 class="flex-1 bg-white border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-blue-800 focus:outline-none">
+          <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('entityId').value).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})"
+                  class="px-2.5 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs hover:bg-blue-200 transition whitespace-nowrap">Copy</button>
+        </div>
+      </div>
+    </div>
+    {% if sso.is_active %}
+    <div class="mt-3 flex items-center gap-2">
+      <a href="{{ sso_login_url }}" target="_blank"
+         class="text-xs text-blue-700 underline hover:text-blue-900 flex items-center gap-1">
+        <i class="fas fa-external-link-alt text-[10px]"></i> Test SSO Login
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Configuration form ───────────────────────────────────────── #}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800">IdP Configuration</h2>
+      {% if sso %}
+      <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full
+        {% if sso.is_active %}bg-emerald-100 text-emerald-700{% else %}bg-gray-100 text-gray-500{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full {% if sso.is_active %}bg-emerald-500{% else %}bg-gray-400{% endif %} inline-block"></span>
+        {% if sso.is_active %}Active{% else %}Inactive{% endif %}
+      </span>
+      {% endif %}
+    </div>
+
+    <form method="post" class="p-4 space-y-4">
+      {% csrf_token %}
+
+      {# IdP Entity ID #}
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">
+          IdP Entity ID <span class="text-red-400">*</span>
+        </label>
+        <input type="text" name="idp_entity_id" required
+               value="{{ sso.idp_entity_id|default:'' }}"
+               placeholder="https://your-idp.com/saml/metadata"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#03466e]/30 focus:border-[#03466e]">
+        <p class="text-xs text-gray-400 mt-1">The Entity ID / Issuer URI from your IdP metadata.</p>
+      </div>
+
+      {# IdP SSO URL #}
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">
+          IdP SSO URL <span class="text-red-400">*</span>
+        </label>
+        <input type="url" name="idp_sso_url" required
+               value="{{ sso.idp_sso_url|default:'' }}"
+               placeholder="https://your-idp.com/saml/sso"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#03466e]/30 focus:border-[#03466e]">
+        <p class="text-xs text-gray-400 mt-1">The SSO URL (HTTP-Redirect binding) from your IdP.</p>
+      </div>
+
+      {# IdP SLO URL (optional) #}
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">
+          IdP SLO URL <span class="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <input type="url" name="idp_slo_url"
+               value="{{ sso.idp_slo_url|default:'' }}"
+               placeholder="https://your-idp.com/saml/slo"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#03466e]/30 focus:border-[#03466e]">
+        <p class="text-xs text-gray-400 mt-1">Single Log-Out URL. Leave blank to skip federated logout.</p>
+      </div>
+
+      {# IdP X.509 Certificate #}
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">
+          IdP X.509 Certificate <span class="text-red-400">*</span>
+        </label>
+        <textarea name="idp_x509_cert" rows="6" required
+                  placeholder="MIICpDCCAYwCCQDU...base64 certificate body...
+(No -----BEGIN/END CERTIFICATE----- headers needed)"
+                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#03466e]/30 focus:border-[#03466e] resize-y">{{ sso.idp_x509_cert|default:'' }}</textarea>
+        <p class="text-xs text-gray-400 mt-1">Paste the base64 certificate body only — remove the <code>-----BEGIN/END CERTIFICATE-----</code> lines.</p>
+      </div>
+
+      {# Attribute mapping #}
+      <details class="border border-gray-100 rounded-xl" {% if sso %}open{% endif %}>
+        <summary class="px-3 py-2.5 text-sm font-semibold text-gray-700 cursor-pointer select-none hover:bg-gray-50 rounded-xl">
+          Attribute Mapping <span class="text-gray-400 font-normal">(advanced)</span>
+        </summary>
+        <div class="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100 mt-1">
+          <p class="text-xs text-gray-400">Map SAML assertion attribute names to AnalyticsMeta user fields.</p>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Email attribute</label>
+              <input type="text" name="attribute_email"
+                     value="{{ sso.attribute_email|default:'email' }}"
+                     class="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#03466e]/30">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">First name attribute</label>
+              <input type="text" name="attribute_first_name"
+                     value="{{ sso.attribute_first_name|default:'first_name' }}"
+                     class="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#03466e]/30">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Last name attribute</label>
+              <input type="text" name="attribute_last_name"
+                     value="{{ sso.attribute_last_name|default:'last_name' }}"
+                     class="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#03466e]/30">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      {# Toggles #}
+      <div class="space-y-3 pt-1">
+        <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition cursor-pointer">
+          <div>
+            <p class="text-sm font-medium text-gray-700">Enable SSO</p>
+            <p class="text-xs text-gray-400">Allow workspace members to sign in with your IdP.</p>
+          </div>
+          <input type="checkbox" name="is_active" value="1"
+                 {% if sso.is_active %}checked{% endif %}
+                 class="w-4 h-4 accent-[#03466e] cursor-pointer">
+        </label>
+
+        <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition cursor-pointer">
+          <div>
+            <p class="text-sm font-medium text-gray-700">Require SSO</p>
+            <p class="text-xs text-gray-400">Block password logins — members must use SSO. Only enable after testing.</p>
+          </div>
+          <input type="checkbox" name="require_sso" value="1"
+                 {% if sso.require_sso %}checked{% endif %}
+                 class="w-4 h-4 accent-[#03466e] cursor-pointer">
+        </label>
+
+        <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition cursor-pointer">
+          <div>
+            <p class="text-sm font-medium text-gray-700">Auto-provision new users</p>
+            <p class="text-xs text-gray-400">Automatically create an account for first-time SSO logins.</p>
+          </div>
+          <input type="checkbox" name="auto_provision" value="1"
+                 {% if sso.auto_provision or not sso %}checked{% endif %}
+                 class="w-4 h-4 accent-[#03466e] cursor-pointer">
+        </label>
+      </div>
+
+      {# Submit #}
+      <div class="flex items-center justify-between pt-2">
+        <a href="{% url 'dashboard:settings' %}" class="btn btn-secondary text-sm">
+          <i class="fas fa-arrow-left mr-1"></i> Back to Settings
+        </a>
+        <button type="submit" class="btn btn-primary text-sm">
+          <i class="fas fa-save mr-1"></i>
+          {% if sso %}Update SSO{% else %}Save SSO Configuration{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Quick-start guide ────────────────────────────────────────── #}
+  <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm" x-data="{open:false}">
+    <button @click="open=!open"
+            class="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition rounded-xl">
+      <span class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <i class="fas fa-book-open text-[#03466e] text-sm"></i>
+        Setup Guide — Okta, Azure AD, Google Workspace
+      </span>
+      <i class="fas text-gray-400 text-xs" :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+    </button>
+    <div x-show="open" x-collapse class="border-t border-gray-100">
+      <div class="p-4 space-y-4 text-sm text-gray-600">
+
+        <div>
+          <p class="font-semibold text-gray-700 mb-1"><i class="fas fa-circle text-[8px] text-[#f68712] mr-1"></i> Okta</p>
+          <ol class="list-decimal list-inside space-y-1 pl-2 text-xs">
+            <li>In Okta Admin: <strong>Applications → Create App Integration → SAML 2.0</strong></li>
+            <li>Set <strong>Single sign-on URL</strong> to the ACS URL above.</li>
+            <li>Set <strong>Audience URI (SP Entity ID)</strong> to the Entity ID above.</li>
+            <li>Under <strong>Attribute Statements</strong> add: <code>email → user.email</code>, <code>first_name → user.firstName</code>, <code>last_name → user.lastName</code></li>
+            <li>Download the <strong>IdP metadata</strong> or copy the SSO URL and certificate from the Sign On tab.</li>
+          </ol>
+        </div>
+
+        <div>
+          <p class="font-semibold text-gray-700 mb-1"><i class="fas fa-circle text-[8px] text-[#0a7ebf] mr-1"></i> Azure AD / Microsoft Entra</p>
+          <ol class="list-decimal list-inside space-y-1 pl-2 text-xs">
+            <li>In Azure Portal: <strong>Enterprise Applications → New Application → Create your own</strong></li>
+            <li>Choose <strong>Integrate any other application you don't find in the gallery</strong>.</li>
+            <li>Under <strong>Single sign-on → SAML</strong>, set Reply URL to the ACS URL and Identifier to the Entity ID.</li>
+            <li>Add attribute claims: <code>emailaddress → user.mail</code>, <code>givenname → user.givenname</code>, <code>surname → user.surname</code></li>
+            <li>Set attribute mapping fields above to: <code>http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress</code> etc.</li>
+            <li>Download the <strong>Certificate (Base64)</strong> and copy the <strong>Login URL</strong>.</li>
+          </ol>
+        </div>
+
+        <div>
+          <p class="font-semibold text-gray-700 mb-1"><i class="fas fa-circle text-[8px] text-emerald-500 mr-1"></i> Google Workspace</p>
+          <ol class="list-decimal list-inside space-y-1 pl-2 text-xs">
+            <li>In Google Admin: <strong>Apps → Web and mobile apps → Add app → Add custom SAML app</strong></li>
+            <li>Download the IdP metadata or note the SSO URL, Entity ID, and certificate.</li>
+            <li>Set <strong>ACS URL</strong> and <strong>Entity ID</strong> to the values above.</li>
+            <li>Add attribute mappings: <code>email → Basic Information → Primary email</code></li>
+          </ol>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function ssoSettings() { return {}; }
+</script>
+{% endblock %}

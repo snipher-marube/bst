@@ -506,3 +506,94 @@ class WorkspaceInvitation(models.Model):
         self.accepted_at = timezone.now()
         self.save(update_fields=['is_accepted', 'accepted_at'])
         return True
+
+
+# ===========================================================================
+# SSOConfiguration
+# ===========================================================================
+
+class SSOConfiguration(models.Model):
+    """
+    Per-workspace SAML 2.0 Identity Provider configuration.
+
+    One SSOConfiguration per Workspace (OneToOneField).  When ``is_active``
+    is True and ``require_sso`` is True, workspace members are redirected to
+    the IdP on every login attempt.
+
+    SP endpoints (auto-derived, no storage needed):
+        Metadata : /sso/<workspace_id>/metadata/
+        ACS      : /sso/<workspace_id>/acs/
+        SLO      : /sso/<workspace_id>/slo/   (optional)
+
+    Attribute mapping
+    -----------------
+    SAML assertions carry attributes whose names differ per IdP.
+    ``attribute_email``, ``attribute_first_name``, ``attribute_last_name``
+    let admins map IdP attribute names to user fields.
+
+    Typical defaults
+        Okta        : email, firstName / lastName  (or NameID for email)
+        Azure AD    : http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
+        Google      : email
+    """
+
+    workspace = models.OneToOneField(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name='sso_config',
+    )
+
+    # ── Identity Provider settings ────────────────────────────────────────
+    idp_entity_id  = models.CharField(max_length=500, help_text="IdP Entity ID / Issuer URI")
+    idp_sso_url    = models.URLField(max_length=500,  help_text="IdP SSO URL (HTTP-Redirect binding)")
+    idp_slo_url    = models.URLField(max_length=500, blank=True, default='',
+                                     help_text="IdP SLO URL (optional, HTTP-Redirect binding)")
+    idp_x509_cert  = models.TextField(
+        help_text=(
+            "IdP X.509 certificate in PEM format. "
+            "Remove the -----BEGIN/END CERTIFICATE----- headers — paste just the base64 body."
+        )
+    )
+
+    # ── Service Provider settings ─────────────────────────────────────────
+    sp_entity_id   = models.CharField(
+        max_length=500, blank=True, default='',
+        help_text=(
+            "SP Entity ID. Leave blank to auto-generate from "
+            "https://<host>/sso/<workspace_id>/metadata/"
+        ),
+    )
+
+    # ── Attribute mapping ─────────────────────────────────────────────────
+    attribute_email      = models.CharField(max_length=200, default='email')
+    attribute_first_name = models.CharField(max_length=200, default='first_name', blank=True)
+    attribute_last_name  = models.CharField(max_length=200, default='last_name',  blank=True)
+
+    # ── Access control ────────────────────────────────────────────────────
+    is_active   = models.BooleanField(default=False,
+                                      help_text="Enable SSO login for this workspace.")
+    require_sso = models.BooleanField(default=False,
+                                      help_text=(
+                                          "If enabled, workspace members may only sign in "
+                                          "via SSO — password login is blocked for them."
+                                      ))
+
+    # ── Auto-provision new users ─────────────────────────────────────────
+    auto_provision = models.BooleanField(
+        default=True,
+        help_text=(
+            "Automatically create a new AnalyticsMeta account for first-time "
+            "SSO logins.  If disabled, the user must already have an account."
+        ),
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = 'SSO Configuration'
+        verbose_name_plural = 'SSO Configurations'
+
+    def __str__(self):
+        status = 'active' if self.is_active else 'inactive'
+        return f"SSO [{status}] — {self.workspace.name}"

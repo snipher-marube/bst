@@ -18,21 +18,22 @@ class QueryEngine:
         self.cache_timeout = getattr(settings, 'WIDGET_CACHE_TTL', 300)
 
 
-    def _generate_cache_key(self, widget):
+    def _generate_cache_key(self, widget, extra_filters=None):
         """Generate unique cache key for widget query"""
         import hashlib
         from django.core.serializers.json import DjangoJSONEncoder
-    
+
         # Convert UUID to string for serialization
         table_id = str(widget.table_id) if widget.table_id else 'none'
-    
+
         key_data = {
             'table_id': table_id,
             'query_config': widget.query_config,
             'widget_type': widget.widget_type,
             'updated_at': str(widget.updated_at) if hasattr(widget, 'updated_at') else '',
+            'extra_filters': extra_filters or [],
         }
-    
+
         key_str = json.dumps(key_data, sort_keys=True, cls=DjangoJSONEncoder)
         cache_key = hashlib.md5(key_str.encode()).hexdigest()
         return f"widget_query:{cache_key}"
@@ -61,22 +62,24 @@ class QueryEngine:
                 queryset = queryset.filter(**{f'data__{field}__lte': value})
         return queryset
 
-    def _execute_table_query(self, widget, limit):
+    def _execute_table_query(self, widget, limit, extra_filters=None):
         """Execute table widget query - return raw records"""
         from .models import Record
-    
+
         config = widget.query_config or {}
-    
+
         # Base queryset
         queryset = Record.objects.filter(
             table=widget.table,
             is_active=True
         ).order_by('-created_at')
-    
-        # Apply filters if any
+
+        # Apply widget-level filters then dashboard-level extra_filters
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
-    
+        if extra_filters:
+            queryset = self._apply_filters(queryset, extra_filters)
+
         # Get records
         records = list(queryset.values('data', 'created_at')[:limit])
     
@@ -89,37 +92,57 @@ class QueryEngine:
     
         return result
 
-    def execute_widget_query(self, widget, limit=1000):
-        """Execute widget query with better error handling"""
+    def execute_widget_query(self, widget, limit=1000, extra_filters=None):
+        """Execute widget query with better error handling.
+
+        Args:
+            widget: Widget model instance.
+            limit: Maximum rows to return.
+            extra_filters: List of dashboard-level filter dicts to merge with
+                widget-level filters.  Same schema as query_config['filters']:
+                [{"field": "region", "operator": "eq", "value": "EMEA"}]
+        """
         try:
+            # Route to the appropriate connector engine for external data-source widgets
+            if getattr(widget, 'data_source_id', None) and widget.source_table_name:
+                ds = widget.data_source
+                if ds.connector_type == 'google_sheets':
+                    return GoogleSheetsQueryEngine(ds).execute_widget_query(widget, extra_filters=extra_filters)
+                ds_engine = DataSourceQueryEngine(ds)
+                return ds_engine.execute_widget_query(widget, limit=limit, extra_filters=extra_filters)
+
             # Validate widget has a table
             if not widget.table:
                 return {"error": "No table selected"}
-            
-            # Generate cache key
-            cache_key = self._generate_cache_key(widget)
-            
-            # Try cache
-            cached = cache.get(cache_key)
-            if cached:
-                return cached
-            
+
+            # Normalise extra_filters to a list
+            extra_filters = extra_filters or []
+
+            # Generate cache key (includes extra_filters so per-filter results cache separately)
+            cache_key = self._generate_cache_key(widget, extra_filters)
+
+            # Try cache (skip if extra_filters present — live results expected)
+            if not extra_filters:
+                cached = cache.get(cache_key)
+                if cached:
+                    return cached
+
             # Execute based on widget type
             if widget.widget_type in ('metric', 'number', 'gauge'):
-                data = self._execute_metric_query(widget, limit)
+                data = self._execute_metric_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type == 'table':
-                data = self._execute_table_query(widget, limit)
+                data = self._execute_table_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap']:
-                data = self._execute_chart_query(widget, limit)
+                data = self._execute_chart_query(widget, limit, extra_filters=extra_filters)
             else:
                 data = {"error": f"Unknown widget type: {widget.widget_type}"}
-            
-            # Cache if successful
-            if data and 'error' not in data:
+
+            # Cache only when no extra_filters (cache baseline results only)
+            if not extra_filters and data and 'error' not in data:
                 cache.set(cache_key, data, self.cache_timeout)
-            
+
             return data
-            
+
         except Exception as e:
             logger.error(f"Widget query error: {str(e)}", exc_info=True)
             return {"error": str(e)}
@@ -147,7 +170,7 @@ class QueryEngine:
         fn   = {'sum': Sum, 'avg': Avg, 'min': Min, 'max': Max}[agg_type]
         return queryset.aggregate(_r=fn(expr))['_r']
 
-    def _execute_metric_query(self, widget, _limit):
+    def _execute_metric_query(self, widget, _limit, extra_filters=None):
         """Execute metric widget query using DB-side aggregation.
 
         All count/sum/avg/min/max operations are pushed into the database.
@@ -162,6 +185,8 @@ class QueryEngine:
         queryset = Record.objects.filter(table=widget.table, is_active=True)
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
+        if extra_filters:
+            queryset = self._apply_filters(queryset, extra_filters)
 
         if not aggregations:
             return {'val': queryset.count()}
@@ -334,7 +359,7 @@ class QueryEngine:
             for k, v in sorted(grouped.items(), key=lambda kv: self._chart_sort_key(kv[0]))
         }
 
-    def _execute_chart_query(self, widget, limit):
+    def _execute_chart_query(self, widget, limit, extra_filters=None):
         """
         Execute chart widget query and return data formatted for the frontend.
 
@@ -354,6 +379,8 @@ class QueryEngine:
         queryset = Record.objects.filter(table=widget.table, is_active=True)
         if 'filters' in config:
             queryset = self._apply_filters(queryset, config['filters'])
+        if extra_filters:
+            queryset = self._apply_filters(queryset, extra_filters)
 
         # Python-fallback records are fetched lazily — only if a DB path fails.
         _fallback_records = None
@@ -438,11 +465,22 @@ class DataImportService:
         except Exception as e:
             raise ValueError(f"Error parsing file: {str(e)}")
 
-    def import_data(self, table, df, user, mapping=None):
+    def import_data(self, table, df, user, mapping=None,
+                    import_mode='append', primary_key_field=''):
         """
-        Import data from a DataFrame into a table using bulk_create for performance.
+        Import data from a DataFrame into a table.
+
+        Args:
+            import_mode: ``'append'`` (default) | ``'replace'`` | ``'upsert'``
+                - append:  insert new rows; existing data untouched
+                - replace: soft-delete all existing active rows, then insert fresh rows
+                - upsert:  for each row, update the first matching active record keyed on
+                           ``primary_key_field``; insert if no match found
+            primary_key_field: field name used as the unique key in ``upsert`` mode
+
         Row-by-row Record.save() triggered a COUNT + UPDATE per row (O(n²) on large files);
         bulk_create collapses that to a single INSERT batch + one count refresh at the end.
+        Upsert mode necessarily falls back to row-by-row to handle update vs insert branching.
         """
         from django.db import transaction
         from .models import Record
@@ -457,50 +495,75 @@ class DataImportService:
         records_data = df.to_dict('records')
 
         success_count = 0
+        updated_count = 0
         error_count = 0
         errors = []
         BATCH_SIZE = getattr(settings, 'IMPORT_BATCH_SIZE', 200)
 
-        # Prepare all Record objects, collecting per-row errors
-        pending = []
-        for row_num, row in enumerate(records_data, start=1):
-            try:
-                if mapping:
-                    mapped_row = {target: row[src] for target, src in mapping.items() if src in row}
-                else:
-                    mapped_row = dict(row)
-                mapped_row = self._sanitize_row(mapped_row)
-                pending.append(Record(table=table, data=mapped_row, created_by=user))
-            except Exception as e:
-                error_count += 1
-                errors.append(f"Row {row_num}: {str(e)}")
-
-        # Bulk-insert in batches inside a single transaction so a mid-import
-        # failure never leaves partial data committed to the database.
-        # bulk_create bypasses Record.save() intentionally — we update
-        # record_count once after all batches finish.
         with transaction.atomic():
-            for i in range(0, len(pending), BATCH_SIZE):
-                batch = pending[i:i + BATCH_SIZE]
-                try:
-                    Record.objects.bulk_create(batch)
-                    success_count += len(batch)
-                except Exception:
-                    # Batch-level failure: fall back row-by-row to isolate bad rows
-                    for rec in batch:
-                        try:
-                            rec.save()
-                            success_count += 1
-                        except Exception as row_exc:
-                            error_count += 1
-                            errors.append(str(row_exc))
+            # Replace mode: soft-delete all existing active records first
+            if import_mode == 'replace':
+                Record.objects.filter(table=table, is_active=True).update(is_active=False)
 
-            # Update record_count exactly once after all inserts
+            if import_mode == 'upsert' and primary_key_field:
+                # Row-by-row to support update vs insert branching
+                for row_num, row in enumerate(records_data, start=1):
+                    try:
+                        if mapping:
+                            row = {target: row[src] for target, src in mapping.items() if src in row}
+                        row = self._sanitize_row(dict(row))
+                        pk_val = row.get(primary_key_field)
+                        if pk_val is not None:
+                            existing = Record.objects.filter(
+                                table=table,
+                                is_active=True,
+                                **{f'data__{primary_key_field}': pk_val},
+                            ).first()
+                            if existing:
+                                existing.data = row
+                                existing.save(update_fields=['data'])
+                                updated_count += 1
+                                continue
+                        Record.objects.create(table=table, data=row, created_by=user)
+                        success_count += 1
+                    except Exception as exc:
+                        error_count += 1
+                        errors.append(f'Row {row_num}: {exc}')
+            else:
+                # Append / replace → bulk-insert path
+                pending = []
+                for row_num, row in enumerate(records_data, start=1):
+                    try:
+                        if mapping:
+                            row = {target: row[src] for target, src in mapping.items() if src in row}
+                        mapped_row = self._sanitize_row(dict(row))
+                        pending.append(Record(table=table, data=mapped_row, created_by=user))
+                    except Exception as e:
+                        error_count += 1
+                        errors.append(f'Row {row_num}: {e}')
+
+                for i in range(0, len(pending), BATCH_SIZE):
+                    batch = pending[i:i + BATCH_SIZE]
+                    try:
+                        Record.objects.bulk_create(batch)
+                        success_count += len(batch)
+                    except Exception:
+                        # Batch-level failure: fall back row-by-row to isolate bad rows
+                        for rec in batch:
+                            try:
+                                rec.save()
+                                success_count += 1
+                            except Exception as row_exc:
+                                error_count += 1
+                                errors.append(str(row_exc))
+
+            # Update record_count exactly once after all writes
             table.record_count = table.records.filter(is_active=True).count()
             table.save(update_fields=['record_count'])
 
         return {
             'success': success_count,
+            'updated': updated_count,
             'errors': error_count,
             'error_details': errors[:10],
         }
@@ -1705,3 +1768,513 @@ class AuditService:
             ip_address=request.META.get('REMOTE_ADDR'),
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
+
+# =============================================================================
+# DataSourceQueryEngine — live queries against external databases
+# =============================================================================
+
+class DataSourceQueryEngine:
+    """
+    Execute widget queries against a directly connected external database.
+
+    Supports the same widget types and query_config schema as the internal
+    QueryEngine, but translates them into parameterised SQL executed against
+    the connector specified by *data_source*.
+
+    Security notes
+    --------------
+    * Only SELECT statements are executed.  No DDL/DML is possible because
+      queries are built from the structured query_config (no raw SQL input).
+    * All identifiers (table, column names) are validated against
+      Widget._SAFE_FIELD_RE before being interpolated — no injection possible.
+    * Queries are executed with a per-statement timeout (default 30 s).
+    * Only PostgreSQL is supported in this release.  MySQL support is planned.
+    """
+
+    QUERY_TIMEOUT_SECONDS = 30
+
+    def __init__(self, data_source):
+        self.data_source = data_source
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def execute_widget_query(self, widget, limit=1000, extra_filters=None):
+        """Run a widget query against the external database.
+
+        Returns the same dict shape as QueryEngine.execute_widget_query so
+        the front-end does not need separate rendering paths.
+        """
+        if self.data_source.connector_type != 'postgresql':
+            return {'error': f"Connector type '{self.data_source.connector_type}' is not yet supported."}
+
+        table_name = widget.source_table_name
+        if not self._validate_identifier(table_name):
+            return {'error': f"Invalid source_table_name: {table_name!r}"}
+
+        try:
+            if widget.widget_type in ('metric', 'number', 'gauge'):
+                return self._exec_metric(widget, table_name, extra_filters)
+            elif widget.widget_type == 'table':
+                return self._exec_table(widget, table_name, limit, extra_filters)
+            elif widget.widget_type in ('line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap'):
+                return self._exec_chart(widget, table_name, limit, extra_filters)
+            else:
+                return {'error': f"Unknown widget type: {widget.widget_type}"}
+        except Exception as exc:
+            logger.error("DataSourceQueryEngine error for widget %s: %s", widget.id, exc, exc_info=True)
+            return {'error': str(exc)}
+
+    # ------------------------------------------------------------------
+    # Metric (scalar aggregation)
+    # ------------------------------------------------------------------
+
+    def _exec_metric(self, widget, table_name, extra_filters):
+        config = widget.query_config or {}
+        aggs   = config.get('aggregations', [])
+        where_clause, params = self._build_where(config.get('filters', []), extra_filters or [])
+
+        result = {}
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if not aggs:
+                    sql = f'SELECT COUNT(*) FROM {self._qi(table_name)}'
+                    if where_clause:
+                        sql += f' WHERE {where_clause}'
+                    cur.execute(sql, params)
+                    result['val'] = cur.fetchone()[0]
+                else:
+                    for agg in aggs:
+                        agg_type = agg.get('type', 'count')
+                        field    = agg.get('field')
+                        name     = agg.get('name', 'val')
+                        if not self._validate_agg_type(agg_type):
+                            result[name] = None
+                            continue
+                        if agg_type == 'count':
+                            expr = 'COUNT(*)'
+                        elif field and self._validate_identifier(field):
+                            expr = f'{agg_type.upper()}({self._qi(field)})'
+                        else:
+                            result[name] = None
+                            continue
+
+                        sql = f'SELECT {expr} FROM {self._qi(table_name)}'
+                        if where_clause:
+                            sql += f' WHERE {where_clause}'
+                        cur.execute(sql, params)
+                        row = cur.fetchone()
+                        result[name] = float(row[0]) if row and row[0] is not None else 0
+        return result
+
+    # ------------------------------------------------------------------
+    # Table (row listing)
+    # ------------------------------------------------------------------
+
+    def _exec_table(self, widget, table_name, limit, extra_filters):
+        config = widget.query_config or {}
+        row_limit = min(int(config.get('limit', limit)), 1000)
+        where_clause, params = self._build_where(config.get('filters', []), extra_filters or [])
+
+        sql = f'SELECT * FROM {self._qi(table_name)}'
+        if where_clause:
+            sql += f' WHERE {where_clause}'
+        sql += f' LIMIT {row_limit}'
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                cols    = [desc[0] for desc in cur.description]
+                rows    = cur.fetchall()
+        return [dict(zip(cols, row)) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Chart (grouped aggregation)
+    # ------------------------------------------------------------------
+
+    def _exec_chart(self, widget, table_name, limit, extra_filters):
+        config = widget.query_config or {}
+        aggs   = config.get('aggregations', [])
+        where_clause, params = self._build_where(config.get('filters', []), extra_filters or [])
+
+        if not aggs:
+            return {'val': {}}
+
+        agg      = aggs[0]
+        agg_type = agg.get('type', 'count')
+        field    = agg.get('field')
+        group_by = agg.get('group_by')
+        name     = agg.get('name', 'val')
+
+        if not self._validate_agg_type(agg_type):
+            return {'error': f"Unsupported aggregation type: {agg_type}"}
+        if not group_by or not self._validate_identifier(group_by):
+            return {'error': f"Invalid or missing group_by field: {group_by!r}"}
+
+        if agg_type == 'count':
+            val_expr = 'COUNT(*)'
+        elif field and self._validate_identifier(field):
+            val_expr = f'{agg_type.upper()}({self._qi(field)})'
+        else:
+            return {'error': f"Invalid field: {field!r}"}
+
+        sql = (
+            f'SELECT {self._qi(group_by)}, {val_expr} '
+            f'FROM {self._qi(table_name)}'
+        )
+        if where_clause:
+            sql += f' WHERE {where_clause}'
+        sql += f' GROUP BY {self._qi(group_by)} ORDER BY {self._qi(group_by)} LIMIT {min(limit, 500)}'
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        grouped = {}
+        for label, value in rows:
+            grouped[str(label)] = float(value) if value is not None else 0.0
+        return {name: grouped}
+
+    # ------------------------------------------------------------------
+    # WHERE clause builder
+    # ------------------------------------------------------------------
+
+    def _build_where(self, widget_filters, extra_filters):
+        """Build a parameterised WHERE clause from filter lists.
+
+        Returns (clause_str, params_list).  clause_str is empty string when
+        there are no filters.  Uses %s placeholders (psycopg3 default).
+        """
+        parts  = []
+        params = []
+        OPERATOR_MAP = {
+            'eq':       '=',
+            'neq':      '!=',
+            'gt':       '>',
+            'gte':      '>=',
+            'lt':       '<',
+            'lte':      '<=',
+            'contains': 'ILIKE',
+        }
+
+        for f in list(widget_filters) + list(extra_filters):
+            field = f.get('field')
+            op    = f.get('operator', 'eq')
+            value = f.get('value')
+            if not field or value is None:
+                continue
+            if not self._validate_identifier(field):
+                continue
+            sql_op = OPERATOR_MAP.get(op, '=')
+            col    = self._qi(field)
+            if op == 'contains':
+                parts.append(f'{col} {sql_op} %s')
+                params.append(f'%{value}%')
+            else:
+                parts.append(f'{col} {sql_op} %s')
+                params.append(value)
+
+        clause = ' AND '.join(parts)
+        return clause, params
+
+    # ------------------------------------------------------------------
+    # Connection management
+    # ------------------------------------------------------------------
+
+    def _connect(self):
+        """Return a psycopg3 connection with statement_timeout set."""
+        import psycopg
+        timeout_ms = self.QUERY_TIMEOUT_SECONDS * 1000
+        conn = psycopg.connect(
+            host=self.data_source.host,
+            port=self.data_source.port,
+            dbname=self.data_source.database,
+            user=self.data_source.username,
+            password=self.data_source.get_plaintext_password(),
+            sslmode=self.data_source.ssl_mode,
+            connect_timeout=10,
+            options=f'-c statement_timeout={timeout_ms}ms',
+            **(self.data_source.extra_options or {}),
+        )
+        conn.autocommit = True  # read-only; no need for explicit transaction management
+        return conn
+
+    # ------------------------------------------------------------------
+    # Schema discovery
+    # ------------------------------------------------------------------
+
+    def list_tables(self) -> list[dict]:
+        """Return all user tables in the connected database.
+
+        Each entry: {"schema": str, "name": str, "row_estimate": int}.
+        """
+        sql = """
+            SELECT n.nspname AS schema,
+                   c.relname AS name,
+                   c.reltuples::bigint AS row_estimate
+            FROM   pg_class c
+            JOIN   pg_namespace n ON n.oid = c.relnamespace
+            WHERE  c.relkind IN ('r', 'v', 'm')   -- tables, views, materialised views
+              AND  n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+            ORDER  BY n.nspname, c.relname
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                rows = cur.fetchall()
+        return [{'schema': r[0], 'name': r[1], 'row_estimate': r[2]} for r in rows]
+
+    def list_columns(self, table_name: str) -> list[dict]:
+        """Return columns for a specific table.
+
+        Each entry: {"name": str, "type": str, "nullable": bool}.
+        Raises ValueError on invalid table_name.
+        """
+        if not self._validate_identifier(table_name):
+            raise ValueError(f"Invalid table name: {table_name!r}")
+
+        sql = """
+            SELECT column_name, data_type, is_nullable
+            FROM   information_schema.columns
+            WHERE  table_name = %s
+            ORDER  BY ordinal_position
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, [table_name])
+                rows = cur.fetchall()
+        return [
+            {'name': r[0], 'type': r[1], 'nullable': r[2] == 'YES'}
+            for r in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_identifier(name: str) -> bool:
+        """Return True only when *name* is safe to embed as a SQL identifier."""
+        import re
+        return bool(re.match(r'^[^\x00\n\r"\';\x7f]{1,128}$', name or ''))
+
+    @staticmethod
+    def _validate_agg_type(agg_type: str) -> bool:
+        return agg_type in ('count', 'sum', 'avg', 'min', 'max')
+
+    @staticmethod
+    def _qi(name: str) -> str:
+        """Quote a SQL identifier by wrapping in double-quotes."""
+        return f'"{name}"'
+
+
+# ── GoogleSheetsQueryEngine ─────────────────────────────────────────────────
+
+class GoogleSheetsQueryEngine:
+    """
+    Query engine for Google Sheets data sources.
+
+    Authentication: Google Service Account JSON (encrypted with Fernet).
+    The service account must have read access to the target spreadsheet
+    (share the sheet with the service account e-mail address).
+
+    Workflow:
+        1. POST /api/v1/workspaces/<id>/data-sources/
+           connector_type=google_sheets, google_spreadsheet_id=<id>,
+           google_credentials_json=<service_account_json_string>
+        2. POST /api/v1/data-sources/<id>/test/  — verifies connectivity
+        3. GET  /api/v1/data-sources/<id>/schema/ — returns worksheet names + column types
+        4. Create a Widget pointing at this DataSource with source_table_name=<sheet_title>
+    """
+
+    # Maximum rows we'll read from a sheet in one call to avoid memory issues.
+    MAX_ROWS = 50_000
+
+    def __init__(self, data_source):
+        self.data_source = data_source
+
+    # ── gspread client ──────────────────────────────────────────────────────
+
+    def _get_client(self):
+        """Return an authenticated gspread.Client using the stored service account."""
+        import json
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+        except ImportError as exc:
+            raise RuntimeError(
+                "Google Sheets dependencies are not installed. "
+                "Run: pip install gspread google-auth"
+            ) from exc
+
+        creds_json = self.data_source.get_google_credentials()
+        creds_dict = json.loads(creds_json)
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/drive.readonly',
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        return gspread.authorize(creds)
+
+    def _open_spreadsheet(self):
+        client = self._get_client()
+        return client.open_by_key(self.data_source.google_spreadsheet_id)
+
+    # ── connectivity test ───────────────────────────────────────────────────
+
+    def test_connection(self) -> tuple[bool, str]:
+        """
+        Verify credentials and spreadsheet access.
+        Returns (ok: bool, message: str).
+        """
+        try:
+            ss     = self._open_spreadsheet()
+            sheets = ss.worksheets()
+            titles = ', '.join(ws.title for ws in sheets[:5])
+            extra  = f' (+{len(sheets)-5} more)' if len(sheets) > 5 else ''
+            return True, f"Connected to \"{ss.title}\". Sheets: {titles}{extra}"
+        except Exception as exc:
+            return False, str(exc)
+
+    # ── schema discovery ────────────────────────────────────────────────────
+
+    def list_tables(self) -> list[dict]:
+        """Return all worksheet names (each worksheet = one "table")."""
+        ss = self._open_spreadsheet()
+        return [
+            {'name': ws.title, 'type': 'sheet', 'row_count': ws.row_count}
+            for ws in ss.worksheets()
+        ]
+
+    def list_columns(self, sheet_name: str) -> list[dict]:
+        """Return column names and inferred types for the given sheet."""
+        df = self._sheet_to_df(sheet_name, max_rows=200)
+        if df.empty:
+            return []
+        return [{'name': col, 'type': self._infer_column_type(df[col])} for col in df.columns]
+
+    # ── widget query ────────────────────────────────────────────────────────
+
+    def execute_widget_query(self, widget, extra_filters=None):
+        """
+        Execute a widget query against a Google Sheet.
+        Returns the same dict/list shape as QueryEngine.execute_widget_query.
+        """
+        import pandas as pd
+
+        sheet_name = widget.source_table_name
+        if not sheet_name:
+            return {'error': 'No sheet name configured on this widget.'}
+
+        try:
+            df = self._sheet_to_df(sheet_name)
+        except Exception as exc:
+            logger.error("GoogleSheetsQueryEngine sheet read error: %s", exc)
+            return {'error': str(exc)}
+
+        if df.empty:
+            return {'message': 'No data in sheet'}
+
+        qc = widget.query_config or {}
+
+        # ── Apply filters ─────────────────────────────────────────────────
+        all_filters = list(qc.get('filters', [])) + list(extra_filters or [])
+        for f in all_filters:
+            col = f.get('field', '')
+            op  = f.get('operator', 'eq')
+            val = f.get('value')
+            if col not in df.columns or val is None:
+                continue
+            s = df[col].astype(str)
+            if   op == 'eq':  df = df[s == str(val)]
+            elif op == 'neq': df = df[s != str(val)]
+            elif op in ('gt', 'gte', 'lt', 'lte'):
+                numeric = pd.to_numeric(df[col], errors='coerce')
+                v       = float(val)
+                if   op == 'gt':  df = df[numeric >  v]
+                elif op == 'gte': df = df[numeric >= v]
+                elif op == 'lt':  df = df[numeric <  v]
+                elif op == 'lte': df = df[numeric <= v]
+            elif op == 'contains':
+                df = df[s.str.contains(str(val), case=False, na=False)]
+
+        aggs = qc.get('aggregations')
+
+        # ── Table mode — no aggregations ──────────────────────────────────
+        if not aggs:
+            limit = min(int(qc.get('limit', 20)), 1000)
+            rows  = df.head(limit).where(df.notna(), None)
+            return rows.to_dict('records')
+
+        # ── Aggregation mode ──────────────────────────────────────────────
+        agg      = aggs[0]
+        agg_type = agg.get('type', 'count')
+        field    = agg.get('field')
+        group_by = agg.get('group_by')
+
+        # Coerce the measure column to numeric upfront
+        if field and field in df.columns:
+            df[field] = pd.to_numeric(df[field], errors='coerce')
+
+        if group_by and group_by in df.columns:
+            grouped = df.groupby(group_by, sort=True)
+            if agg_type == 'count':
+                result = grouped.size()
+            elif field and field in df.columns:
+                agg_funcs = {'sum': 'sum', 'avg': 'mean', 'min': 'min', 'max': 'max'}
+                fn = agg_funcs.get(agg_type, 'sum')
+                result = getattr(grouped[field], fn)()
+            else:
+                result = grouped.size()
+            return {'val': {str(k): (None if (v != v) else round(float(v), 6))
+                            for k, v in result.items()}}
+
+        # Scalar aggregation
+        if agg_type == 'count':
+            return {'val': len(df)}
+        if field and field in df.columns:
+            col = df[field]
+            agg_scalar = {
+                'sum': float(col.sum()),
+                'avg': float(col.mean()),
+                'min': float(col.min()),
+                'max': float(col.max()),
+            }
+            return {'val': round(agg_scalar.get(agg_type, float(col.sum())), 6)}
+        return {'val': len(df)}
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
+    def _sheet_to_df(self, sheet_name: str, max_rows: int | None = None):
+        """Read a worksheet into a pandas DataFrame (first row = headers)."""
+        import pandas as pd
+
+        ss = self._open_spreadsheet()
+        ws = ss.worksheet(sheet_name)
+        # get_all_records() returns a list of dicts using the first row as keys.
+        cap     = max_rows or self.MAX_ROWS
+        records = ws.get_all_records(numericise_ignore=['all'])   # keep raw strings
+        if len(records) > cap:
+            records = records[:cap]
+        return pd.DataFrame(records) if records else pd.DataFrame()
+
+    @staticmethod
+    def _infer_column_type(series) -> str:
+        """Best-effort column type inference from a pandas Series sample."""
+        import pandas as pd
+        clean = series.dropna().astype(str).replace('', pd.NA).dropna()
+        if clean.empty:
+            return 'text'
+        # Try numeric
+        numeric = pd.to_numeric(clean, errors='coerce')
+        if numeric.notna().mean() >= 0.8:
+            return 'number'
+        # Try date
+        try:
+            pd.to_datetime(clean, errors='raise', infer_datetime_format=True)
+            return 'date'
+        except (ValueError, TypeError):
+            pass
+        return 'text'

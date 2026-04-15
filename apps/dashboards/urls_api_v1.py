@@ -19,6 +19,7 @@ urlpatterns = [
 
     # Records (table-scoped)
     path('tables/<uuid:table_id>/records/', api_v1.RecordListCreateAPIView.as_view(), name='api_v1_records'),
+    path('tables/<uuid:table_id>/records/batch/', api_v1.RecordBatchAPIView.as_view(), name='api_v1_records_batch'),
     path('records/<uuid:pk>/', api_v1.RecordDetailAPIView.as_view(), name='api_v1_record_detail'),
 
     # Import / Export
@@ -56,4 +57,10 @@ urlpatterns = [
 
     # Workspace Usage Analytics
     path('workspaces/<uuid:workspace_id>/usage/', api_v1.WorkspaceUsageAPIView.as_view(), name='api_v1_workspace_usage'),
+
+    # Data Sources (direct DB connectors — Gap 7)
+    path('workspaces/<uuid:workspace_id>/data-sources/', api_v1.DataSourceListCreateAPIView.as_view(), name='api_v1_data_sources'),
+    path('data-sources/<uuid:pk>/', api_v1.DataSourceDetailAPIView.as_view(), name='api_v1_data_source_detail'),
+    path('data-sources/<uuid:pk>/test/', api_v1.DataSourceTestAPIView.as_view(), name='api_v1_data_source_test'),
+    path('data-sources/<uuid:pk>/schema/', api_v1.DataSourceSchemaAPIView.as_view(), name='api_v1_data_source_schema'),
 ]

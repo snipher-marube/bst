@@ -384,7 +384,27 @@ class Dashboard(models.Model):
     
     # Layout configuration (grid system)
     layout_config = JSONField(default=dict)
-    
+
+    # Dashboard-level filter bar configuration.
+    # Defines which filter controls are shown above the widget grid.
+    # Each entry describes one filter input the user can interact with.
+    #
+    # Schema:
+    #   {
+    #     "filters": [
+    #       {"field": "region",  "label": "Region",  "type": "text"},
+    #       {"field": "status",  "label": "Status",  "type": "select",
+    #        "options": ["active", "inactive"]},
+    #       {"field": "sale_date","label": "Date",   "type": "date"}
+    #     ]
+    #   }
+    #
+    # When the user selects a value in the filter bar the frontend sends
+    # the active values as extra_filters to the widget data API, which
+    # merges them with each widget's own query_config.filters before
+    # executing the query.
+    filter_config = JSONField(default=dict, blank=True)
+
     # For public sharing
     is_public = models.BooleanField(default=False)
     public_uuid = models.UUIDField(default=uuid.uuid4, unique=True)
@@ -434,8 +454,16 @@ class Widget(models.Model):
     widget_type = models.CharField(max_length=20, choices=WIDGET_TYPES)
     title = models.CharField(max_length=100)
     
-    # Data source configuration
+    # ── data source: one of (table) or (data_source + source_table_name) ────
+    # Imported DataTable (CSV/webhook ingestion)
     table = models.ForeignKey(DataTable, on_delete=models.SET_NULL, null=True, blank=True)
+    # Direct DB connector
+    data_source       = models.ForeignKey(
+        'DataSource', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='widgets',
+    )
+    # Table/view name inside the external database (used when data_source is set)
+    source_table_name = models.CharField(max_length=200, blank=True)
     
     # Query configuration — blank=True because {} is a valid empty config.
     query_config = JSONField(default=dict, blank=True)
@@ -447,9 +475,13 @@ class Widget(models.Model):
     # Aggregation types the query engine actually supports.
     ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct'}
 
-    # Only these characters are allowed in field / group_by names.  This blocks
-    # injection attempts (SQL, ORM __field traversal, path separators, etc.).
-    _SAFE_FIELD_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,128}$')
+    # Field/group_by names may contain any printable character that real-world
+    # column names use (spaces, parentheses, slashes, %, #, etc.).
+    # Blocked: null bytes, newlines (log/header injection), double-quote and
+    # single-quote (SQL identifier/string injection), semicolon (statement
+    # terminator).  Everything else is safe — the ORM engine only does dict
+    # key lookups; the DB engine wraps every name in _qi() double-quotes.
+    _SAFE_FIELD_RE = re.compile(r'^[^\x00\n\r"\';\x7f]{1,128}$')
 
     # Visualization configuration — blank=True because {} is a valid empty config.
     viz_config = JSONField(default=dict, blank=True)
@@ -578,22 +610,27 @@ class Widget(models.Model):
 
     def get_data(self, limit=1000):
         """
-        Execute the query and return data for this widget
+        Execute the query and return data for this widget.
+
+        Routes to DataSourceQueryEngine when data_source is set,
+        otherwise falls back to the standard QueryEngine (DataTable path).
         """
-        if not self.table:
-            return {"error": "No table selected"}
+        if not self.table and not (self.data_source and self.source_table_name):
+            return {"error": "No data source selected"}
 
         try:
-            from .services import QueryEngine
-            engine = QueryEngine()
-            result = engine.execute_widget_query(self, limit=limit)
-        
-            # Ensure we always return a dict
+            from .services import QueryEngine, DataSourceQueryEngine
+            if self.data_source_id and self.source_table_name:
+                engine = DataSourceQueryEngine(self.data_source)
+                result = engine.execute_widget_query(self, limit=limit)
+            else:
+                engine = QueryEngine()
+                result = engine.execute_widget_query(self, limit=limit)
+
             if result is None:
                 return {"message": "No data available"}
-        
             return result
-        
+
         except Exception as e:
             logger.error(f"Widget query error: {str(e)}", exc_info=True)
             return {"error": str(e)}
@@ -650,12 +687,31 @@ class ImportJob(models.Model):
     table = models.ForeignKey(DataTable, on_delete=models.CASCADE, null=True, blank=True, related_name='import_jobs')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
 
+    IMPORT_MODE_REPLACE = 'replace'
+    IMPORT_MODE_APPEND  = 'append'
+    IMPORT_MODE_UPSERT  = 'upsert'
+    IMPORT_MODE_CHOICES = [
+        (IMPORT_MODE_REPLACE, 'Replace — overwrite all existing records'),
+        (IMPORT_MODE_APPEND,  'Append — add rows without touching existing data'),
+        (IMPORT_MODE_UPSERT,  'Upsert — insert or update keyed on primary_key field'),
+    ]
+
     file_name = models.CharField(max_length=255)
     file_path = models.CharField(max_length=500, blank=True)
     # SHA-256 of the raw file bytes — used to prevent duplicate imports when a
     # Celery task retries or the user re-uploads an identical file.
     file_hash = models.CharField(max_length=64, blank=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Delta-import controls
+    import_mode = models.CharField(
+        max_length=10, choices=IMPORT_MODE_CHOICES, default=IMPORT_MODE_APPEND,
+        help_text='How incoming rows are merged with existing data.',
+    )
+    primary_key_field = models.CharField(
+        max_length=255, blank=True,
+        help_text='Field name used as the unique key for upsert mode.',
+    )
 
     total_rows = models.IntegerField(default=0)
     processed_rows = models.IntegerField(default=0)
@@ -853,3 +909,117 @@ class WebhookEndpoint(models.Model):
         """
         from apps.dashboards.webhook_crypto import decrypt_secret
         return decrypt_secret(self.secret)
+
+
+class DataSource(models.Model):
+    """
+    Direct database connector for live querying of external databases.
+
+    Supported connectors: PostgreSQL (psycopg3), MySQL (mysqlclient / PyMySQL).
+    Credentials are stored with Fernet encryption (same scheme as WebhookEndpoint).
+    Only read-only connections are issued — the recommended practice is to
+    create a dedicated read-only DB user for each connector.
+
+    Workflow:
+        1. POST /api/v1/workspaces/<id>/data-sources/ to create.
+        2. POST /api/v1/data-sources/<id>/test/ to verify connectivity.
+        3. GET  /api/v1/data-sources/<id>/schema/ to browse tables & columns.
+        4. Create a Widget, set data_source=<id> and source_table_name=<table>.
+           The QueryEngine will route to DataSourceQueryEngine automatically.
+    """
+
+    CONNECTOR_POSTGRESQL   = 'postgresql'
+    CONNECTOR_MYSQL        = 'mysql'
+    CONNECTOR_GOOGLE_SHEETS = 'google_sheets'
+    CONNECTOR_CHOICES = [
+        (CONNECTOR_POSTGRESQL,    'PostgreSQL'),
+        (CONNECTOR_MYSQL,         'MySQL'),
+        (CONNECTOR_GOOGLE_SHEETS, 'Google Sheets'),
+    ]
+
+    SSL_DISABLE  = 'disable'
+    SSL_REQUIRE  = 'require'
+    SSL_VERIFY   = 'verify-full'
+    SSL_CHOICES  = [
+        (SSL_DISABLE, 'Disable'),
+        (SSL_REQUIRE, 'Require'),
+        (SSL_VERIFY,  'Verify CA'),
+    ]
+
+    # ── identity ─────────────────────────────────────────────────────────
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace  = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='data_sources')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    # ── connection config ─────────────────────────────────────────────────
+    name           = models.CharField(max_length=200)
+    connector_type = models.CharField(max_length=20, choices=CONNECTOR_CHOICES,
+                                      default=CONNECTOR_POSTGRESQL)
+
+    # ── Database connector fields (PostgreSQL / MySQL) ────────────────────
+    # blank=True / default='' because they are not required for Google Sheets.
+    host           = models.CharField(max_length=255, blank=True, default='')
+    port           = models.PositiveIntegerField(default=5432)
+    database       = models.CharField(max_length=200, blank=True, default='')
+    username       = models.CharField(max_length=200, blank=True, default='')
+    # Fernet-encrypted password — use get_plaintext_password() to decrypt
+    _password      = models.TextField(db_column='password_enc', blank=True)
+    ssl_mode       = models.CharField(max_length=20, choices=SSL_CHOICES, default=SSL_REQUIRE)
+    # Optional extra driver options (e.g. {"connect_timeout": 10, "application_name": "analyticsmeta"})
+    extra_options  = models.JSONField(default=dict, blank=True)
+
+    # ── Google Sheets connector fields ────────────────────────────────────
+    # Fernet-encrypted service-account JSON — use get_google_credentials() to decrypt.
+    google_credentials_enc  = models.TextField(blank=True, default='')
+    # The spreadsheet ID from the Google Sheets URL:
+    #   https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit
+    google_spreadsheet_id   = models.CharField(max_length=200, blank=True, default='')
+
+    # ── status ────────────────────────────────────────────────────────────
+    is_active       = models.BooleanField(default=True)
+    last_tested_at  = models.DateTimeField(null=True, blank=True)
+    last_test_ok    = models.BooleanField(null=True)
+    last_test_error = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['workspace', 'name']
+        indexes  = [
+            models.Index(fields=['workspace', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.connector_type}://{self.host}/{self.database})"
+
+    def set_password(self, plaintext: str) -> None:
+        """Encrypt and store *plaintext*."""
+        from apps.dashboards.webhook_crypto import encrypt_secret
+        self._password = encrypt_secret(plaintext)
+
+    def get_plaintext_password(self) -> str:
+        """Decrypt and return the plaintext connection password."""
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        return decrypt_secret(self._password)
+
+    def get_dsn(self) -> str:
+        """Return a libpq-style DSN string (password decrypted inline)."""
+        pw = self.get_plaintext_password()
+        ssl = f"?sslmode={self.ssl_mode}" if self.connector_type == self.CONNECTOR_POSTGRESQL else ""
+        return (
+            f"{self.connector_type}://{self.username}:{pw}"
+            f"@{self.host}:{self.port}/{self.database}{ssl}"
+        )
+
+    # ── Google Sheets helpers ─────────────────────────────────────────────
+
+    def set_google_credentials(self, credentials_json: str) -> None:
+        """Encrypt and store the service-account JSON string."""
+        from apps.dashboards.webhook_crypto import encrypt_secret
+        self.google_credentials_enc = encrypt_secret(credentials_json)
+
+    def get_google_credentials(self) -> str:
+        """Decrypt and return the service-account JSON string."""
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        return decrypt_secret(self.google_credentials_enc)

@@ -23,7 +23,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
-from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint
+from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint, DataSource
 from .permissions import HasWorkspaceAccess, CanEditData, CanManageWorkspace
 from .webhook_crypto import encrypt_secret, decrypt_secret
 from .serializers import (
@@ -322,6 +322,121 @@ class RecordDetailAPIView(APIView):
 
 
 # ---------------------------------------------------------------------------
+# BATCH RECORD OPERATIONS
+# ---------------------------------------------------------------------------
+
+class RecordBatchAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/records/batch/
+
+    Accepts a JSON body with an array of operation objects.  Each object must
+    include an ``op`` field:
+
+    - ``create``: insert a new record.  Requires ``data`` dict.
+    - ``update``: update an existing record by ``id``.  Requires ``id`` + ``data``.
+    - ``upsert``: insert-or-update keyed on ``primary_key`` + ``data``.
+    - ``delete``: soft-delete a record by ``id``.  Requires ``id``.
+
+    Maximum 500 operations per request.
+
+    Response::
+        {
+          "created":  <int>,
+          "updated":  <int>,
+          "deleted":  <int>,
+          "errors":   [{"index": <int>, "op": "<op>", "error": "<msg>"}, ...]
+        }
+    """
+    VALID_OPS  = {'create', 'update', 'upsert', 'delete'}
+    MAX_OPS    = 500
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
+
+    def post(self, request, table_id):
+        ws    = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+
+        ops = request.data
+        if not isinstance(ops, list):
+            return Response({'error': 'Request body must be a JSON array of operations'}, status=400)
+        if len(ops) > self.MAX_OPS:
+            return Response(
+                {'error': f'Maximum {self.MAX_OPS} operations per request (received {len(ops)})'},
+                status=400,
+            )
+
+        created = updated = deleted = 0
+        errors = []
+
+        with transaction.atomic():
+            for idx, op_obj in enumerate(ops):
+                if not isinstance(op_obj, dict):
+                    errors.append({'index': idx, 'op': None, 'error': 'Each operation must be a JSON object'})
+                    continue
+
+                op = op_obj.get('op')
+                if op not in self.VALID_OPS:
+                    errors.append({'index': idx, 'op': op, 'error': f'op must be one of: {", ".join(sorted(self.VALID_OPS))}'})
+                    continue
+
+                data       = op_obj.get('data', {})
+                record_id  = op_obj.get('id')
+                primary_key = op_obj.get('primary_key', '')
+
+                try:
+                    if op == 'create':
+                        if not isinstance(data, dict):
+                            raise ValueError('data must be a dict')
+                        Record.objects.create(table=table, data=data, created_by=request.user)
+                        created += 1
+
+                    elif op == 'update':
+                        if not record_id:
+                            raise ValueError('id is required for update')
+                        record = get_object_or_404(Record, pk=record_id, table=table, is_active=True)
+                        record.data = {**record.data, **data} if isinstance(data, dict) else data
+                        record.save(update_fields=['data'])
+                        updated += 1
+
+                    elif op == 'upsert':
+                        if not primary_key:
+                            raise ValueError('primary_key is required for upsert')
+                        if not isinstance(data, dict):
+                            raise ValueError('data must be a dict')
+                        pk_val = data.get(primary_key)
+                        if pk_val is None:
+                            raise ValueError(f'primary_key field "{primary_key}" missing from data')
+                        existing = Record.objects.filter(
+                            table=table, is_active=True, **{f'data__{primary_key}': pk_val}
+                        ).first()
+                        if existing:
+                            existing.data = data
+                            existing.save(update_fields=['data'])
+                            updated += 1
+                        else:
+                            Record.objects.create(table=table, data=data, created_by=request.user)
+                            created += 1
+
+                    elif op == 'delete':
+                        if not record_id:
+                            raise ValueError('id is required for delete')
+                        record = get_object_or_404(Record, pk=record_id, table=table, is_active=True)
+                        record.is_active  = False
+                        record.deleted_at = timezone.now()
+                        record.save(update_fields=['is_active', 'deleted_at'])
+                        deleted += 1
+
+                except Exception as exc:
+                    errors.append({'index': idx, 'op': op, 'error': str(exc)})
+
+        return Response({
+            'created': created,
+            'updated': updated,
+            'deleted': deleted,
+            'errors':  errors[:50],  # cap at 50
+        }, status=200 if not errors or (created + updated + deleted) else 207)
+
+
+# ---------------------------------------------------------------------------
 # DASHBOARDS
 # ---------------------------------------------------------------------------
 
@@ -474,6 +589,17 @@ class TableImportAPIView(APIView):
             table.schema = service._detect_schema_from_df(df)
             table.save(update_fields=['schema'])
 
+        # ── Import mode params ────────────────────────────────────────────
+        import_mode = request.data.get('import_mode', 'append')
+        if import_mode not in {'replace', 'append', 'upsert'}:
+            return Response(
+                {'error': 'import_mode must be one of: append, replace, upsert'},
+                status=400,
+            )
+        primary_key_field = request.data.get('primary_key', '')
+        if import_mode == 'upsert' and not primary_key_field:
+            return Response({'error': 'primary_key is required for upsert mode'}, status=400)
+
         # Create ImportJob
         job = ImportJob.objects.create(
             workspace=table.workspace,
@@ -483,6 +609,8 @@ class TableImportAPIView(APIView):
             file_path=import_id,  # We use import_id as a reference into cache
             status='pending',
             total_rows=len(df),
+            import_mode=import_mode,
+            primary_key_field=primary_key_field,
         )
 
         # Fire Celery task
@@ -762,13 +890,22 @@ class WebhookIngestView(APIView):
     """
     Public endpoint: ``POST /webhook/ingest/<token>/``
 
-    Validates the ``X-Hub-Signature-256`` HMAC header, then creates Record
-    rows in the target DataTable from the JSON payload.
+    Validates the ``X-Hub-Signature-256`` HMAC header, then writes Record
+    rows to the target DataTable from the JSON payload.
 
     Payload formats accepted:
     - JSON object  → one record
     - JSON array   → one record per element
+
+    Query parameters:
+    - ``import_mode``: ``replace`` (default) | ``append`` | ``upsert``
+        - ``replace``: mark all existing records inactive, then insert fresh rows
+        - ``append``:  insert new rows without touching existing data
+        - ``upsert``:  insert or update rows keyed on ``primary_key`` field
+    - ``primary_key``: field name used as the unique key for ``upsert`` mode
     """
+    VALID_MODES = {'replace', 'append', 'upsert'}
+
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -808,21 +945,51 @@ class WebhookIngestView(APIView):
             return Response({'error': 'Payload must be a JSON object or array'}, status=400)
 
         if not rows:
-            return Response({'created': 0})
+            return Response({'created': 0, 'updated': 0})
 
-        # ── Create records ────────────────────────────────────────────────
+        # ── Import mode ───────────────────────────────────────────────────
+        import_mode = request.query_params.get('import_mode', 'replace')
+        if import_mode not in self.VALID_MODES:
+            return Response(
+                {'error': f'import_mode must be one of: {", ".join(sorted(self.VALID_MODES))}'},
+                status=400,
+            )
+        primary_key = request.query_params.get('primary_key', '')
+        if import_mode == 'upsert' and not primary_key:
+            return Response({'error': 'primary_key is required for upsert mode'}, status=400)
+
+        # ── Write records ─────────────────────────────────────────────────
         table = endpoint.table
-        created = 0
+        created = updated = 0
         errors = []
-        for i, row in enumerate(rows[:1000]):  # hard cap: 1000 records per request
-            if not isinstance(row, dict):
-                errors.append({'index': i, 'error': 'Each element must be a JSON object'})
-                continue
-            try:
-                Record.objects.create(table=table, data=row)
-                created += 1
-            except Exception as exc:
-                errors.append({'index': i, 'error': str(exc)})
+
+        with transaction.atomic():
+            if import_mode == 'replace':
+                # Soft-delete all existing active records for this table
+                Record.objects.filter(table=table, is_active=True).update(is_active=False)
+
+            for i, row in enumerate(rows[:1000]):  # hard cap: 1000 records per request
+                if not isinstance(row, dict):
+                    errors.append({'index': i, 'error': 'Each element must be a JSON object'})
+                    continue
+                try:
+                    if import_mode == 'upsert' and primary_key and primary_key in row:
+                        pk_val = row[primary_key]
+                        existing = Record.objects.filter(
+                            table=table, is_active=True, **{f'data__{primary_key}': pk_val}
+                        ).first()
+                        if existing:
+                            existing.data = row
+                            existing.save(update_fields=['data'])
+                            updated += 1
+                        else:
+                            Record.objects.create(table=table, data=row)
+                            created += 1
+                    else:
+                        Record.objects.create(table=table, data=row)
+                        created += 1
+                except Exception as exc:
+                    errors.append({'index': i, 'error': str(exc)})
 
         # ── Update telemetry ──────────────────────────────────────────────
         from django.db.models import F as _F
@@ -831,10 +998,10 @@ class WebhookIngestView(APIView):
             last_request_at=timezone.now(),
         )
 
-        response_data = {'created': created}
+        response_data = {'created': created, 'updated': updated, 'mode': import_mode}
         if errors:
             response_data['errors'] = errors[:10]  # first 10 only
-        return Response(response_data, status=200 if created else 400)
+        return Response(response_data, status=200 if (created or updated) else 400)
 
 
 # ---------------------------------------------------------------------------
@@ -929,3 +1096,257 @@ class WorkspaceUsageAPIView(APIView):
             'insight_count':       insight_count,
             'recent_import':       recent_import,
         })
+
+
+# =============================================================================
+# DataSource connector API views (Gap 7 — PostgreSQL direct connector)
+# =============================================================================
+
+class DataSourceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for DataSource.
+
+    DB connectors (postgresql / mysql):
+      • password (write-only) — plaintext password, encrypted at rest.
+      • has_password (read-only) — True when a password has been stored.
+
+    Google Sheets connector:
+      • google_credentials_json (write-only) — service-account JSON, encrypted at rest.
+      • has_google_credentials (read-only)   — True when credentials have been stored.
+      • google_spreadsheet_id                — the sheet ID from the URL.
+    """
+    # ── DB connector fields ──────────────────────────────────────────────
+    password     = serializers.CharField(write_only=True, required=False,
+                                         allow_blank=True, default='')
+    has_password = serializers.SerializerMethodField(read_only=True)
+
+    # ── Google Sheets fields ─────────────────────────────────────────────
+    google_credentials_json = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default='',
+        help_text='Full service-account JSON string (write-only, stored encrypted).',
+    )
+    has_google_credentials = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model  = DataSource
+        fields = [
+            'id', 'name', 'connector_type',
+            # DB connector
+            'host', 'port', 'database', 'username',
+            'password', 'has_password', 'ssl_mode', 'extra_options',
+            # Google Sheets
+            'google_credentials_json', 'has_google_credentials',
+            'google_spreadsheet_id',
+            # shared status
+            'is_active', 'last_tested_at', 'last_test_ok', 'last_test_error',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'has_password', 'has_google_credentials',
+            'last_tested_at', 'last_test_ok', 'last_test_error',
+            'created_at', 'updated_at',
+        ]
+
+    def get_has_password(self, obj):
+        return bool(obj._password)
+
+    def get_has_google_credentials(self, obj):
+        return bool(obj.google_credentials_enc)
+
+    def validate(self, data):
+        connector = data.get('connector_type', getattr(self.instance, 'connector_type', 'postgresql'))
+        if connector == 'google_sheets':
+            # On create, credentials and spreadsheet ID are required.
+            if not self.instance:
+                if not data.get('google_credentials_json'):
+                    raise serializers.ValidationError(
+                        {'google_credentials_json': 'Required for Google Sheets connector.'}
+                    )
+                if not data.get('google_spreadsheet_id'):
+                    raise serializers.ValidationError(
+                        {'google_spreadsheet_id': 'Required for Google Sheets connector.'}
+                    )
+        else:
+            # DB connectors require host, database, username, password on create.
+            if not self.instance:
+                for field in ('host', 'database', 'username'):
+                    if not data.get(field):
+                        raise serializers.ValidationError({field: 'Required for database connectors.'})
+                if not data.get('password'):
+                    raise serializers.ValidationError({'password': 'Required for database connectors.'})
+        return data
+
+    def create(self, validated_data):
+        password     = validated_data.pop('password', '')
+        creds_json   = validated_data.pop('google_credentials_json', '')
+        ds = DataSource(**validated_data)
+        if password:
+            ds.set_password(password)
+        if creds_json:
+            ds.set_google_credentials(creds_json)
+        ds.save()
+        return ds
+
+    def update(self, instance, validated_data):
+        password   = validated_data.pop('password', None)
+        creds_json = validated_data.pop('google_credentials_json', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        if creds_json:
+            instance.set_google_credentials(creds_json)
+        instance.save()
+        return instance
+
+
+class DataSourceListCreateAPIView(APIView):
+    """
+    GET  /api/v1/workspaces/<workspace_id>/data-sources/
+    POST /api/v1/workspaces/<workspace_id>/data-sources/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = DataSource.objects.filter(workspace=ws, is_active=True).order_by('name')
+        return Response(DataSourceSerializer(qs, many=True).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        # Only owner/admin may add connectors
+        try:
+            membership = WorkspaceMembership.objects.get(workspace=ws, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return Response({'error': 'Not a member.'}, status=403)
+        if membership.role not in ('owner', 'admin'):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ser = DataSourceSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=400)
+        ds = ser.save(workspace=ws, created_by=request.user)
+        return Response(DataSourceSerializer(ds).data, status=201)
+
+
+class DataSourceDetailAPIView(APIView):
+    """
+    GET    /api/v1/data-sources/<pk>/
+    PATCH  /api/v1/data-sources/<pk>/
+    DELETE /api/v1/data-sources/<pk>/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_ds(self, request, pk):
+        ds = get_object_or_404(DataSource, pk=pk)
+        # Enforce workspace membership
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return ds
+
+    def _require_manage(self, request, workspace):
+        try:
+            m = WorkspaceMembership.objects.get(workspace=workspace, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return False
+        return m.role in ('owner', 'admin')
+
+    def get(self, request, pk):
+        return Response(DataSourceSerializer(self._get_ds(request, pk)).data)
+
+    def patch(self, request, pk):
+        ds = self._get_ds(request, pk)
+        if not self._require_manage(request, ds.workspace):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ser = DataSourceSerializer(ds, data=request.data, partial=True)
+        if not ser.is_valid():
+            return Response(ser.errors, status=400)
+        return Response(DataSourceSerializer(ser.save()).data)
+
+    def delete(self, request, pk):
+        ds = self._get_ds(request, pk)
+        if not self._require_manage(request, ds.workspace):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ds.is_active = False
+        ds.save(update_fields=['is_active'])
+        return Response(status=204)
+
+
+class DataSourceTestAPIView(APIView):
+    """
+    POST /api/v1/data-sources/<pk>/test/
+
+    DB connectors: runs ``SELECT 1`` over a real connection.
+    Google Sheets: opens the spreadsheet and lists worksheets.
+    Updates last_tested_at / last_test_ok / last_test_error.
+    Returns 200 on success, 400 on connection error.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from .services import DataSourceQueryEngine, GoogleSheetsQueryEngine
+
+        ds = get_object_or_404(DataSource, pk=pk)
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        ok    = False
+        error = ''
+        message = ''
+        try:
+            if ds.connector_type == 'google_sheets':
+                engine = GoogleSheetsQueryEngine(ds)
+                ok, message = engine.test_connection()
+                if not ok:
+                    error = message
+            else:
+                engine = DataSourceQueryEngine(ds)
+                with engine._connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT 1')
+                ok      = True
+                message = 'Connection successful.'
+        except Exception as exc:
+            error = str(exc)
+
+        ds.last_tested_at  = timezone.now()
+        ds.last_test_ok    = ok
+        ds.last_test_error = error
+        ds.save(update_fields=['last_tested_at', 'last_test_ok', 'last_test_error'])
+
+        if ok:
+            return Response({'ok': True, 'message': message, 'error': None})
+        return Response({'ok': False, 'error': error}, status=400)
+
+
+class DataSourceSchemaAPIView(APIView):
+    """
+    GET /api/v1/data-sources/<pk>/schema/
+
+    DB connectors: returns tables/views with column metadata.
+    Google Sheets: returns worksheet names with inferred column types.
+    Response shape: [{"name": str, "type": str, "columns": [...]}]
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        from .services import DataSourceQueryEngine, GoogleSheetsQueryEngine
+
+        ds = get_object_or_404(DataSource, pk=pk)
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        engine = GoogleSheetsQueryEngine(ds) if ds.connector_type == 'google_sheets' \
+            else DataSourceQueryEngine(ds)
+        try:
+            tables = engine.list_tables()
+            for tbl in tables:
+                try:
+                    tbl['columns'] = engine.list_columns(tbl['name'])
+                except Exception:
+                    tbl['columns'] = []
+            return Response(tables)
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=400)

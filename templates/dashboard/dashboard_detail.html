@@ -224,6 +224,60 @@
   </div>
   {% endif %}
 
+  {# ── Dashboard Filter Bar ──────────────────────────────────────────── #}
+  <div id="filterBar"
+       x-data="filterBar()"
+       x-init="init()"
+       x-show="hasFilters"
+       class="bg-white border-b border-gray-100 px-4 sm:px-6 py-3">
+    <div class="flex flex-wrap items-end gap-3">
+
+      {# Dynamic filter controls – rendered by Alpine once dashboardData is ready #}
+      <template x-for="(filter, idx) in filters" :key="filter.field">
+        <div class="flex flex-col gap-0.5">
+          <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+                 x-text="filter.label || filter.field"></label>
+
+          {# select control #}
+          <template x-if="filter.type === 'select'">
+            <select class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30 min-w-[120px]"
+                    :value="activeFilters[filter.field] ?? ''"
+                    @change="setFilter(filter.field, $event.target.value)">
+              <option value="">All</option>
+              <template x-for="opt in (filter.options || [])" :key="opt">
+                <option :value="opt" :selected="activeFilters[filter.field] === opt" x-text="opt"></option>
+              </template>
+            </select>
+          </template>
+
+          {# date control #}
+          <template x-if="filter.type === 'date'">
+            <input type="date"
+                   class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30"
+                   :value="activeFilters[filter.field] ?? ''"
+                   @change="setFilter(filter.field, $event.target.value)">
+          </template>
+
+          {# text / fallback control #}
+          <template x-if="filter.type !== 'select' && filter.type !== 'date'">
+            <input type="text"
+                   :placeholder="'Filter ' + (filter.label || filter.field)"
+                   class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30 w-40"
+                   :value="activeFilters[filter.field] ?? ''"
+                   @input.debounce.400ms="setFilter(filter.field, $event.target.value)">
+          </template>
+        </div>
+      </template>
+
+      {# Clear all button — only when at least one filter is active #}
+      <button x-show="hasActiveFilters"
+              @click="clearAll()"
+              class="self-end text-xs text-gray-400 hover:text-red-500 transition px-2 py-1.5 rounded-lg hover:bg-red-50 flex items-center gap-1">
+        <i class="fas fa-times text-[10px]"></i> Clear
+      </button>
+    </div>
+  </div>
+
   <div class="p-4 sm:p-6">
     {# Empty state #}
     <div id="emptyState" class="bg-white rounded-xl border border-dashed border-gray-300 py-20 text-center">
@@ -239,9 +293,10 @@
 {# Hidden dashboard data #}
 {{ dashboard_data|json_script:"dashboard-data" }}
 <script>
-  window.DASHBOARD_ID = '{{ dashboard.id }}';
-  window.WS_PROTOCOL  = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  window.WS_HOST      = location.host;
+  window.DASHBOARD_ID        = '{{ dashboard.id }}';
+  window.WS_PROTOCOL         = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  window.WS_HOST             = location.host;
+  window._currentUserEmail   = '{{ request.user.email|escapejs }}';
 </script>
 
 {# Add Widget Modal #}
@@ -338,11 +393,25 @@ const KPI_PALETTE = {
 // ───────────────────────────────────────────────────────────────
 //  STATE
 // ───────────────────────────────────────────────────────────────
-let grid         = null;
-let widgetMap    = new Map();
-let ws           = null;
-let dashboardData= null;
-let wsReconnectT = null;
+let grid          = null;
+let widgetMap     = new Map();
+let dashboardData = null;
+
+// ── WebSocket engine state ──────────────────────────────────────
+const WS_CLOSE_NO_RETRY = new Set([4001, 4003]);          // auth / forbidden — never reconnect
+const WS_BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000]; // exp-backoff caps at 30 s
+let wsState = {
+  socket:         null,
+  attempts:       0,
+  wasConnected:   false,
+  reconnectTimer: null,
+  pingInterval:   null,
+  openTimer:      null,
+  lastPong:       0,
+};
+
+// Expose globals so the Alpine filterBar component can access them
+window.widgetMap = widgetMap;
 
 // ───────────────────────────────────────────────────────────────
 //  INIT
@@ -352,6 +421,7 @@ async function initDashboard() {
     const el = document.getElementById('dashboard-data');
     if (!el) throw new Error('Dashboard data missing');
     dashboardData = JSON.parse(el.textContent);
+    window.dashboardData = dashboardData; // expose for Alpine filterBar component
 
     initGrid();
     renderWidgets();
@@ -670,53 +740,276 @@ function renderChart(el, data, chartType, widget) {
 }
 
 // ───────────────────────────────────────────────────────────────
-//  WEBSOCKET – real-time updates
+//  WEBSOCKET – production-quality real-time engine
 // ───────────────────────────────────────────────────────────────
+
 function connectWebSocket() {
-  clearTimeout(wsReconnectT);
-  const url = `${window.WS_PROTOCOL}//${window.WS_HOST}/ws/dashboard/${window.DASHBOARD_ID}/`;
-  ws = new WebSocket(url);
+  _wsCancelTimers();
 
-  ws.onopen = () => {
+  const url  = `${window.WS_PROTOCOL}//${window.WS_HOST}/ws/dashboard/${window.DASHBOARD_ID}/`;
+  const sock = new WebSocket(url);
+  wsState.socket = sock;
+
+  // Connection-open timeout — close and retry if the handshake hangs
+  wsState.openTimer = setTimeout(() => {
+    if (sock.readyState !== WebSocket.OPEN) sock.close();
+  }, 10000);
+
+  sock.onopen = () => {
+    clearTimeout(wsState.openTimer);
+    wsState.attempts = 0;
     setStatus('live');
+    _wsStartPing(sock);
+    // Refresh stale widget data for anything we missed while disconnected
+    if (wsState.wasConnected) {
+      widgetMap.forEach((_, id) => refreshWidget(id));
+    }
+    wsState.wasConnected = true;
   };
 
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'widget_update') {
-        const w = widgetMap.get(msg.widget_id);
-        if (w) { w.widget_data = msg.data; renderWidgetContent(w); }
-      }
-    } catch (_) {}
+  sock.onmessage = (e) => {
+    try { _wsDispatch(JSON.parse(e.data)); } catch (_) {}
   };
 
-  ws.onclose = () => {
-    setStatus('offline');
-    wsReconnectT = setTimeout(connectWebSocket, 5000);
+  sock.onclose = (e) => {
+    _wsCancelTimers();
+
+    // Auth / forbidden — never try to reconnect
+    if (WS_CLOSE_NO_RETRY.has(e.code)) {
+      setStatus('offline');
+      const labels = { 4001: 'Session expired — please reload the page', 4003: 'Access denied to this dashboard' };
+      showToast(labels[e.code] || 'Connection closed', 'error');
+      return;
+    }
+
+    // Too many connections — long back-off
+    if (e.code === 4429) {
+      setStatus('reconnecting', 1);
+      showToast('Too many open connections — retrying in 30 s', 'warning');
+      wsState.reconnectTimer = setTimeout(connectWebSocket, 30000);
+      return;
+    }
+
+    // Normal disconnect / server restart — exponential back-off with jitter
+    const base  = WS_BACKOFF_DELAYS[Math.min(wsState.attempts, WS_BACKOFF_DELAYS.length - 1)];
+    const delay = base + Math.floor(Math.random() * 500);   // ±500 ms jitter
+    wsState.attempts++;
+    setStatus('reconnecting', wsState.attempts);
+    wsState.reconnectTimer = setTimeout(connectWebSocket, delay);
   };
 
-  ws.onerror = () => {
-    setStatus('offline');
-    ws.close();
+  sock.onerror = () => {
+    // onclose fires immediately after and handles all retry logic
   };
 }
 
-function setStatus(state) {
+// ── WS helpers ──────────────────────────────────────────────────
+
+function _wsCancelTimers() {
+  clearTimeout(wsState.reconnectTimer);
+  clearTimeout(wsState.openTimer);
+  clearInterval(wsState.pingInterval);
+  wsState.reconnectTimer = null;
+  wsState.pingInterval   = null;
+  wsState.openTimer      = null;
+}
+
+/** Send a ping every 30 s so the server's 90 s heartbeat timeout never fires. */
+function _wsStartPing(sock) {
+  wsState.pingInterval = setInterval(() => {
+    if (sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+    }
+  }, 30000);
+}
+
+// ── Message dispatcher ──────────────────────────────────────────
+
+function _wsDispatch(msg) {
+  switch (msg.type) {
+
+    case 'widget_update':
+      _ws_onWidgetUpdate(msg);
+      break;
+
+    case 'widget_added':
+      _ws_onWidgetAdded(msg);
+      break;
+
+    case 'widget_deleted':
+      _ws_onWidgetDeleted(msg);
+      break;
+
+    case 'layout_updated':
+      _ws_onLayoutUpdated(msg);
+      break;
+
+    case 'layout_saved':
+      if (msg.success === false)
+        showToast(msg.message || 'Layout save failed — please try again', 'error');
+      break;
+
+    case 'layout_conflict':
+      showToast(
+        'Layout conflict: ' + (msg.message || 'Another collaborator updated the layout'),
+        'warning'
+      );
+      break;
+
+    case 'pong':
+      wsState.lastPong = Date.now();
+      break;
+
+    case 'rate_limited':
+      showToast(`Rate limit reached — slow down. Retry in ${msg.retry_after || 10} s`, 'warning');
+      break;
+
+    case 'error':
+      showToast('Server error: ' + (msg.message || 'Unknown error'), 'error');
+      break;
+
+    case 'user_joined':
+    case 'user_left':
+      _ws_onPresence(msg.type === 'user_joined' ? 'joined' : 'left', msg.user);
+      break;
+
+    case 'insights_generation_started':
+      showToast('Insight analysis started…', 'info');
+      break;
+
+    case 'insights_generation_progress':
+      _ws_onInsightsProgress(msg);
+      break;
+
+    case 'dashboard_update':
+      if (msg.data) Object.assign(dashboardData, msg.data);
+      break;
+
+    default:
+      break;   // silently ignore unknown types
+  }
+}
+
+// ── Individual message handlers ─────────────────────────────────
+
+function _ws_onWidgetUpdate(msg) {
+  const w = widgetMap.get(msg.widget_id);
+  if (!w) return;
+  w.widget_data = msg.data;
+  waitForHeight(`widget-${msg.widget_id}`, () => renderWidgetContent(w));
+}
+
+function _ws_onWidgetAdded(msg) {
+  const widget = msg.widget;
+  if (!widget?.id || widgetMap.has(widget.id)) return;  // guard against duplicates
+  document.getElementById('emptyState').style.display  = 'none';
+  document.getElementById('dashboard-grid').style.display = '';
+  addWidgetToGrid(widget);
+}
+
+function _ws_onWidgetDeleted(msg) {
+  const id = msg.widget_id;
+  const el = document.querySelector(`.grid-stack-item[data-id="${CSS.escape(id)}"]`);
+  if (el && grid) grid.removeWidget(el);
+  widgetMap.delete(id);
+  plotlyDivs.delete(id);
+  if (!widgetMap.size) {
+    document.getElementById('emptyState').style.display    = 'block';
+    document.getElementById('dashboard-grid').style.display = 'none';
+  }
+}
+
+function _ws_onLayoutUpdated(msg) {
+  // Another collaborator moved widgets — apply their positions without
+  // re-triggering our own saveLayout (which would cause an echo loop).
+  if (!msg.updated_by || msg.updated_by === window._currentUserEmail) return;
+  const posMap = {};
+  (msg.widgets || []).forEach(w => { posMap[w.id] = w.position; });
+  if (!grid) return;
+  grid.batchUpdate();
+  grid.engine.nodes.forEach(node => {
+    const id  = node.el.getAttribute('data-id');
+    const pos = posMap[id];
+    if (pos) grid.update(node.el, { x: pos.x, y: pos.y, w: pos.w, h: pos.h });
+  });
+  grid.commit();
+}
+
+function _ws_onPresence(action, email) {
+  if (!email || email === window._currentUserEmail) return;
+  // Presence events are low-signal on a dashboard — suppress toasts but keep
+  // the hook in place for a future online-users indicator component.
+}
+
+let _insightsProgressToast = null;
+function _ws_onInsightsProgress(msg) {
+  const pct = (msg.progress != null) ? Math.round(msg.progress) : null;
+  const txt  = pct != null ? `Insights: ${pct}%` : (msg.message || 'Generating insights…');
+
+  if (!_insightsProgressToast) {
+    _insightsProgressToast = document.createElement('div');
+    _insightsProgressToast.style.cssText = [
+      'position:fixed', 'bottom:4rem', 'right:1.25rem', 'z-index:9999',
+      'display:flex', 'align-items:center', 'gap:.5rem',
+      'padding:.625rem 1rem', 'border-radius:.625rem',
+      'background:#03466e', 'color:#fff',
+      'font-size:.8125rem', 'font-weight:500',
+      'box-shadow:0 4px 16px rgba(0,0,0,.18)',
+    ].join(';');
+    document.body.appendChild(_insightsProgressToast);
+  }
+  _insightsProgressToast.innerHTML =
+    `<i class="fas fa-brain"></i><span>${esc(txt)}</span>`;
+
+  if (msg.done) {
+    showToast('Insights ready!', 'success');
+    _insightsProgressToast.remove();
+    _insightsProgressToast = null;
+  }
+}
+
+// ── Status badge ────────────────────────────────────────────────
+
+function setStatus(state, attempts) {
   const el = document.getElementById('realtimeIndicator');
   if (!el) return;
-  const dot = el.querySelector('span');
-  const lbl = el.querySelectorAll('span')[1];
+  const spans = el.querySelectorAll('span');
+  const dot   = spans[0];
+  const lbl   = spans[1];
   if (state === 'live') {
     el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700';
     dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse';
     lbl.textContent = 'Live';
+  } else if (state === 'reconnecting') {
+    el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-600';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 inline-block animate-pulse';
+    lbl.textContent = (attempts && attempts > 1) ? `Reconnecting (${attempts})…` : 'Reconnecting…';
   } else {
     el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500';
     dot.className = 'w-1.5 h-1.5 rounded-full bg-gray-400 inline-block';
     lbl.textContent = 'Offline';
   }
 }
+
+// ── Page-lifecycle hooks ────────────────────────────────────────
+
+/** Clean close when navigating away — prevents server-side orphan connections. */
+window.addEventListener('beforeunload', () => {
+  _wsCancelTimers();
+  const sock = wsState.socket;
+  if (sock && sock.readyState === WebSocket.OPEN) sock.close(1001, 'page unload');
+});
+
+/** Re-establish the connection when the user returns to a backgrounded tab. */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const sock = wsState.socket;
+    if (!sock || sock.readyState === WebSocket.CLOSED || sock.readyState === WebSocket.CLOSING) {
+      wsState.attempts = 0;   // reset back-off so the reconnect is immediate
+      connectWebSocket();
+    }
+  }
+});
 
 // ───────────────────────────────────────────────────────────────
 //  SAVE LAYOUT
@@ -728,8 +1021,9 @@ function saveLayout() {
     position: { x: n.x, y: n.y, w: n.w, h: n.h },
   })).filter(i => i.id);
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'layout_update', layout: {}, widgets: items }));
+  const _sock = wsState.socket;
+  if (_sock && _sock.readyState === WebSocket.OPEN) {
+    _sock.send(JSON.stringify({ type: 'layout_update', layout: {}, widgets: items }));
   } else {
     fetch(`/api/dashboards/${window.DASHBOARD_ID}/update_layout/`, {
       method: 'POST',
@@ -972,13 +1266,17 @@ function buildVizConfig(wType, numericField, groupByField, numericF) {
 // ───────────────────────────────────────────────────────────────
 //  REFRESH & DELETE
 // ───────────────────────────────────────────────────────────────
-async function refreshWidget(id) {
+async function refreshWidget(id, extraFilters) {
   const w = widgetMap.get(id);
   if (!w) return;
   const el = document.getElementById(`widget-${id}`);
   if (el) el.innerHTML = `<div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4"></i></div>`;
   try {
-    const res = await fetch(`/api/widgets/${id}/data/`, { credentials: 'same-origin' });
+    let url = `/api/widgets/${id}/data/`;
+    // Attach active dashboard-level filters as a JSON query param
+    const filters = extraFilters || (window._filterBarState ? window._filterBarState.buildApiFilters() : []);
+    if (filters.length) url += `?filters=${encodeURIComponent(JSON.stringify(filters))}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
     const json = await res.json();
     // WidgetDataAPIView wraps data in { data: ... }
     // Accept both wrapped and bare payloads
@@ -1168,5 +1466,64 @@ function _showShareLink(shareUrl) {
 }
 
 document.addEventListener('DOMContentLoaded', initDashboard);
+
+// ───────────────────────────────────────────────────────────────
+//  Alpine.js — Filter Bar Component
+// ───────────────────────────────────────────────────────────────
+function filterBar() {
+  return {
+    filters: [],       // filter definitions from dashboard filter_config
+    activeFilters: {}, // { field: value }
+
+    get hasFilters() { return this.filters.length > 0; },
+    get hasActiveFilters() {
+      return Object.values(this.activeFilters).some(v => v !== '' && v !== null && v !== undefined);
+    },
+
+    init() {
+      // Expose state globally so refreshWidget can read active filters
+      window._filterBarState = this;
+
+      // Wait until dashboardData is populated by initDashboard()
+      const ready = () => {
+        if (window.dashboardData && window.dashboardData.filter_config) {
+          this.filters = window.dashboardData.filter_config.filters || [];
+        }
+      };
+      // dashboardData may already be set (fast parse) or arrive slightly later
+      if (window.dashboardData) { ready(); } else {
+        document.addEventListener('DOMContentLoaded', ready);
+        // Also poll briefly in case initDashboard runs after Alpine init
+        const t = setInterval(() => {
+          if (window.dashboardData) { ready(); clearInterval(t); }
+        }, 50);
+        setTimeout(() => clearInterval(t), 3000);
+      }
+    },
+
+    setFilter(field, value) {
+      this.activeFilters = { ...this.activeFilters, [field]: value };
+      this.refreshAll();
+    },
+
+    clearAll() {
+      this.activeFilters = {};
+      this.refreshAll();
+    },
+
+    /** Build the filter array expected by WidgetDataAPIView */
+    buildApiFilters() {
+      return Object.entries(this.activeFilters)
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+        .map(([field, value]) => ({ field, operator: 'eq', value }));
+    },
+
+    refreshAll() {
+      if (window.widgetMap) {
+        window.widgetMap.forEach((_, id) => refreshWidget(id, this.buildApiFilters()));
+      }
+    },
+  };
+}
 </script>
 {% endblock %}

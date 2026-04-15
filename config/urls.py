@@ -28,6 +28,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('apps.core.urls')),
     path("accounts/", include("allauth.urls")),
+    # SSO / SAML 2.0
+    path('sso/', include('apps.core.sso_urls', namespace='sso')),
     path('newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
     path('dashboard/', include('apps.dashboards.urls', namespace='dashboard')),
     path('subscriptions/', include('apps.subscriptions.urls', namespace='subscriptions')),

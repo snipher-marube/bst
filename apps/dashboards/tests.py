@@ -2441,3 +2441,754 @@ class TestFileUploadRateLimit(TestCase):
 
         self.assertIn(resp1.status_code, [200, 201, 202])
         self.assertEqual(resp2.status_code, 429)
+
+
+# ===========================================================================
+# Dashboard Filter Bar (P1 #9)
+# ===========================================================================
+
+class TestDashboardFilterConfig(TestCase):
+    """Tests for filter_config field, PATCH endpoint, and QueryEngine extra_filters."""
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.client    = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.user.current_workspace = self.workspace
+        self.user.save()
+        self.dashboard = DashboardFactory(workspace=self.workspace, created_by=self.user)
+
+    # ------------------------------------------------------------------
+    # Model field
+    # ------------------------------------------------------------------
+
+    def test_filter_config_defaults_to_empty_dict(self):
+        self.assertEqual(self.dashboard.filter_config, {})
+
+    def test_filter_config_saves_and_retrieves(self):
+        config = {"filters": [{"field": "region", "label": "Region", "type": "select", "options": ["EMEA", "APAC"]}]}
+        self.dashboard.filter_config = config
+        self.dashboard.save()
+        self.dashboard.refresh_from_db()
+        self.assertEqual(self.dashboard.filter_config, config)
+
+    # ------------------------------------------------------------------
+    # PATCH /api/dashboards/<id>/filter-config/
+    # ------------------------------------------------------------------
+
+    def test_patch_filter_config_saves(self):
+        payload = {"filter_config": {"filters": [{"field": "region", "type": "select", "options": ["EMEA"]}]}}
+        resp = self.client.patch(
+            f'/api/dashboards/{self.dashboard.id}/filter-config/',
+            data=payload,
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.dashboard.refresh_from_db()
+        self.assertEqual(self.dashboard.filter_config['filters'][0]['field'], 'region')
+
+    def test_patch_filter_config_requires_filter_config_key(self):
+        resp = self.client.patch(
+            f'/api/dashboards/{self.dashboard.id}/filter-config/',
+            data={'bad_key': {}},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_filter_config_rejects_non_object(self):
+        resp = self.client.patch(
+            f'/api/dashboards/{self.dashboard.id}/filter-config/',
+            data={'filter_config': [1, 2, 3]},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_filter_config_wrong_workspace_returns_404(self):
+        other_user      = UserFactory()
+        other_workspace = WorkspaceFactory(owner=other_user)
+        other_dashboard = DashboardFactory(workspace=other_workspace, created_by=other_user)
+        resp = self.client.patch(
+            f'/api/dashboards/{other_dashboard.id}/filter-config/',
+            data={'filter_config': {}},
+            format='json',
+        )
+        self.assertIn(resp.status_code, [403, 404])
+
+    # ------------------------------------------------------------------
+    # WidgetDataAPIView — ?filters= param
+    # ------------------------------------------------------------------
+
+    def _make_widget_with_records(self):
+        table = DataTableFactory(workspace=self.workspace, created_by=self.user)
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'):
+            RecordFactory(table=table, data={'region': 'EMEA', 'amount': 100}, created_by=self.user)
+            RecordFactory(table=table, data={'region': 'APAC', 'amount': 200}, created_by=self.user)
+        widget = WidgetFactory(
+            dashboard=self.dashboard,
+            widget_type='table',
+            query_config={},
+        )
+        widget.table = table
+        widget.save()
+        return widget, table
+
+    def test_widget_data_no_filters_returns_all_records(self):
+        widget, _ = self._make_widget_with_records()
+        resp = self.client.get(f'/api/widgets/{widget.id}/data/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual(len(data), 2)
+
+    def test_widget_data_with_filter_narrows_results(self):
+        widget, _ = self._make_widget_with_records()
+        import json as _json
+        filters = _json.dumps([{"field": "region", "operator": "eq", "value": "EMEA"}])
+        resp = self.client.get(f'/api/widgets/{widget.id}/data/?filters={filters}')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['region'], 'EMEA')
+
+    def test_widget_data_invalid_filters_json_returns_400(self):
+        widget, _ = self._make_widget_with_records()
+        resp = self.client.get(f'/api/widgets/{widget.id}/data/?filters=not-valid-json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_widget_data_filters_must_be_array(self):
+        widget, _ = self._make_widget_with_records()
+        import json as _json
+        resp = self.client.get(f'/api/widgets/{widget.id}/data/?filters={_json.dumps({"key": "val"})}')
+        self.assertEqual(resp.status_code, 400)
+
+    # ------------------------------------------------------------------
+    # QueryEngine.execute_widget_query — extra_filters
+    # ------------------------------------------------------------------
+
+    def test_query_engine_extra_filters_applied(self):
+        table = DataTableFactory(workspace=self.workspace, created_by=self.user)
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'):
+            RecordFactory(table=table, data={'status': 'active', 'val': 10}, created_by=self.user)
+            RecordFactory(table=table, data={'status': 'inactive', 'val': 20}, created_by=self.user)
+        widget = WidgetFactory(
+            dashboard=self.dashboard,
+            widget_type='table',
+            query_config={},
+        )
+        widget.table = table
+        widget.save()
+
+        engine = QueryEngine()
+        result = engine.execute_widget_query(widget, extra_filters=[{"field": "status", "operator": "eq", "value": "active"}])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['status'], 'active')
+
+    def test_query_engine_cache_key_differs_with_extra_filters(self):
+        widget = WidgetFactory(dashboard=self.dashboard, widget_type='metric', query_config={})
+        engine = QueryEngine()
+        key_plain   = engine._generate_cache_key(widget)
+        key_filtered = engine._generate_cache_key(widget, extra_filters=[{"field": "x", "operator": "eq", "value": "y"}])
+        self.assertNotEqual(key_plain, key_filtered)
+
+
+# ===========================================================================
+# Incremental / Delta Imports — import_mode (P1 #11)
+# ===========================================================================
+
+class TestIncrementalImports(TestCase):
+    """Tests for append / replace / upsert import modes in DataImportService."""
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace, created_by=self.user)
+
+    def _seed(self, rows):
+        """Insert raw Record rows."""
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            for row in rows:
+                Record.objects.create(table=self.table, data=row, created_by=self.user)
+
+    def _import(self, rows, mode='append', pk_field=''):
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        return DataImportService().import_data(
+            table=self.table,
+            df=df,
+            user=self.user,
+            import_mode=mode,
+            primary_key_field=pk_field,
+        )
+
+    # ------------------------------------------------------------------
+    # append mode (default)
+    # ------------------------------------------------------------------
+
+    def test_append_adds_rows_without_touching_existing(self):
+        self._seed([{'id': 1, 'val': 'old'}])
+        result = self._import([{'id': 2, 'val': 'new'}], mode='append')
+        self.assertEqual(result['success'], 1)
+        self.assertEqual(Record.objects.filter(table=self.table, is_active=True).count(), 2)
+
+    # ------------------------------------------------------------------
+    # replace mode
+    # ------------------------------------------------------------------
+
+    def test_replace_soft_deletes_existing_then_inserts(self):
+        self._seed([{'id': 1}, {'id': 2}])
+        self.assertEqual(Record.objects.filter(table=self.table, is_active=True).count(), 2)
+
+        result = self._import([{'id': 3}], mode='replace')
+        active = Record.objects.filter(table=self.table, is_active=True)
+        inactive = Record.objects.filter(table=self.table, is_active=False)
+
+        self.assertEqual(active.count(), 1)
+        self.assertEqual(inactive.count(), 2)
+        self.assertEqual(active.first().data['id'], 3)
+        self.assertEqual(result['success'], 1)
+
+    # ------------------------------------------------------------------
+    # upsert mode
+    # ------------------------------------------------------------------
+
+    def test_upsert_updates_existing_row_by_pk(self):
+        self._seed([{'sku': 'A1', 'qty': 5}])
+        result = self._import([{'sku': 'A1', 'qty': 10}], mode='upsert', pk_field='sku')
+
+        self.assertEqual(result['updated'], 1)
+        self.assertEqual(result['success'], 0)
+        rec = Record.objects.filter(table=self.table, is_active=True).get()
+        self.assertEqual(rec.data['qty'], 10)
+
+    def test_upsert_inserts_when_no_match(self):
+        self._seed([{'sku': 'A1', 'qty': 5}])
+        result = self._import([{'sku': 'B2', 'qty': 99}], mode='upsert', pk_field='sku')
+
+        self.assertEqual(result['success'], 1)
+        self.assertEqual(result['updated'], 0)
+        self.assertEqual(Record.objects.filter(table=self.table, is_active=True).count(), 2)
+
+    def test_upsert_mixed_batch(self):
+        self._seed([{'sku': 'A1', 'qty': 1}, {'sku': 'A2', 'qty': 2}])
+        result = self._import(
+            [{'sku': 'A1', 'qty': 99}, {'sku': 'A3', 'qty': 3}],
+            mode='upsert', pk_field='sku',
+        )
+        self.assertEqual(result['updated'], 1)
+        self.assertEqual(result['success'], 1)
+        self.assertEqual(Record.objects.filter(table=self.table, is_active=True).count(), 3)
+
+    # ------------------------------------------------------------------
+    # Webhook ingest — import_mode query param
+    # ------------------------------------------------------------------
+
+    def _sign(self, secret_plaintext, body):
+        import hmac as _hmac, hashlib
+        return 'sha256=' + _hmac.new(secret_plaintext.encode(), body, hashlib.sha256).hexdigest()
+
+    def test_webhook_ingest_append_mode(self):
+        from apps.dashboards.factories import WebhookEndpointFactory
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        wh = WebhookEndpointFactory(
+            workspace=self.workspace,
+            table=self.table,
+            created_by=self.user,
+        )
+        body = b'[{"id": 1}]'
+        plaintext = decrypt_secret(wh.secret)
+        sig = self._sign(plaintext, body)
+        resp = self.client.post(
+            f'/webhook/ingest/{wh.token}/',
+            data=body,
+            content_type='application/json',
+            HTTP_X_HUB_SIGNATURE_256=sig,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json().get('mode'), 'replace')  # default is replace
+
+    def test_webhook_ingest_invalid_import_mode_returns_400(self):
+        from apps.dashboards.factories import WebhookEndpointFactory
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        wh = WebhookEndpointFactory(
+            workspace=self.workspace,
+            table=self.table,
+            created_by=self.user,
+        )
+        body = b'[{"id": 1}]'
+        plaintext = decrypt_secret(wh.secret)
+        sig = self._sign(plaintext, body)
+        resp = self.client.post(
+            f'/webhook/ingest/{wh.token}/?import_mode=bad',
+            data=body,
+            content_type='application/json',
+            HTTP_X_HUB_SIGNATURE_256=sig,
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_webhook_ingest_upsert_without_pk_returns_400(self):
+        from apps.dashboards.factories import WebhookEndpointFactory
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        wh = WebhookEndpointFactory(
+            workspace=self.workspace,
+            table=self.table,
+            created_by=self.user,
+        )
+        body = b'[{"id": 1}]'
+        plaintext = decrypt_secret(wh.secret)
+        sig = self._sign(plaintext, body)
+        resp = self.client.post(
+            f'/webhook/ingest/{wh.token}/?import_mode=upsert',
+            data=body,
+            content_type='application/json',
+            HTTP_X_HUB_SIGNATURE_256=sig,
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+# ===========================================================================
+# Batch Record Operations API (P1 #13)
+# ===========================================================================
+
+class TestRecordBatchAPI(TestCase):
+    """Tests for POST /api/v1/tables/<id>/records/batch/"""
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace, created_by=self.user)
+        self.client    = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.user.current_workspace = self.workspace
+        self.user.save()
+        self.url = f'/api/v1/tables/{self.table.id}/records/batch/'
+
+    def _post(self, ops):
+        import json as _j
+        return self.client.post(self.url, data=ops, format='json')
+
+    # ------------------------------------------------------------------
+    # create
+    # ------------------------------------------------------------------
+
+    def test_create_operation(self):
+        resp = self._post([{'op': 'create', 'data': {'x': 1}}])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['created'], 1)
+        self.assertEqual(Record.objects.filter(table=self.table, is_active=True).count(), 1)
+
+    # ------------------------------------------------------------------
+    # update
+    # ------------------------------------------------------------------
+
+    def test_update_operation(self):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            rec = Record.objects.create(table=self.table, data={'x': 1}, created_by=self.user)
+
+        resp = self._post([{'op': 'update', 'id': str(rec.id), 'data': {'x': 99}}])
+        self.assertEqual(resp.json()['updated'], 1)
+        rec.refresh_from_db()
+        self.assertEqual(rec.data['x'], 99)
+
+    def test_update_missing_id_returns_error(self):
+        resp = self._post([{'op': 'update', 'data': {'x': 1}}])
+        self.assertEqual(resp.json()['errors'][0]['op'], 'update')
+
+    # ------------------------------------------------------------------
+    # upsert
+    # ------------------------------------------------------------------
+
+    def test_upsert_inserts_new(self):
+        resp = self._post([{'op': 'upsert', 'primary_key': 'sku', 'data': {'sku': 'A1', 'qty': 5}}])
+        self.assertEqual(resp.json()['created'], 1)
+
+    def test_upsert_updates_existing(self):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            Record.objects.create(table=self.table, data={'sku': 'A1', 'qty': 5}, created_by=self.user)
+
+        resp = self._post([{'op': 'upsert', 'primary_key': 'sku', 'data': {'sku': 'A1', 'qty': 99}}])
+        self.assertEqual(resp.json()['updated'], 1)
+        rec = Record.objects.filter(table=self.table, is_active=True).get()
+        self.assertEqual(rec.data['qty'], 99)
+
+    def test_upsert_without_primary_key_field_returns_error(self):
+        resp = self._post([{'op': 'upsert', 'data': {'sku': 'A1'}}])
+        self.assertGreater(len(resp.json()['errors']), 0)
+
+    # ------------------------------------------------------------------
+    # delete
+    # ------------------------------------------------------------------
+
+    def test_delete_operation(self):
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            rec = Record.objects.create(table=self.table, data={'x': 1}, created_by=self.user)
+
+        resp = self._post([{'op': 'delete', 'id': str(rec.id)}])
+        self.assertEqual(resp.json()['deleted'], 1)
+        rec.refresh_from_db()
+        self.assertFalse(rec.is_active)
+
+    # ------------------------------------------------------------------
+    # validation
+    # ------------------------------------------------------------------
+
+    def test_non_array_body_returns_400(self):
+        resp = self._post({'op': 'create', 'data': {}})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_over_limit_returns_400(self):
+        ops = [{'op': 'create', 'data': {'i': i}} for i in range(501)]
+        resp = self._post(ops)
+        self.assertEqual(resp.status_code, 400)
+
+    def test_invalid_op_reported_as_error(self):
+        resp = self._post([{'op': 'explode', 'data': {}}])
+        self.assertEqual(resp.json()['errors'][0]['op'], 'explode')
+
+    def test_mixed_valid_and_invalid_ops(self):
+        resp = self._post([
+            {'op': 'create', 'data': {'x': 1}},
+            {'op': 'bad'},
+        ])
+        self.assertEqual(resp.json()['created'], 1)
+        self.assertEqual(len(resp.json()['errors']), 1)
+
+
+# =============================================================================
+# DataSource connector tests (Gap 7 — PostgreSQL direct connector)
+# =============================================================================
+
+import json
+from unittest.mock import patch, MagicMock, PropertyMock
+from django.test import Client
+from apps.dashboards.models import DataSource
+
+
+class DataSourceFactory:
+    """Minimal factory for DataSource — not using factory_boy to keep it simple."""
+
+    @staticmethod
+    def create(workspace, created_by, **kwargs):
+        ds = DataSource(
+            workspace=workspace,
+            created_by=created_by,
+            name=kwargs.get('name', 'Test DB'),
+            connector_type=kwargs.get('connector_type', 'postgresql'),
+            host=kwargs.get('host', 'db.example.com'),
+            port=kwargs.get('port', 5432),
+            database=kwargs.get('database', 'testdb'),
+            username=kwargs.get('username', 'readonly'),
+            ssl_mode=kwargs.get('ssl_mode', 'require'),
+            is_active=kwargs.get('is_active', True),
+        )
+        ds.set_password(kwargs.get('password', 'secret123'))
+        ds.save()
+        return ds
+
+
+class TestDataSourceModel(TestCase):
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+
+    def test_set_and_get_password_roundtrip(self):
+        ds = DataSourceFactory.create(self.workspace, self.user, password='my-secret')
+        self.assertNotEqual(ds._password, 'my-secret')        # must be encrypted
+        self.assertEqual(ds.get_plaintext_password(), 'my-secret')
+
+    def test_get_dsn_contains_host_and_db(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        dsn = ds.get_dsn()
+        self.assertIn('db.example.com', dsn)
+        self.assertIn('testdb', dsn)
+        self.assertIn('sslmode=require', dsn)
+
+    def test_str_representation(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        self.assertIn('postgresql', str(ds))
+        self.assertIn('testdb', str(ds))
+
+
+class TestDataSourceAPI(TestCase):
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.token, _  = Token.objects.get_or_create(user=self.user)
+        self.client    = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+
+    def _url_list(self):
+        return f'/api/v1/workspaces/{self.workspace.id}/data-sources/'
+
+    def _url_detail(self, pk):
+        return f'/api/v1/data-sources/{pk}/'
+
+    def _url_test(self, pk):
+        return f'/api/v1/data-sources/{pk}/test/'
+
+    def _url_schema(self, pk):
+        return f'/api/v1/data-sources/{pk}/schema/'
+
+    # ------------------------------------------------------------------
+    # list / create
+    # ------------------------------------------------------------------
+
+    def test_create_data_source_returns_201(self):
+        payload = {
+            'name': 'Analytics DB',
+            'connector_type': 'postgresql',
+            'host': 'pg.example.com',
+            'port': 5432,
+            'database': 'analytics',
+            'username': 'reader',
+            'password': 's3cr3t!',
+            'ssl_mode': 'require',
+        }
+        resp = self.client.post(self._url_list(), data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data['name'], 'Analytics DB')
+        self.assertNotIn('password', data)   # write-only
+        self.assertTrue(data['has_password'])
+
+    def test_list_returns_only_active_sources(self):
+        ds1 = DataSourceFactory.create(self.workspace, self.user, name='Active')
+        ds2 = DataSourceFactory.create(self.workspace, self.user, name='Inactive', is_active=False)
+        resp = self.client.get(self._url_list())
+        self.assertEqual(resp.status_code, 200)
+        names = [d['name'] for d in resp.json()]
+        self.assertIn('Active', names)
+        self.assertNotIn('Inactive', names)
+
+    def test_create_missing_password_returns_400(self):
+        payload = {
+            'name': 'No Pass DB', 'connector_type': 'postgresql',
+            'host': 'x', 'port': 5432, 'database': 'x', 'username': 'x',
+        }
+        resp = self.client.post(self._url_list(), data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+
+    # ------------------------------------------------------------------
+    # detail
+    # ------------------------------------------------------------------
+
+    def test_get_detail_returns_200(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        resp = self.client.get(self._url_detail(ds.id))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['id'], str(ds.id))
+
+    def test_patch_name_updates_source(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        resp = self.client.patch(
+            self._url_detail(ds.id),
+            data=json.dumps({'name': 'Renamed DB'}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['name'], 'Renamed DB')
+
+    def test_delete_soft_deletes(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        resp = self.client.delete(self._url_detail(ds.id))
+        self.assertEqual(resp.status_code, 204)
+        ds.refresh_from_db()
+        self.assertFalse(ds.is_active)
+
+    # ------------------------------------------------------------------
+    # test connection
+    # ------------------------------------------------------------------
+
+    def test_test_connection_ok(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        mock_conn   = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__  = MagicMock(return_value=False)
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__  = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch('apps.dashboards.services.DataSourceQueryEngine._connect', return_value=mock_conn):
+            resp = self.client.post(self._url_test(ds.id))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['ok'])
+        ds.refresh_from_db()
+        self.assertTrue(ds.last_test_ok)
+        self.assertIsNotNone(ds.last_tested_at)
+
+    def test_test_connection_failure_returns_400(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+
+        with patch('apps.dashboards.services.DataSourceQueryEngine._connect',
+                   side_effect=Exception('Connection refused')):
+            resp = self.client.post(self._url_test(ds.id))
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['ok'])
+        self.assertIn('Connection refused', resp.json()['error'])
+        ds.refresh_from_db()
+        self.assertFalse(ds.last_test_ok)
+
+    # ------------------------------------------------------------------
+    # schema discovery
+    # ------------------------------------------------------------------
+
+    def test_schema_returns_tables_and_columns(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        fake_tables  = [{'schema': 'public', 'name': 'orders', 'row_estimate': 1000}]
+        fake_columns = [{'name': 'id', 'type': 'integer', 'nullable': False},
+                        {'name': 'amount', 'type': 'numeric', 'nullable': True}]
+
+        with patch('apps.dashboards.services.DataSourceQueryEngine.list_tables',
+                   return_value=fake_tables), \
+             patch('apps.dashboards.services.DataSourceQueryEngine.list_columns',
+                   return_value=fake_columns):
+            resp = self.client.get(self._url_schema(ds.id))
+
+        self.assertEqual(resp.status_code, 200)
+        tables = resp.json()
+        self.assertEqual(tables[0]['name'], 'orders')
+        self.assertEqual(len(tables[0]['columns']), 2)
+
+    def test_schema_db_error_returns_400(self):
+        ds = DataSourceFactory.create(self.workspace, self.user)
+        with patch('apps.dashboards.services.DataSourceQueryEngine.list_tables',
+                   side_effect=Exception('DB unreachable')):
+            resp = self.client.get(self._url_schema(ds.id))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('DB unreachable', resp.json()['error'])
+
+
+class TestDataSourceQueryEngine(TestCase):
+    """Unit tests for DataSourceQueryEngine — DB calls are always mocked."""
+
+    def setUp(self):
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.ds        = DataSourceFactory.create(self.workspace, self.user)
+
+    def _engine(self):
+        from apps.dashboards.services import DataSourceQueryEngine
+        return DataSourceQueryEngine(self.ds)
+
+    def _make_widget(self, wtype, config=None, source_table='orders'):
+        w = MagicMock()
+        w.widget_type       = wtype
+        w.source_table_name = source_table
+        w.query_config      = config or {}
+        return w
+
+    def _mock_conn(self, rows=None, description=None):
+        """Return a context-manager-compatible psycopg connection mock."""
+        mock_cur = MagicMock()
+        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
+        mock_cur.__exit__  = MagicMock(return_value=False)
+        mock_cur.fetchone.return_value  = (rows[0] if rows else (42,))
+        mock_cur.fetchall.return_value  = rows or []
+        mock_cur.description            = description or [('count',)]
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__  = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cur
+        return mock_conn
+
+    # ── metric ──────────────────────────────────────────────────────────
+
+    def test_metric_count_no_agg(self):
+        engine = self._engine()
+        widget = self._make_widget('metric')
+        with patch.object(engine, '_connect', return_value=self._mock_conn([(99,)])):
+            result = engine.execute_widget_query(widget)
+        self.assertEqual(result['val'], 99)
+
+    def test_metric_sum_field(self):
+        engine = self._engine()
+        widget = self._make_widget('metric', {
+            'aggregations': [{'type': 'sum', 'field': 'amount', 'name': 'total'}]
+        })
+        with patch.object(engine, '_connect', return_value=self._mock_conn([(1234.5,)])):
+            result = engine.execute_widget_query(widget)
+        self.assertAlmostEqual(result['total'], 1234.5)
+
+    def test_metric_unsupported_connector_returns_error(self):
+        self.ds.connector_type = 'mysql'
+        engine = self._engine()
+        widget = self._make_widget('metric')
+        result = engine.execute_widget_query(widget)
+        self.assertIn('error', result)
+
+    # ── table ───────────────────────────────────────────────────────────
+
+    def test_table_widget_returns_list_of_dicts(self):
+        engine = self._engine()
+        widget = self._make_widget('table')
+        rows   = [(1, 'Alice', 100.0), (2, 'Bob', 200.0)]
+        desc   = [('id',), ('name',), ('amount',)]
+        with patch.object(engine, '_connect', return_value=self._mock_conn(rows, desc)):
+            result = engine.execute_widget_query(widget)
+        self.assertIsInstance(result, list)
+        self.assertEqual(result[0]['name'], 'Alice')
+
+    # ── chart ───────────────────────────────────────────────────────────
+
+    def test_chart_grouped_returns_label_value_dict(self):
+        engine = self._engine()
+        widget = self._make_widget('bar_chart', {
+            'aggregations': [{'type': 'sum', 'field': 'revenue', 'group_by': 'region', 'name': 'val'}]
+        })
+        rows = [('EMEA', 50000.0), ('APAC', 30000.0)]
+        desc = [('region',), ('val',)]
+        with patch.object(engine, '_connect', return_value=self._mock_conn(rows, desc)):
+            result = engine.execute_widget_query(widget)
+        self.assertIn('val', result)
+        self.assertEqual(result['val']['EMEA'], 50000.0)
+
+    # ── where clause / injection safety ─────────────────────────────────
+
+    def test_invalid_table_name_returns_error(self):
+        engine = self._engine()
+        widget = self._make_widget('metric', source_table='orders; DROP TABLE users--')
+        result = engine.execute_widget_query(widget)
+        self.assertIn('error', result)
+
+    def test_invalid_identifier_rejected(self):
+        from apps.dashboards.services import DataSourceQueryEngine
+        self.assertFalse(DataSourceQueryEngine._validate_identifier('col; DROP TABLE x--'))
+        self.assertTrue(DataSourceQueryEngine._validate_identifier('valid_column'))
+        self.assertFalse(DataSourceQueryEngine._validate_identifier(''))
+        self.assertFalse(DataSourceQueryEngine._validate_identifier(None))
+
+    def test_build_where_eq_filter(self):
+        engine = self._engine()
+        clause, params = engine._build_where(
+            [{'field': 'status', 'operator': 'eq', 'value': 'active'}], []
+        )
+        self.assertIn('"status"', clause)
+        self.assertIn('=', clause)
+        self.assertEqual(params, ['active'])
+
+    def test_build_where_contains_filter(self):
+        engine = self._engine()
+        clause, params = engine._build_where(
+            [{'field': 'name', 'operator': 'contains', 'value': 'john'}], []
+        )
+        self.assertIn('ILIKE', clause)
+        self.assertEqual(params[0], '%john%')
+
+    def test_build_where_invalid_field_skipped(self):
+        engine = self._engine()
+        clause, params = engine._build_where(
+            [{'field': 'bad; DROP TABLE--', 'operator': 'eq', 'value': '1'}], []
+        )
+        # Invalid field name must be silently skipped — no injection
+        self.assertEqual(clause, '')
+        self.assertEqual(params, [])

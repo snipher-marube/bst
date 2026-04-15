@@ -466,6 +466,110 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
 
 
+class SSOSettingsView(LoginRequiredMixin, TemplateView):
+    """
+    GET  /dashboard/sso/   — Show SSO configuration form
+    POST /dashboard/sso/   — Save / update SSO configuration
+
+    Only workspace owners and admins may access this page.
+    """
+    template_name = 'dashboard/sso_settings.html'
+
+    def _require_admin(self, request):
+        ws = request.user.current_workspace
+        if not ws:
+            return None, redirect('dashboard:home')
+        try:
+            m = WorkspaceMembership.objects.get(workspace=ws, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return None, redirect('dashboard:home')
+        if m.role not in ('owner', 'admin'):
+            messages.error(request, 'Only workspace admins can manage SSO settings.')
+            return None, redirect('dashboard:settings')
+        return ws, None
+
+    def get_context_data(self, **kwargs):
+        from apps.workspaces.models import SSOConfiguration
+        context    = super().get_context_data(**kwargs)
+        workspace  = self.request.user.current_workspace
+        base_url   = f"{self.request.scheme}://{self.request.get_host()}"
+        ws_id      = str(workspace.id) if workspace else ''
+
+        sso = None
+        try:
+            sso = SSOConfiguration.objects.get(workspace=workspace)
+        except (SSOConfiguration.DoesNotExist, Exception):
+            pass
+
+        sp_entity_id = (sso.sp_entity_id if sso and sso.sp_entity_id
+                        else f"{base_url}/sso/{ws_id}/metadata/")
+
+        context.update({
+            'sso':          sso,
+            'metadata_url': f"{base_url}/sso/{ws_id}/metadata/",
+            'acs_url':      f"{base_url}/sso/{ws_id}/acs/",
+            'sp_entity_id': sp_entity_id,
+            'sso_login_url': f"{base_url}/sso/{ws_id}/login/",
+        })
+        return context
+
+    def get(self, request, *args, **kwargs):
+        ws, err = self._require_admin(request)
+        if err:
+            return err
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        from apps.workspaces.models import SSOConfiguration
+        ws, err = self._require_admin(request)
+        if err:
+            return err
+
+        d = request.POST
+        defaults = {
+            'idp_entity_id':       d.get('idp_entity_id', '').strip(),
+            'idp_sso_url':         d.get('idp_sso_url', '').strip(),
+            'idp_slo_url':         d.get('idp_slo_url', '').strip(),
+            'idp_x509_cert':       d.get('idp_x509_cert', '').strip(),
+            'sp_entity_id':        d.get('sp_entity_id', '').strip(),
+            'attribute_email':     d.get('attribute_email', 'email').strip() or 'email',
+            'attribute_first_name': d.get('attribute_first_name', 'first_name').strip(),
+            'attribute_last_name':  d.get('attribute_last_name', 'last_name').strip(),
+            'is_active':      bool(d.get('is_active')),
+            'require_sso':    bool(d.get('require_sso')),
+            'auto_provision': bool(d.get('auto_provision')),
+        }
+
+        if not defaults['idp_entity_id'] or not defaults['idp_sso_url'] or not defaults['idp_x509_cert']:
+            messages.error(request, 'IdP Entity ID, SSO URL, and X.509 Certificate are required.')
+            return self.get(request, *args, **kwargs)
+
+        SSOConfiguration.objects.update_or_create(workspace=ws, defaults=defaults)
+        messages.success(request, 'SSO configuration saved.')
+        return redirect('dashboard:sso_settings')
+
+
+class GoogleSheetsConnectView(LoginRequiredMixin, TemplateView):
+    """
+    Step-by-step setup page for connecting a Google Sheets data source.
+    Serves the guide + connection form at /dashboard/integrations/google-sheets/.
+    """
+    template_name = 'dashboard/google_sheets_connect.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        context['workspace_id'] = str(workspace.id) if workspace else ''
+        context['back_url']     = reverse('dashboard:settings')
+        context['steps'] = [
+            'Create a GCP project & enable Sheets API',
+            'Create a service account & download JSON key',
+            'Share your sheet with the service account email',
+            'Paste credentials below and save',
+        ]
+        return context
+
+
 class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
     """Create a brand new table from an imported file"""
     template_name = 'dashboard/table_import.html'
@@ -695,6 +799,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             'description': self.object.description,
             'slug': self.object.slug,
             'layout_config': self.object.layout_config,
+            'filter_config': self.object.filter_config or {},
             'is_public': self.object.is_public,
             'public_uuid': str(self.object.public_uuid),
             'created_at': self.object.created_at.isoformat(),

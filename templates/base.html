@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 {% load static %}
-<html lang="en" class="scroll-smooth">
+<html lang="en" class="scroll-smooth" x-data="themeManager()" :class="{ dark: isDark }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -46,6 +46,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{% static 'css/output.css' %}">
     <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dark.css' %}">
+    {# Apply stored dark mode before paint to prevent flash-of-wrong-theme #}
+    <script>
+      (function() {
+        var stored = localStorage.getItem('am-theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (stored === 'dark' || (!stored && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     
     <!-- Schema.org markup -->
     <meta itemprop="name" content="{% block schema_name %}{% firstof meta_title site_settings.default_meta_title 'MetaAnalytics' %}{% endblock %}">
@@ -122,5 +133,61 @@
         fbq('track', 'PageView');
     </script>
     {% endif %}
+
+    <!-- Dark mode theme manager -->
+    <script>
+    /**
+     * AMTheme — global dark-mode controller.
+     *
+     * - Reads initial preference from localStorage ('am-theme': 'dark'|'light')
+     *   falling back to the OS prefers-color-scheme media query.
+     * - Applies / removes the `dark` class on <html>.
+     * - Syncs the toggle button icon (moon / sun) if present.
+     */
+    var AMTheme = (function() {
+      function isDark() {
+        return document.documentElement.classList.contains('dark');
+      }
+
+      function apply(dark) {
+        document.documentElement.classList.toggle('dark', dark);
+        var icon = document.getElementById('theme-icon');
+        if (icon) {
+          icon.className = dark ? 'fas fa-sun text-sm' : 'fas fa-moon text-sm';
+        }
+        var btn = document.getElementById('theme-toggle-btn');
+        if (btn) {
+          btn.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+      }
+
+      function toggle() {
+        var next = !isDark();
+        apply(next);
+        localStorage.setItem('am-theme', next ? 'dark' : 'light');
+      }
+
+      // Sync icon once DOM is ready
+      document.addEventListener('DOMContentLoaded', function() {
+        apply(isDark());
+        // Follow OS preference changes only when user has no stored preference
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+          if (!localStorage.getItem('am-theme')) {
+            apply(e.matches);
+          }
+        });
+      });
+
+      return { toggle: toggle, isDark: isDark };
+    })();
+
+    // Alpine.js themeManager component (used by x-data on <html>)
+    function themeManager() {
+      return {
+        isDark: document.documentElement.classList.contains('dark'),
+        toggle() { AMTheme.toggle(); this.isDark = AMTheme.isDark(); }
+      };
+    }
+    </script>
 </body>
 </html>

@@ -124,12 +124,21 @@
                         Sign in
                     </a>
                     
-                    <a href="{% url 'account_signup' %}" 
+                    <a href="{% url 'account_signup' %}"
                        class="inline-flex items-center px-5 py-2 border-2 border-[#f68712] text-sm font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] hover:border-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f68712] transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5">
                         <i class="fas fa-rocket mr-2"></i>
                         Start Free Trial
                     </a>
                 {% endif %}
+
+                <!-- Dark mode toggle -->
+                <button id="theme-toggle-btn"
+                        onclick="AMTheme.toggle()"
+                        class="theme-toggle ml-1"
+                        aria-label="Toggle dark mode"
+                        title="Toggle dark mode">
+                  <i id="theme-icon" class="fas fa-moon text-sm"></i>
+                </button>
             </div>
             
             <!-- Mobile menu button -->
