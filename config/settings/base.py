@@ -606,3 +606,15 @@ if SENTRY_DSN:
 # Custom PrometheusMiddleware in apps.core.middleware instruments HTTP requests.
 # Celery task metrics are wired via signal handlers in apps.core.metrics.
 # The /metrics endpoint is served by apps.core.views.metrics_view.
+# ── SAML 2.0 SP credentials ────────────────────────────────────────────────
+# Optional: provide a self-signed or CA-issued certificate + private key for
+# signing AuthnRequests and SP metadata.  Leave blank for development; the
+# IdP will not require request signing in most dev setups.
+#
+# In production, generate with:
+#   openssl req -x509 -newkey rsa:2048 -keyout saml.key -out saml.crt \
+#       -days 3650 -nodes -subj "/CN=analyticsmeta-sp"
+# Then set SAML_SP_CERT / SAML_SP_KEY in your .env to the base64 body
+# (without PEM headers) of saml.crt / saml.key respectively.
+SAML_SP_CERT = config('SAML_SP_CERT', default='')
+SAML_SP_KEY  = config('SAML_SP_KEY',  default='')

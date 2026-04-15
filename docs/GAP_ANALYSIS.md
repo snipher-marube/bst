@@ -150,11 +150,18 @@ tasks are properly registered. No action required.
 
 ---
 
-### 12. SSO / SAML Authentication
+### 12. ~~SSO / SAML Authentication~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Enterprise clients require SSO via Okta, Azure AD, or Google Workspace SAML.
-**Fix:** Integrate `django-allauth` SAML provider or `python3-saml`. Add per-workspace SSO config (metadata URL, entity ID).
-**Effort:** High (1 week) | **Impact:** High — hard enterprise requirement
+**Fix applied:**
+- `SSOConfiguration` OneToOneField on `Workspace` (migration `workspaces/0005`): stores `idp_entity_id`, `idp_sso_url`, `idp_slo_url`, `idp_x509_cert`, `sp_entity_id`, attribute mappings, `is_active`, `require_sso`, `auto_provision`.
+- `apps/core/sso.py`: full SAML 2.0 flow via `python3-saml` — `_build_saml_settings()`, `sso_metadata` (SP metadata XML), `sso_login` (AuthnRequest initiation), `sso_acs` (CSRF-exempt ACS: validates signature, extracts email, finds/creates user, provisions workspace membership, sets session), `sso_slo` (SLO initiation).
+- `apps/core/sso_detect.py`: email-based IdP detection at `/sso/login/` — maps email domain to workspace SSO config, redirects to correct IdP or shows workspace picker for multi-workspace domains.
+- `apps/core/sso_urls.py`: URL namespace `sso` with 5 patterns — `/sso/login/`, `/sso/<workspace_id>/metadata/`, `/sso/<workspace_id>/login/`, `/sso/<workspace_id>/acs/`, `/sso/<workspace_id>/slo/`.
+- `SSOSettingsView` at `/dashboard/sso/` — admin-only CRUD form (owner/admin role required). Displays SP metadata URL, ACS URL, and Entity ID for IdP registration. Setup guide accordion for Okta, Azure AD, Google Workspace.
+- Templates: `sso/login.html`, `sso/error.html`, `sso/pick_workspace.html`, `dashboard/sso_settings.html`.
+- `settings.html` Data Connectors card: added SSO link.
+- `config/settings/base.py`: `SAML_SP_CERT` / `SAML_SP_KEY` env vars (optional; enables AuthnRequest signing when set).
+- `python3-saml>=1.16.0` added to `requirements.txt`.
 
 ---
 
