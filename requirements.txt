@@ -22,7 +22,7 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
 constantly==23.10.4
 coverage==7.13.5
-cryptography==46.0.6
+cryptography==46.0.7
 daphne==4.2.1
 decorator==5.2.1
 django==6.0.4
