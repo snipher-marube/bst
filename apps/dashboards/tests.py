@@ -3192,3 +3192,386 @@ class TestDataSourceQueryEngine(TestCase):
         # Invalid field name must be silently skipped — no injection
         self.assertEqual(clause, '')
         self.assertEqual(params, [])
+
+
+# ---------------------------------------------------------------------------
+# Gap 15 — Cohort & Funnel Analysis
+# ---------------------------------------------------------------------------
+
+class TestCohortAnalysisEngine(TestCase):
+    """Unit tests for CohortAnalysisEngine (in-memory pandas analysis)."""
+
+    def setUp(self):
+        self.p1 = patch('apps.dashboards.models.broadcast_widget_update.delay')
+        self.p2 = patch('apps.dashboards.models.notify_table_change.delay')
+        self.p1.start(); self.p2.start()
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace, schema=[])
+
+    def tearDown(self):
+        self.p1.stop(); self.p2.stop()
+
+    def _fake_widget(self, config):
+        class _FakeWidget:
+            pass
+        w = _FakeWidget()
+        w.table = self.table
+        w.query_config = config
+        return w
+
+    def _make_records(self, user_events):
+        """Create records from [(user_id, date_str)] pairs."""
+        from django.utils.timezone import make_aware
+        import datetime
+        for uid, date_str in user_events:
+            dt = make_aware(datetime.datetime.fromisoformat(date_str))
+            RecordFactory(table=self.table, data={'user_id': uid}, created_at=dt)
+
+    def test_returns_error_without_user_field(self):
+        from apps.dashboards.services import CohortAnalysisEngine
+        w = self._fake_widget({'period': 'month', 'periods': 3})
+        result = CohortAnalysisEngine().execute(w)
+        self.assertIn('error', result)
+
+    def test_empty_table_returns_empty_matrix(self):
+        from apps.dashboards.services import CohortAnalysisEngine
+        w = self._fake_widget({'user_field': 'user_id', 'period': 'month', 'periods': 3})
+        result = CohortAnalysisEngine().execute(w)
+        self.assertEqual(result['matrix'], [])
+        self.assertEqual(result['total_users'], 0)
+
+    def test_single_cohort_full_retention(self):
+        """All users appear in every period — retention should be 100% throughout."""
+        from apps.dashboards.services import CohortAnalysisEngine
+        # 3 users × 2 months
+        events = [
+            ('u1', '2024-01-05'), ('u1', '2024-02-10'),
+            ('u2', '2024-01-10'), ('u2', '2024-02-15'),
+            ('u3', '2024-01-20'), ('u3', '2024-02-20'),
+        ]
+        self._make_records(events)
+        w = self._fake_widget({'user_field': 'user_id', 'period': 'month', 'periods': 2})
+        result = CohortAnalysisEngine().execute(w)
+        self.assertEqual(result['total_users'], 3)
+        self.assertEqual(len(result['matrix']), 1)          # one cohort (Jan-2024)
+        row = result['matrix'][0]
+        self.assertEqual(row['absolute'][0], 3)             # 3 users at start
+        self.assertEqual(row['percentage'][0], 100.0)       # 100% at start
+        self.assertEqual(row['absolute'][1], 3)             # all 3 returned
+        self.assertEqual(row['percentage'][1], 100.0)
+
+    def test_partial_retention(self):
+        """Only half the cohort returns in the next period."""
+        from apps.dashboards.services import CohortAnalysisEngine
+        events = [
+            ('u1', '2024-01-05'), ('u1', '2024-02-10'),
+            ('u2', '2024-01-10'),                           # u2 does NOT return
+        ]
+        self._make_records(events)
+        w = self._fake_widget({'user_field': 'user_id', 'period': 'month', 'periods': 2})
+        result = CohortAnalysisEngine().execute(w)
+        row = result['matrix'][0]
+        self.assertEqual(row['absolute'][0], 2)
+        self.assertEqual(row['absolute'][1], 1)
+        self.assertEqual(row['percentage'][1], 50.0)
+
+    def test_cohort_labels_returned(self):
+        from apps.dashboards.services import CohortAnalysisEngine
+        events = [('u1', '2024-01-05'), ('u2', '2024-02-05')]
+        self._make_records(events)
+        w = self._fake_widget({'user_field': 'user_id', 'period': 'month', 'periods': 3})
+        result = CohortAnalysisEngine().execute(w)
+        self.assertEqual(len(result['cohort_labels']), 2)
+
+    def test_period_labels_length(self):
+        from apps.dashboards.services import CohortAnalysisEngine
+        events = [('u1', '2024-01-05')]
+        self._make_records(events)
+        w = self._fake_widget({'user_field': 'user_id', 'period': 'month', 'periods': 4})
+        result = CohortAnalysisEngine().execute(w)
+        self.assertEqual(len(result['period_labels']), 4)
+        self.assertEqual(result['period_labels'][0], 'Start')
+        self.assertEqual(result['period_labels'][1], 'Period 1')
+
+
+class TestFunnelAnalysisEngine(TestCase):
+    """Unit tests for FunnelAnalysisEngine."""
+
+    def setUp(self):
+        self.p1 = patch('apps.dashboards.models.broadcast_widget_update.delay')
+        self.p2 = patch('apps.dashboards.models.notify_table_change.delay')
+        self.p1.start(); self.p2.start()
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace, schema=[])
+
+    def tearDown(self):
+        self.p1.stop(); self.p2.stop()
+
+    def _fake_widget(self, config):
+        class _FakeWidget:
+            pass
+        w = _FakeWidget()
+        w.table = self.table
+        w.query_config = config
+        return w
+
+    def test_returns_error_without_steps(self):
+        from apps.dashboards.services import FunnelAnalysisEngine
+        w = self._fake_widget({'user_field': 'user_id'})
+        result = FunnelAnalysisEngine().execute(w)
+        self.assertIn('error', result)
+
+    def test_empty_table_returns_zero_counts(self):
+        from apps.dashboards.services import FunnelAnalysisEngine
+        w = self._fake_widget({
+            'steps': [
+                {'name': 'Step 1', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'signup'}]},
+                {'name': 'Step 2', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'purchase'}]},
+            ]
+        })
+        result = FunnelAnalysisEngine().execute(w)
+        self.assertEqual(result['steps'][0]['count'], 0)
+        self.assertEqual(result['steps'][1]['count'], 0)
+
+    def test_full_conversion(self):
+        """All users pass every step."""
+        from apps.dashboards.services import FunnelAnalysisEngine
+        for uid in ('u1', 'u2', 'u3'):
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'signup'})
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'purchase'})
+        w = self._fake_widget({
+            'user_field': 'user_id',
+            'ordered': False,
+            'steps': [
+                {'name': 'Signed Up', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'signup'}]},
+                {'name': 'Purchased', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'purchase'}]},
+            ]
+        })
+        result = FunnelAnalysisEngine().execute(w)
+        self.assertEqual(result['steps'][0]['count'], 3)
+        self.assertEqual(result['steps'][1]['count'], 3)
+        self.assertEqual(result['steps'][1]['conversion_rate'], 100.0)
+        self.assertEqual(result['steps'][1]['overall_rate'], 100.0)
+
+    def test_partial_funnel_drop_off(self):
+        """Only 2 of 4 signup users also purchase."""
+        from apps.dashboards.services import FunnelAnalysisEngine
+        for uid in ('u1', 'u2', 'u3', 'u4'):
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'signup'})
+        for uid in ('u1', 'u2'):
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'purchase'})
+        w = self._fake_widget({
+            'user_field': 'user_id',
+            'ordered': True,
+            'steps': [
+                {'name': 'Signed Up', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'signup'}]},
+                {'name': 'Purchased', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'purchase'}]},
+            ]
+        })
+        result = FunnelAnalysisEngine().execute(w)
+        self.assertEqual(result['steps'][0]['count'], 4)
+        self.assertEqual(result['steps'][1]['count'], 2)
+        self.assertEqual(result['steps'][1]['conversion_rate'], 50.0)
+        self.assertEqual(result['steps'][1]['dropped'], 2)
+
+    def test_three_step_funnel(self):
+        """Three-step funnel drops at each step."""
+        from apps.dashboards.services import FunnelAnalysisEngine
+        for uid in ('u1', 'u2', 'u3'):
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'visit'})
+        for uid in ('u1', 'u2'):
+            RecordFactory(table=self.table, data={'user_id': uid, 'event': 'signup'})
+        RecordFactory(table=self.table, data={'user_id': 'u1', 'event': 'purchase'})
+        w = self._fake_widget({
+            'user_field': 'user_id',
+            'ordered': True,
+            'steps': [
+                {'name': 'Visit',    'filters': [{'field': 'event', 'operator': 'eq', 'value': 'visit'}]},
+                {'name': 'Sign Up',  'filters': [{'field': 'event', 'operator': 'eq', 'value': 'signup'}]},
+                {'name': 'Purchase', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'purchase'}]},
+            ]
+        })
+        result = FunnelAnalysisEngine().execute(w)
+        steps = result['steps']
+        self.assertEqual(steps[0]['count'], 3)
+        self.assertEqual(steps[1]['count'], 2)
+        self.assertEqual(steps[2]['count'], 1)
+        self.assertAlmostEqual(steps[2]['overall_rate'], 33.3, places=0)
+
+    def test_step_annotations_present(self):
+        """Every step dict contains the expected keys."""
+        from apps.dashboards.services import FunnelAnalysisEngine
+        RecordFactory(table=self.table, data={'event': 'a'})
+        w = self._fake_widget({
+            'steps': [{'name': 'A', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'a'}]}]
+        })
+        result = FunnelAnalysisEngine().execute(w)
+        step = result['steps'][0]
+        for key in ('name', 'count', 'conversion_rate', 'overall_rate', 'dropped'):
+            self.assertIn(key, step)
+
+
+class TestCohortFunnelAPI(TestCase):
+    """Integration tests for the cohort/funnel REST endpoints."""
+
+    def setUp(self):
+        from rest_framework.authtoken.models import Token
+        from rest_framework.test import APIClient
+        self.p1 = patch('apps.dashboards.models.broadcast_widget_update.delay')
+        self.p2 = patch('apps.dashboards.models.notify_table_change.delay')
+        self.p1.start(); self.p2.start()
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        token, _       = Token.objects.get_or_create(user=self.user)
+        self.client    = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+        self.client.defaults['HTTP_X_WORKSPACE_ID'] = str(self.workspace.id)
+        self.table     = DataTableFactory(workspace=self.workspace, schema=[])
+
+    def tearDown(self):
+        self.p1.stop(); self.p2.stop()
+
+    def _cohort_url(self):
+        return f'/api/v1/tables/{self.table.id}/cohort-analysis/'
+
+    def _funnel_url(self):
+        return f'/api/v1/tables/{self.table.id}/funnel-analysis/'
+
+    # ── cohort ─────────────────────────────────────────────────────────
+
+    def test_cohort_missing_user_field_returns_400(self):
+        resp = self.client.post(self._cohort_url(), {'period': 'month'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cohort_empty_table_returns_200(self):
+        resp = self.client.post(
+            self._cohort_url(),
+            {'user_field': 'user_id', 'period': 'month', 'periods': 3},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('matrix', resp.data)
+        self.assertEqual(resp.data['matrix'], [])
+
+    def test_cohort_with_data_returns_matrix(self):
+        RecordFactory(table=self.table, data={'user_id': 'u1'})
+        resp = self.client.post(
+            self._cohort_url(),
+            {'user_field': 'user_id', 'period': 'month', 'periods': 2},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('cohort_labels', resp.data)
+        self.assertIn('period_labels', resp.data)
+        self.assertIn('total_users', resp.data)
+
+    # ── funnel ─────────────────────────────────────────────────────────
+
+    def test_funnel_missing_steps_returns_400(self):
+        resp = self.client.post(self._funnel_url(), {}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_funnel_empty_steps_list_returns_400(self):
+        resp = self.client.post(self._funnel_url(), {'steps': []}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_funnel_empty_table_returns_200(self):
+        payload = {
+            'steps': [
+                {'name': 'A', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'a'}]},
+                {'name': 'B', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'b'}]},
+            ]
+        }
+        resp = self.client.post(self._funnel_url(), payload, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('steps', resp.data)
+
+    def test_funnel_with_data_returns_steps(self):
+        RecordFactory(table=self.table, data={'event': 'signup'})
+        RecordFactory(table=self.table, data={'event': 'purchase'})
+        payload = {
+            'steps': [
+                {'name': 'Signup',   'filters': [{'field': 'event', 'operator': 'eq', 'value': 'signup'}]},
+                {'name': 'Purchase', 'filters': [{'field': 'event', 'operator': 'eq', 'value': 'purchase'}]},
+            ]
+        }
+        resp = self.client.post(self._funnel_url(), payload, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data['steps']), 2)
+        self.assertEqual(resp.data['steps'][0]['name'], 'Signup')
+
+
+class TestCohortFunnelWidgetTypes(TestCase):
+    """Verify cohort/funnel widget types are accepted by the Widget model."""
+
+    def setUp(self):
+        self.p1 = patch('apps.dashboards.models.broadcast_widget_update.delay')
+        self.p2 = patch('apps.dashboards.models.notify_table_change.delay')
+        self.p1.start(); self.p2.start()
+        self.user      = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table     = DataTableFactory(workspace=self.workspace, schema=[])
+        self.dashboard = DashboardFactory(workspace=self.workspace, created_by=self.user)
+
+    def tearDown(self):
+        self.p1.stop(); self.p2.stop()
+
+    def test_cohort_widget_can_be_saved(self):
+        w = Widget(
+            dashboard=self.dashboard,
+            widget_type='cohort',
+            title='User Retention',
+            table=self.table,
+            query_config={'user_field': 'user_id', 'period': 'week', 'periods': 8},
+        )
+        w.save()
+        self.assertEqual(Widget.objects.filter(widget_type='cohort').count(), 1)
+
+    def test_funnel_widget_can_be_saved(self):
+        w = Widget(
+            dashboard=self.dashboard,
+            widget_type='funnel',
+            title='Conversion Funnel',
+            table=self.table,
+            query_config={
+                'user_field': 'user_id',
+                'steps': [
+                    {'name': 'Step 1', 'filters': []},
+                    {'name': 'Step 2', 'filters': []},
+                ]
+            },
+        )
+        w.save()
+        self.assertEqual(Widget.objects.filter(widget_type='funnel').count(), 1)
+
+    def test_query_engine_routes_cohort_type(self):
+        """QueryEngine.execute_widget_query routes cohort widgets without error."""
+        from apps.dashboards.services import QueryEngine
+        w = Widget(
+            dashboard=self.dashboard,
+            widget_type='cohort',
+            title='Test',
+            table=self.table,
+            query_config={'user_field': 'user_id', 'period': 'month', 'periods': 3},
+        )
+        result = QueryEngine().execute_widget_query(w)
+        self.assertNotIn('error', result)
+        self.assertIn('matrix', result)
+
+    def test_query_engine_routes_funnel_type(self):
+        """QueryEngine.execute_widget_query routes funnel widgets without error."""
+        from apps.dashboards.services import QueryEngine
+        w = Widget(
+            dashboard=self.dashboard,
+            widget_type='funnel',
+            title='Test',
+            table=self.table,
+            query_config={
+                'steps': [{'name': 'A', 'filters': []}]
+            },
+        )
+        result = QueryEngine().execute_widget_query(w)
+        self.assertNotIn('error', result)
+        self.assertIn('steps', result)

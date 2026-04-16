@@ -40,6 +40,12 @@ urlpatterns = [
     # Integrations
     path('integrations/google-sheets/', views.GoogleSheetsConnectView.as_view(), name='google_sheets_connect'),
 
+    # Calculated Fields (Gap 14)
+    path('tables/<uuid:table_id>/calculated-fields/', views.CalculatedFieldsView.as_view(), name='calculated_fields'),
+
+    # Cohort & Funnel Analysis (Gap 15)
+    path('tables/<uuid:table_id>/cohort-funnel/', views.CohortFunnelView.as_view(), name='cohort_funnel'),
+
     # Settings and account
     path('settings/', views.WorkspaceSettingsView.as_view(), name='settings'),
     path('members/', views.TeamMembersView.as_view(), name='members'),

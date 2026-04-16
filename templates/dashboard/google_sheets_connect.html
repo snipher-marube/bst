@@ -3,9 +3,7 @@
 
 {% block title %}Connect Google Sheets — AnalyticsMeta{% endblock %}
 
-{% block content %}
-{% include 'includes/header.html' %}
-
+{% block main_content %}
 <div class="max-w-3xl mx-auto px-4 py-8">
 
   {# ── Page header ──────────────────────────────────────────────── #}
@@ -187,7 +185,7 @@
 
       {# Actions #}
       <div class="flex items-center justify-between pt-2">
-        <a href="{{ back_url }}" class="btn btn-secondary text-sm">
+        <a href="{% url 'dashboard:settings' %}" class="btn btn-secondary text-sm">
           <i class="fas fa-arrow-left mr-1"></i> Back
         </a>
         <div class="flex gap-2">
@@ -208,6 +206,9 @@
 
 </div>
 
+{% endblock main_content %}
+
+{% block extra_scripts %}
 <script>
 function gSheetsConnectForm() {
   return {
@@ -252,7 +253,7 @@ function gSheetsConnectForm() {
         const ds = await this._save(false);
         if (ds) {
           this.status = { ok: true, message: 'Connection saved! Redirecting…' };
-          setTimeout(() => { window.location.href = '{{ back_url }}'; }, 1200);
+          setTimeout(() => { window.location.href = '{% url 'dashboard:settings' %}'; }, 1200);
         }
       } finally {
         this.saving = false;
@@ -288,4 +289,4 @@ function gSheetsConnectForm() {
   };
 }
 </script>
-{% endblock %}
+{% endblock extra_scripts %}

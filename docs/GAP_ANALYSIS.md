@@ -179,21 +179,65 @@ tasks are properly registered. No action required.
 
 ---
 
-### 14. Custom Calculated Fields / Metrics
+### ~~14. Custom Calculated Fields / Metrics~~ ✅ CLOSED 2026-04-15
 
-**Problem:** Only pre-defined aggregations (sum, avg, count). No way to define a calculated metric like `revenue_per_user = sum(revenue) / count(user_id)`.
-**Fix:** Add `CalculatedField` model with a safe expression parser (e.g., `simpleeval` or a whitelist AST walker). Evaluate at query time.
+**Fix applied:**
+- `CalculatedField` model (`dashboards.0013_calculatedfield`) — UUID PK, ForeignKey to `DataTable`,
+  `name` (slug), `display_name`, `expression`, `format_type` (number/currency/percentage/integer),
+  `description`.  `unique_together = ['table', 'name']`.
+- `CalculatedFieldEvaluator` service class (in `services.py`):
+  - `evaluate_against_context(expr, names)` — widget-level: expression references other aggregation
+    result names; evaluated with `simpleeval` (blocks `import`, attribute access, etc.).
+  - `evaluate_against_records(expr, records)` — table-level: two-pass regex pre-computes
+    `sum(col)`, `count(col)`, `avg(col)`, `min(col)`, `max(col)` from the record list, then
+    evaluates the resulting arithmetic.  `count()` correctly counts non-null values regardless
+    of type.
+  - `validate_expression(expr)` — syntax-only check without real data; `ZeroDivisionError` is
+    treated as valid (will only occur at evaluation time with real zeros).
+- `Widget.ALLOWED_AGG_TYPES` extended with `'calculated'`; `clean()` validates that
+  `calculated` aggregations provide an `expression` (max 512 chars) instead of a `field`.
+- `QueryEngine._execute_metric_query` and `_execute_chart_query` resolve `type: "calculated"`
+  aggregations in a second pass after base aggregations are computed.
+- REST API: `GET/POST /api/v1/tables/<id>/calculated-fields/`,
+  `PATCH/DELETE /api/v1/calculated-fields/<id>/`,
+  `POST /api/v1/calculated-fields/<id>/preview/`,
+  `POST /api/v1/tables/<id>/calculated-fields/validate/`.
+- UI: `/dashboard/tables/<id>/calculated-fields/` — Alpine.js CRUD manager with expression
+  validation, column-chip quick-insert, live result preview modal.
+- "Calc Fields" button added to `table_detail.html` action bar.
+- `simpleeval>=1.0.0` added to `requirements.txt` (prior session).
+
 **Effort:** High (1 week) | **Impact:** High — advanced analytics gap
 
 ---
 
-### 15. Cohort, Funnel & Retention Analysis
+### ~~15. Cohort, Funnel & Retention Analysis~~ ✅ CLOSED 2026-04-16
 
-**Problem:** No event-sequencing or time-bucketed user analysis. Competitors (Mixpanel, Amplitude) own this space.
-**Fix:**
-- Add `CohortQuery` widget type: segment users by first-event date, measure retention over N periods
-- Add `FunnelQuery` widget type: define event sequence, compute drop-off at each step
-- Implement via PostgreSQL window functions on `DataRecord`
+**Fix applied:**
+- `Widget.WIDGET_TYPES` extended with `('cohort', 'Cohort Retention')` and `('funnel', 'Funnel Analysis')`.
+  `Widget.clean()` skips aggregation validation for these two types (they use their own `query_config` schema).
+- `CohortAnalysisEngine` (in `services.py`): pandas-based retention matrix. Groups users by first-seen period
+  (day/week/month), computes period offsets via `pd.Period` arithmetic, counts distinct users per
+  (cohort × offset) bucket. Returns `cohort_labels`, `period_labels`, `matrix` (absolute counts + percentages),
+  `total_users`. Supports optional pre-filter. Max 50 k records.
+- `FunnelAnalysisEngine` (in `services.py`): multi-step sequential funnel. Each step defines filter predicates;
+  engine resolves distinct users per step. When `ordered=True` (default), a user must pass step N before
+  counting at step N+1. Annotates `conversion_rate` (step-over-step), `overall_rate` (vs. step 1),
+  `dropped`. Max 50 k records.
+- `QueryEngine.execute_widget_query` routes `cohort` → `CohortAnalysisEngine.execute()` and
+  `funnel` → `FunnelAnalysisEngine.execute()`.
+- REST API:
+  - `POST /api/v1/tables/<id>/cohort-analysis/` — ad-hoc cohort query
+  - `POST /api/v1/tables/<id>/funnel-analysis/` — ad-hoc funnel query
+- UI: `templates/dashboard/cohort_funnel.html` — Alpine.js two-tab interface:
+  - Cohort tab: configures `user_field`, `event_date_field`, `period`, `periods`; renders a colour-coded
+    heatmap retention matrix with absolute/percentage toggle and legend.
+  - Funnel tab: step builder with per-step filter rows; renders horizontal drop-off bar chart and
+    summary table with conversion rates.
+- Navigation: "Cohort & Funnel" entry added to table_detail.html action bar "More" dropdown.
+  View: `CohortFunnelView` at `/dashboard/tables/<uuid>/cohort-funnel/`.
+- 20 tests added (CohortAnalysisEngine: 6; FunnelAnalysisEngine: 6; API: 7; Widget type validation: 4).
+
 **Effort:** High (2 weeks) | **Impact:** High — product analytics use case
 
 ---

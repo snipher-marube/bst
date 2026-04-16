@@ -1,0 +1,424 @@
+{% extends "dashboard/base_dashboard.html" %}
+{% load static %}
+
+{% block title %}Cohort & Funnel Analysis — {{ table.name }}{% endblock %}
+
+{% block main_content %}
+<div class="max-w-7xl mx-auto px-4 py-6" x-data="cohortFunnelApp()">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Cohort &amp; Funnel Analysis</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        Table: <span class="font-medium">{{ table.name }}</span>
+      </p>
+    </div>
+    <a href="{% url 'table_detail' table.id %}"
+       class="text-sm text-blue-600 hover:underline">&larr; Back to table</a>
+  </div>
+
+  <!-- Tab switcher -->
+  <div class="flex space-x-1 mb-6 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
+    <button @click="tab = 'cohort'"
+            :class="tab === 'cohort'
+              ? 'bg-white dark:bg-gray-700 shadow text-blue-700 dark:text-blue-300'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'"
+            class="px-4 py-2 text-sm font-medium rounded-md transition">
+      Cohort Retention
+    </button>
+    <button @click="tab = 'funnel'"
+            :class="tab === 'funnel'
+              ? 'bg-white dark:bg-gray-700 shadow text-blue-700 dark:text-blue-300'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'"
+            class="px-4 py-2 text-sm font-medium rounded-md transition">
+      Funnel Analysis
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- COHORT TAB                                                        -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <div x-show="tab === 'cohort'">
+
+    <!-- Config card -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 mb-6">
+      <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Configure Cohort</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+            User field <span class="text-red-500">*</span>
+          </label>
+          <input x-model="cohort.userField" type="text" placeholder="e.g. user_id"
+                 class="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Event date field</label>
+          <input x-model="cohort.dateField" type="text" placeholder="created_at"
+                 class="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Period</label>
+          <select x-model="cohort.period"
+                  class="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="day">Day</option>
+            <option value="week" selected>Week</option>
+            <option value="month">Month</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Periods to show</label>
+          <input x-model.number="cohort.periods" type="number" min="2" max="52" value="8"
+                 class="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+      <div class="mt-4 flex items-center space-x-3">
+        <button @click="runCohort()"
+                :disabled="!cohort.userField || cohort.loading"
+                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded transition">
+          <span x-show="!cohort.loading">Run Analysis</span>
+          <span x-show="cohort.loading">Running&hellip;</span>
+        </button>
+        <span x-show="cohort.error" class="text-sm text-red-600" x-text="cohort.error"></span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div x-show="cohort.result" class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-white">Retention Matrix</h2>
+        <div class="flex items-center space-x-3 text-sm">
+          <span class="text-gray-500 dark:text-gray-400">
+            Total users: <strong x-text="cohort.result?.total_users ?? 0"></strong>
+          </span>
+          <label class="flex items-center space-x-1 text-gray-600 dark:text-gray-300 cursor-pointer">
+            <input type="checkbox" x-model="cohort.showAbsolute" class="rounded">
+            <span>Show counts</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Heatmap table -->
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-xs border-collapse">
+          <thead>
+            <tr>
+              <th class="px-3 py-2 bg-gray-50 dark:bg-gray-700 text-left text-gray-700 dark:text-gray-300 font-semibold sticky left-0 z-10 border-b border-gray-200 dark:border-gray-600">
+                Cohort
+              </th>
+              <template x-for="(lbl, j) in (cohort.result?.period_labels ?? [])" :key="j">
+                <th class="px-3 py-2 bg-gray-50 dark:bg-gray-700 text-center text-gray-700 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-600 whitespace-nowrap"
+                    x-text="lbl"></th>
+              </template>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(row, i) in (cohort.result?.matrix ?? [])" :key="i">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <td class="px-3 py-2 font-medium text-gray-700 dark:text-gray-300 sticky left-0 bg-white dark:bg-gray-800 z-10"
+                    x-text="cohort.result.cohort_labels[i]"></td>
+                <template x-for="(pct, j) in row.percentage" :key="j">
+                  <td class="px-3 py-1 text-center font-medium"
+                      :style="`background: ${cohortCellColor(pct)}; color: ${pct >= 50 ? '#fff' : '#374151'}`"
+                      :title="`${row.absolute[j]} users (${pct}%)`">
+                    <span x-show="cohort.showAbsolute" x-text="row.absolute[j]"></span>
+                    <span x-show="!cohort.showAbsolute" x-text="pct + '%'"></span>
+                  </td>
+                </template>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Color legend -->
+      <div class="mt-4 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
+        <span>0%</span>
+        <div class="flex h-3 w-48 rounded overflow-hidden">
+          <template x-for="n in [0,10,20,30,40,50,60,70,80,90,100]" :key="n">
+            <div class="flex-1" :style="`background: ${cohortCellColor(n)}`"></div>
+          </template>
+        </div>
+        <span>100%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- FUNNEL TAB                                                        -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <div x-show="tab === 'funnel'">
+
+    <!-- Config card -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 mb-6">
+      <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Configure Funnel</h2>
+
+      <!-- User field + ordered toggle -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">User field (optional)</label>
+          <input x-model="funnel.userField" type="text" placeholder="e.g. user_id"
+                 class="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="flex items-end pb-2">
+          <label class="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+            <input type="checkbox" x-model="funnel.ordered" class="rounded">
+            <span>Enforce step ordering</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Steps builder -->
+      <div class="space-y-3 mb-4">
+        <template x-for="(step, i) in funnel.steps" :key="i">
+          <div class="border border-gray-200 dark:border-gray-600 rounded p-3 bg-gray-50 dark:bg-gray-700/50">
+            <div class="flex items-center space-x-3 mb-2">
+              <span class="text-xs font-bold text-blue-600 dark:text-blue-400 w-16">Step <span x-text="i+1"></span></span>
+              <input x-model="step.name" type="text" :placeholder="`Step ${i+1} name`"
+                     class="flex-1 border border-gray-300 dark:border-gray-500 rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <button @click="removeStep(i)" x-show="funnel.steps.length > 1"
+                      class="text-red-500 hover:text-red-700 text-sm px-2">Remove</button>
+            </div>
+            <!-- Filter rows for this step -->
+            <div class="space-y-2">
+              <template x-for="(f, fi) in step.filters" :key="fi">
+                <div class="flex items-center space-x-2">
+                  <input x-model="f.field" type="text" placeholder="field"
+                         class="w-28 border border-gray-300 dark:border-gray-500 rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none">
+                  <select x-model="f.operator"
+                          class="border border-gray-300 dark:border-gray-500 rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none">
+                    <option value="eq">equals</option>
+                    <option value="neq">not equals</option>
+                    <option value="contains">contains</option>
+                    <option value="gt">&gt;</option>
+                    <option value="gte">&ge;</option>
+                    <option value="lt">&lt;</option>
+                    <option value="lte">&le;</option>
+                  </select>
+                  <input x-model="f.value" type="text" placeholder="value"
+                         class="flex-1 border border-gray-300 dark:border-gray-500 rounded px-2 py-1 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none">
+                  <button @click="step.filters.splice(fi,1)"
+                          class="text-gray-400 hover:text-red-500 text-xs">&times;</button>
+                </div>
+              </template>
+              <button @click="step.filters.push({field:'',operator:'eq',value:''})"
+                      class="text-xs text-blue-600 hover:underline">+ Add filter</button>
+            </div>
+          </div>
+        </template>
+      </div>
+      <button @click="addStep()"
+              class="text-sm text-blue-600 hover:underline mr-4">+ Add step</button>
+
+      <div class="mt-4 flex items-center space-x-3">
+        <button @click="runFunnel()"
+                :disabled="funnel.loading"
+                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded transition">
+          <span x-show="!funnel.loading">Run Funnel</span>
+          <span x-show="funnel.loading">Running&hellip;</span>
+        </button>
+        <span x-show="funnel.error" class="text-sm text-red-600" x-text="funnel.error"></span>
+      </div>
+    </div>
+
+    <!-- Funnel Results -->
+    <div x-show="funnel.result" class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-white">Funnel Drop-off</h2>
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          Starting users: <strong x-text="funnel.result?.total_users ?? 0"></strong>
+        </span>
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="(step, i) in (funnel.result?.steps ?? [])" :key="i">
+          <div>
+            <!-- Step bar -->
+            <div class="flex items-center space-x-3">
+              <div class="w-32 text-right text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
+                   x-text="step.name"></div>
+              <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-8 relative">
+                <div class="bg-blue-500 h-8 rounded-full flex items-center justify-end pr-3 transition-all duration-500"
+                     :style="`width: ${step.overall_rate}%`">
+                  <span class="text-white text-xs font-bold" x-show="step.overall_rate > 10"
+                        x-text="step.count.toLocaleString()"></span>
+                </div>
+              </div>
+              <div class="w-20 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">
+                <span x-text="step.overall_rate + '%'"></span>
+              </div>
+            </div>
+
+            <!-- Drop-off indicator between steps -->
+            <div x-show="i > 0" class="flex items-center space-x-3 mt-1 mb-1">
+              <div class="w-32"></div>
+              <div class="flex items-center space-x-2 text-xs text-red-500">
+                <span>&darr;</span>
+                <span x-text="`−${step.dropped.toLocaleString()} dropped (${(100 - step.conversion_rate).toFixed(1)}%)`"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Summary table -->
+      <div class="mt-6 overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-700">
+              <th class="pb-2 text-left text-gray-600 dark:text-gray-400 font-medium">Step</th>
+              <th class="pb-2 text-right text-gray-600 dark:text-gray-400 font-medium">Users</th>
+              <th class="pb-2 text-right text-gray-600 dark:text-gray-400 font-medium">Step conv.</th>
+              <th class="pb-2 text-right text-gray-600 dark:text-gray-400 font-medium">Overall conv.</th>
+              <th class="pb-2 text-right text-gray-600 dark:text-gray-400 font-medium">Dropped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(step, i) in (funnel.result?.steps ?? [])" :key="i">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <td class="py-2 text-gray-800 dark:text-gray-200" x-text="step.name"></td>
+                <td class="py-2 text-right font-mono text-gray-800 dark:text-gray-200" x-text="step.count.toLocaleString()"></td>
+                <td class="py-2 text-right font-mono"
+                    :class="step.conversion_rate >= 70 ? 'text-green-600' : step.conversion_rate >= 40 ? 'text-yellow-600' : 'text-red-600'"
+                    x-text="i === 0 ? '—' : step.conversion_rate + '%'"></td>
+                <td class="py-2 text-right font-mono text-gray-700 dark:text-gray-300" x-text="step.overall_rate + '%'"></td>
+                <td class="py-2 text-right font-mono text-red-500" x-text="i === 0 ? '—' : step.dropped.toLocaleString()"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock main_content %}
+
+{% block extra_scripts %}
+<script>
+  const TABLE_ID = "{{ table.id }}";
+
+  function cohortFunnelApp() {
+    return {
+      tab: 'cohort',
+
+      /* ── Cohort state ───────────────────────────────────────────────── */
+      cohort: {
+        userField: '',
+        dateField: 'created_at',
+        period: 'week',
+        periods: 8,
+        loading: false,
+        error: '',
+        result: null,
+        showAbsolute: false,
+      },
+
+      /* ── Funnel state ───────────────────────────────────────────────── */
+      funnel: {
+        userField: '',
+        ordered: true,
+        loading: false,
+        error: '',
+        result: null,
+        steps: [
+          { name: 'Step 1', filters: [{ field: '', operator: 'eq', value: '' }] },
+          { name: 'Step 2', filters: [{ field: '', operator: 'eq', value: '' }] },
+        ],
+      },
+
+      /* ── Cohort helpers ─────────────────────────────────────────────── */
+      cohortCellColor(pct) {
+        // Blue gradient: transparent → deep blue
+        const intensity = Math.round((pct / 100) * 255);
+        return pct === 0
+          ? '#f9fafb'
+          : `rgb(${255 - Math.round(intensity * 0.6)}, ${255 - Math.round(intensity * 0.4)}, 255)`;
+      },
+
+      async runCohort() {
+        this.cohort.loading = true;
+        this.cohort.error = '';
+        this.cohort.result = null;
+        try {
+          const resp = await fetch(`/api/v1/tables/${TABLE_ID}/cohort-analysis/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: JSON.stringify({
+              user_field:       this.cohort.userField,
+              event_date_field: this.cohort.dateField || 'created_at',
+              period:           this.cohort.period,
+              periods:          this.cohort.periods,
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            this.cohort.error = data.error || 'An error occurred';
+          } else {
+            this.cohort.result = data;
+          }
+        } catch (e) {
+          this.cohort.error = e.message;
+        } finally {
+          this.cohort.loading = false;
+        }
+      },
+
+      /* ── Funnel helpers ─────────────────────────────────────────────── */
+      addStep() {
+        this.funnel.steps.push({
+          name: `Step ${this.funnel.steps.length + 1}`,
+          filters: [{ field: '', operator: 'eq', value: '' }],
+        });
+      },
+
+      removeStep(i) {
+        this.funnel.steps.splice(i, 1);
+      },
+
+      async runFunnel() {
+        this.funnel.loading = true;
+        this.funnel.error = '';
+        this.funnel.result = null;
+        // Clean up empty filters
+        const steps = this.funnel.steps.map(s => ({
+          name: s.name,
+          filters: s.filters.filter(f => f.field && f.value !== ''),
+        }));
+        try {
+          const resp = await fetch(`/api/v1/tables/${TABLE_ID}/funnel-analysis/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: JSON.stringify({
+              user_field: this.funnel.userField || undefined,
+              ordered:    this.funnel.ordered,
+              steps,
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            this.funnel.error = data.error || 'An error occurred';
+          } else {
+            this.funnel.result = data;
+          }
+        } catch (e) {
+          this.funnel.error = e.message;
+        } finally {
+          this.funnel.loading = false;
+        }
+      },
+    };
+  }
+
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(^|;\\s*)' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[2]) : '';
+  }
+</script>
+{% endblock %}
