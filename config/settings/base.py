@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from decouple import config
-import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().resolve().parent.parent
@@ -48,6 +47,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.linkedin_oauth2',
     'rest_framework',
     'rest_framework.authtoken',
+    'drf_spectacular',
 
     # Local apps
     'apps.core',
@@ -63,6 +63,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Must be first — starts request timer for Prometheus latency histograms
+    'apps.core.middleware.PrometheusMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -343,6 +345,45 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     'socket_timeout': 10,
 }
 
+# ── Celery Beat Schedule ────────────────────────────────────────────────────
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    # Purge AuditLog rows older than AUDIT_LOG_RETENTION_DAYS (default 90 days)
+    # Runs daily at 02:30 UTC to avoid peak hours.
+    'prune-audit-logs-daily': {
+        'task':     'dashboards.prune_audit_logs',
+        'schedule': crontab(hour=2, minute=30),
+    },
+    # Evaluate DataAlerts every 15 minutes
+    'check-data-alerts': {
+        'task':     'dashboards.check_data_alerts',
+        'schedule': crontab(minute='*/15'),
+    },
+    # Advance dunning sequence for past_due subscriptions and downgrade
+    # workspaces whose grace period has expired. Runs daily at 08:00 UTC so
+    # owners receive reminder emails at a reasonable hour.
+    'process-grace-periods-daily': {
+        'task':     'subscriptions.process_grace_periods',
+        'schedule': crontab(hour=8, minute=0),
+    },
+    # Evaluate ReportSchedule records and fire delivery for any that are due.
+    # Runs every 15 minutes — max schedule latency is therefore 15 minutes.
+    'process-report-schedules': {
+        'task':     'apps.reports.tasks.process_report_schedules',
+        'schedule': crontab(minute='*/15'),
+    },
+    # Run statistical anomaly detection across all active workspaces.
+    # Fires daily at 03:00 UTC — results are ready before the working day starts.
+    'auto-anomaly-detection-daily': {
+        'task':     'insights.auto_trigger_anomaly_detection',
+        'schedule': crontab(hour=3, minute=0),
+    },
+}
+
+# Retention days for AuditLog (overridable per-environment)
+AUDIT_LOG_RETENTION_DAYS = config('AUDIT_LOG_RETENTION_DAYS', default=90, cast=int)
+
 # Channel layers (using Redis)
 CHANNEL_LAYERS = {
     'default': {
@@ -363,6 +404,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
@@ -382,6 +424,29 @@ REST_FRAMEWORK = {
     }
 }
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'AnalyticsMeta API',
+    'DESCRIPTION': (
+        'REST API for AnalyticsMeta — a multi-tenant BI SaaS platform. '
+        'All endpoints require Token authentication unless noted.'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+    },
+}
+
+# ── Stripe ──────────────────────────────────────────────────────────────────
+# All three default to '' so development works without Stripe keys.
+# In production, set real values via environment variables.
+# STRIPE_WEBHOOK_SECRET is required for signature verification — if left
+# empty the webhook handler will log a warning and skip verification (dev only).
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_SECRET_KEY      = config('STRIPE_SECRET_KEY',      default='')
+STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET',  default='')
+
 # Session configuration - use Redis for sessions in production
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
@@ -399,6 +464,24 @@ QUERY_ENGINE_PROFILE_SAMPLE = int(config('QUERY_ENGINE_PROFILE_SAMPLE', default=
 IMPORT_BATCH_SIZE = int(config('IMPORT_BATCH_SIZE', default=200))
 # How long (seconds) widget query results are cached in Redis
 WIDGET_CACHE_TTL = int(config('WIDGET_CACHE_TTL', default=300))
+# Maximum file size (bytes) accepted by the import endpoint — default 50 MB
+MAX_IMPORT_FILE_BYTES = int(config('MAX_IMPORT_FILE_BYTES', default=50 * 1024 * 1024))
+# Django core upload limits — prevents request body DOS before Django processes the file
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_IMPORT_FILE_BYTES   # files above this go to temp disk
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_IMPORT_FILE_BYTES   # max request body size
+
+# ============================================================================
+# LLM / AI SETTINGS
+# ============================================================================
+# Anthropic API key — required for LLM-enhanced insights (optional feature)
+ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
+# Claude model to use for insight narratives
+CLAUDE_INSIGHT_MODEL = config('CLAUDE_INSIGHT_MODEL', default='claude-sonnet-4-6')
+# Monthly token budget per workspace (input + output combined).
+# Set to 0 to disable LLM insights entirely.
+LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET = int(
+    config('LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET', default=100_000)
+)
 
 # ============================================================================
 # WEBSOCKET / CHANNELS TUNING
@@ -408,6 +491,8 @@ WS_RATE_LIMIT_WINDOW   = int(config('WS_RATE_LIMIT_WINDOW',   default=10))   # s
 WS_RATE_LIMIT_MAX_MSGS = int(config('WS_RATE_LIMIT_MAX_MSGS', default=30))   # per window
 # Idle timeout — server closes connection after this many seconds with no ping
 WS_HEARTBEAT_TIMEOUT   = int(config('WS_HEARTBEAT_TIMEOUT',   default=90))   # seconds
+# Max simultaneous WebSocket connections per authenticated user (all consumer types combined)
+WS_MAX_CONNECTIONS_PER_USER = int(config('WS_MAX_CONNECTIONS_PER_USER', default=10))
 
 # ============================================================================
 # LOGGING CONFIGURATION
@@ -462,3 +547,74 @@ LOGGING = {
         },
     },
 }
+
+# ── Structlog — structured JSON logging ────────────────────────────────────
+import structlog  # noqa: E402
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt='iso'),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+# ── Sentry — error tracking (opt-in via SENTRY_DSN env var) ───────────────
+SENTRY_DSN = config('SENTRY_DSN', default='')
+
+if SENTRY_DSN:
+    import sentry_sdk  # noqa: E402
+    from sentry_sdk.integrations.django import DjangoIntegration  # noqa: E402
+    from sentry_sdk.integrations.celery import CeleryIntegration  # noqa: E402
+    from sentry_sdk.integrations.redis import RedisIntegration    # noqa: E402
+    from sentry_sdk.integrations.logging import LoggingIntegration # noqa: E402
+    import logging as _logging  # noqa: E402
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(
+                transaction_style='url',
+                http_methods_to_capture=('GET', 'POST', 'PUT', 'PATCH', 'DELETE'),
+            ),
+            CeleryIntegration(monitor_beat_tasks=True),
+            RedisIntegration(),
+            LoggingIntegration(
+                level=_logging.INFO,        # breadcrumbs from INFO+
+                event_level=_logging.ERROR, # errors from ERROR+ only
+            ),
+        ],
+        # Capture 5% of transactions for performance monitoring (adjust in prod)
+        traces_sample_rate=config('SENTRY_TRACES_SAMPLE_RATE', default=0.05, cast=float),
+        # Release tag — populated by CI via GIT_COMMIT env var
+        release=config('GIT_COMMIT', default=None),
+        environment=config('DJANGO_ENV', default='development'),
+        send_default_pii=False,  # GDPR: do not send user IP / email to Sentry
+    )
+
+# ── Prometheus ─────────────────────────────────────────────────────────────
+# Custom PrometheusMiddleware in apps.core.middleware instruments HTTP requests.
+# Celery task metrics are wired via signal handlers in apps.core.metrics.
+# The /metrics endpoint is served by apps.core.views.metrics_view.
+# ── SAML 2.0 SP credentials ────────────────────────────────────────────────
+# Optional: provide a self-signed or CA-issued certificate + private key for
+# signing AuthnRequests and SP metadata.  Leave blank for development; the
+# IdP will not require request signing in most dev setups.
+#
+# In production, generate with:
+#   openssl req -x509 -newkey rsa:2048 -keyout saml.key -out saml.crt \
+#       -days 3650 -nodes -subj "/CN=analyticsmeta-sp"
+# Then set SAML_SP_CERT / SAML_SP_KEY in your .env to the base64 body
+# (without PEM headers) of saml.crt / saml.key respectively.
+SAML_SP_CERT = config('SAML_SP_CERT', default='')
+SAML_SP_KEY  = config('SAML_SP_KEY',  default='')

@@ -42,25 +42,20 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ---
 
-### [ ] 2. Real AI/LLM Integration for Insights
-**Status:** Not Started  
-**Impact:** The "AI insights" feature is currently statistical heuristics only — no LLM is called anywhere. This is the main differentiator vs. Metabase/Redash.  
+### [x] 2. Real AI/LLM Integration for Insights
+**Status:** Done (2026-04-11)  
+**Impact:** The "AI insights" feature now calls Claude (`claude-sonnet-4-6`) to produce plain-English narratives alongside statistical analysis. This is the main differentiator vs. Metabase/Redash.  
 **Effort:** Medium
 
-**What to build:**
-- Wire Anthropic Claude (`claude-sonnet-4-6`) to `analyze_workspace_tables()` Celery task
-- Generate plain-English narrative per table: "Your sales grew 23% last month, driven mainly by Nairobi region..."
-- Natural language query interface: user types "show me monthly revenue by region" → auto-generates widget config
-- Anomaly explanations in natural language (currently just a flag in DB)
-- Cost guardrails: token counting + per-workspace monthly LLM budget cap
+**What was built:**
+- `apps/insights/llm.py` — `ClaudeInsightGenerator` wraps the Anthropic SDK; gracefully disabled when `ANTHROPIC_API_KEY` is empty (falls back to heuristic descriptions)
+- `WorkspaceLLMBudget` — per-workspace monthly token cap enforced before each API call; configurable via `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` env var (default: 100,000 tokens)
+- `apps/insights/tasks.py` — statistical analysis runs first; LLM narrative generated from the stats dict; both stored on `Insight`
+- `apps/insights/models.py` — migration `0002_llm_fields` adds `llm_model`, `prompt_tokens`, `completion_tokens` fields
+- `config/settings/base.py` — `ANTHROPIC_API_KEY` and `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` settings
+- 455-line test suite in `apps/insights/tests.py` covers LLM path, fallback path, and budget enforcement
 
-**Files to touch:**
-- `apps/insights/tasks.py` — replace heuristic blocks with LLM calls
-- New: `apps/insights/llm.py` — Claude client wrapper, prompt templates
-- `apps/insights/models.py` — add `llm_model`, `prompt_tokens`, `completion_tokens` fields
-- `.env` — add `ANTHROPIC_API_KEY`
-
-**API:** Use `anthropic` Python SDK, model `claude-sonnet-4-6`
+**Docs:** [docs/ai-insights.md](docs/ai-insights.md)
 
 ---
 
@@ -85,8 +80,8 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ## P1 — Core Product Quality
 
-### [ ] 4. Public Dashboard Viewer
-**Status:** Not Started  
+### [x] 4. Public Dashboard Viewer
+**Status:** Done (2026-04-11)  
 **Impact:** `public_uuid` field exists on Dashboard but there is no public-facing URL — sharing with stakeholders who don't have accounts is impossible.  
 **Effort:** Low
 
@@ -103,21 +98,19 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ---
 
-### [ ] 5. Data Alerts & Threshold Notifications
-**Status:** Not Started  
+### [x] 5. Data Alerts & Threshold Notifications
+**Status:** Done (2026-04-12)  
 **Impact:** Core pain point — business owners don't want to check dashboards, they want to be notified when something goes wrong.  
 **Effort:** Medium
 
-**What to build:**
-- `Alert` model: workspace, widget, condition (`gt`/`lt`/`eq`/`pct_change`), threshold value, delivery channels (email, WhatsApp, in-app), last_triggered_at
-- Celery beat task runs every 15 min, evaluates all active alerts
-- Trigger `Notification.notify()` + email when threshold crossed
-- UI: "Add Alert" button on each metric/number widget
+**What was built:**
+- `DataAlert` model in `apps/dashboards/models.py`: workspace-scoped, targets a field + aggregate + operator + threshold with configurable cooldown
+- `check_data_alerts` Celery beat task in `apps/dashboards/tasks.py` runs every 15 min, fires `Notification` for all workspace members when triggered, respects `cooldown_minutes`
+- `DataAlertSerializer` + full CRUD API: `GET/POST /api/v1/workspaces/<uuid>/alerts/`, `GET/PATCH/DELETE /api/v1/alerts/<uuid>/`
+- Migration `0006_dataalert_webhookendpoint` creates the table
+- 13 tests covering model logic and API endpoints
 
-**Files to touch:**
-- New: `apps/alerts/` app (models, views, tasks, urls)
-- `apps/dashboards/widgets.py` — add "Add Alert" action
-- `config/settings/base.py` — register new app + Celery beat schedule
+**Docs:** [docs/data-alerts.md](docs/data-alerts.md)
 
 ---
 
@@ -143,22 +136,20 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ## P2 — Enterprise & Integration Features
 
-### [ ] 7. Webhook Data Ingestion Endpoint
-**Status:** Not Started  
-**Impact:** Users currently must manually upload CSV/Excel. A push endpoint enables real-time data from any system.  
+### [x] 7. Webhook Data Ingestion Endpoint
+**Status:** Done (2026-04-12)  
+**Impact:** Users can now push data from any external system (Zapier, Make, custom scripts) in real time without uploading CSV.  
 **Effort:** Medium
 
-**What to build:**
-- `POST /api/v1/tables/<id>/ingest/` — accepts JSON array of records
-- API key authentication (not session auth) so external systems can push data
-- Schema validation against existing table columns
-- Rate limited + payload size limited (max 1000 records per call)
-- Zapier/Make webhook trigger documentation
+**What was built:**
+- `WebhookEndpoint` model in `apps/dashboards/models.py`: per-workspace, per-table, with a 64-char random token and HMAC-SHA256 signing secret
+- Public `WebhookIngestView` at `POST /webhook/ingest/<token>/` — no auth required; verified via `X-Hub-Signature-256` header; accepts JSON object (single record) or JSON array (up to 1000 records); updates `total_requests` and `last_request_at` atomically
+- Full CRUD API: `GET/POST /api/v1/workspaces/<uuid>/webhooks/`, `GET/PATCH/DELETE /api/v1/webhooks/<uuid>/`, `POST /api/v1/webhooks/<uuid>/regenerate-secret/`
+- Inactive endpoints return HTTP 404; bad/missing HMAC returns HTTP 401
+- Migration `0006_dataalert_webhookendpoint` creates the table
+- 10 tests covering HMAC validation, array payloads, telemetry, and lifecycle
 
-**Files to touch:**
-- `apps/dashboards/urls_api_v1.py` — new ingest endpoint
-- `apps/dashboards/views_api.py` — `IngestRecordsAPIView`
-- `apps/workspaces/models.py` — `WorkspaceAPIKey` model
+**Docs:** [docs/webhooks.md](docs/webhooks.md)
 
 ---
 
@@ -182,39 +173,35 @@ Mark status as `[x]` when done, `[~]` when in progress.
 
 ---
 
-### [ ] 9. Audit Log UI
-**Status:** Not Started (immutable `AuditLog` model exists in DB)  
+### [x] 9. Audit Log API
+**Status:** Done (2026-04-12) — REST API layer complete; HTML UI still pending  
 **Impact:** Enterprise and compliance buyers require visibility into who did what and when.  
 **Effort:** Low
 
-**What to build:**
-- `/dashboard/workspace/activity/` — filterable, paginated audit log table
-- Filters: date range, user, action type (create/update/delete/export/share)
-- Export audit log as CSV
-- Show in workspace settings sidebar
+**What was built:**
+- `AuditLogListAPIView` at `GET /api/v1/workspaces/<uuid>/audit-logs/`
+- Access restricted to workspace owners and admins (`CanManageWorkspace` permission)
+- Filterable by `?action=create|update|delete|view|export|share` and `?content_type=DataTable|Dashboard|...`
+- Paginated (default 50, max 200 per page)
+- Returns `user_email`, `action`, `content_type`, `object_repr`, `changes`, `ip_address`, `timestamp`
+- 4 tests covering list, filtering, and role-based access
 
-**Files to touch:**
-- `apps/workspaces/views.py` — `AuditLogListView`
-- `apps/workspaces/urls.py` — add activity URL
-- New template: `templates/workspaces/activity.html`
+**Still outstanding:** HTML template at `/dashboard/workspace/activity/` — see [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md)
 
 ---
 
-### [ ] 10. Workspace Usage Analytics
-**Status:** Not Started  
-**Impact:** Users need to track their own usage against plan limits (tables used, records imported, team seats).  
+### [x] 10. Workspace Usage Analytics
+**Status:** Done (2026-04-12) — REST API complete; billing page UI still pending  
+**Impact:** Users can track their own usage against plan limits via the API.  
 **Effort:** Low
 
-**What to build:**
-- Usage summary card on billing page: tables X/20, records X/10,000, team members X/5
-- Monthly usage chart: records imported per day (from `AuditLog`)
-- Popular dashboards: view count from AuditLog VIEW events
-- API endpoint: `GET /api/v1/workspaces/<id>/usage/`
+**What was built:**
+- `WorkspaceUsageAPIView` at `GET /api/v1/workspaces/<uuid>/usage/`
+- Returns: `total_tables`, `total_records`, `estimated_storage_mb`, `member_count`, `insight_count`, `recent_import`
+- Accessible to all workspace members
+- 3 tests covering aggregation correctness
 
-**Files to touch:**
-- `apps/subscriptions/views.py` — add usage stats to billing context
-- `apps/dashboards/urls_api_v1.py` — new usage endpoint
-- `templates/subscriptions/billing.html` — usage cards
+**Still outstanding:** Usage cards on the billing page template — see [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md)
 
 ---
 
@@ -302,15 +289,15 @@ Mark status as `[x]` when done, `[~]` when in progress.
 | # | Feature | Priority | Status | Effort |
 |---|---------|----------|--------|--------|
 | 1 | Onboarding wizard + sample data | P0 | Done | Medium |
-| 2 | Real AI/LLM integration | P0 | Not Started | Medium |
+| 2 | Real AI/LLM integration | P0 | Done | Medium |
 | 3 | Email notifications | P0 | Done | Low |
-| 4 | Public dashboard viewer | P1 | Not Started | Low |
-| 5 | Data alerts & thresholds | P1 | Not Started | Medium |
-| 6 | Test suite (70% coverage) | P1 | Not Started | High |
-| 7 | Webhook data ingestion | P2 | Not Started | Medium |
+| 4 | Public dashboard viewer | P1 | Done | Low |
+| 5 | Data alerts & thresholds | P1 | Done | Medium |
+| 6 | Test suite (70% coverage) | P1 | Done | High |
+| 7 | Webhook data ingestion | P2 | Done | Medium |
 | 8 | PDF report renderer | P2 | Not Started | Medium |
-| 9 | Audit log UI | P2 | Not Started | Low |
-| 10 | Workspace usage analytics | P2 | Not Started | Low |
+| 9 | Audit log API (UI pending) | P2 | In Progress | Low |
+| 10 | Workspace usage analytics (UI pending) | P2 | In Progress | Low |
 | 11 | OpenAPI / Swagger docs | P3 | Not Started | Low |
 | 12 | WhatsApp alerts | P3 | Not Started | Medium |
 | 13 | Complete Stripe integration | P3 | Not Started | High |

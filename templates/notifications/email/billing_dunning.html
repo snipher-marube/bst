@@ -1,0 +1,57 @@
+{% extends 'notifications/email/base.html' %}
+
+{% block icon_bg %}#ef4444{% endblock %}
+{% block icon_emoji %}⚠️{% endblock %}
+{% block heading %}Payment {{ stage_label }}{% endblock %}
+{% block subheading %}Action required for {{ workspace_name }}{% endblock %}
+{% block cta_label %}Update Payment Method{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+  {% if stage == 0 %}
+    A recent payment for your <strong>{{ plan_name }}</strong> plan on
+    <strong>{{ workspace_name }}</strong> was unsuccessful.
+  {% elif stage == 1 %}
+    This is a reminder that your payment for <strong>{{ workspace_name }}</strong>
+    is still outstanding. Your access will be restricted in
+    <strong>{{ days_remaining }} day{{ days_remaining|pluralize }}</strong> if
+    this is not resolved.
+  {% else %}
+    <strong>Final notice:</strong> Your grace period for
+    <strong>{{ workspace_name }}</strong> expires tomorrow. After that, your
+    workspace will be downgraded to the free plan and some data may become
+    inaccessible.
+  {% endif %}
+</p>
+
+<table width="100%" cellpadding="0" cellspacing="0"
+       style="background-color:#fef2f2;border-radius:8px;border:1px solid #fecaca;margin:0 0 20px;">
+  <tr>
+    <td style="padding:16px 20px;">
+      <p style="margin:0 0 8px;color:#dc2626;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
+        Grace period status
+      </p>
+      <p style="margin:0;color:#374151;font-size:14px;line-height:1.5;">
+        Your workspace will be downgraded on
+        <strong>{{ grace_ends_display }}</strong>
+        {% if days_remaining > 0 %}
+          &mdash; <strong>{{ days_remaining }} day{{ days_remaining|pluralize }} remaining</strong>.
+        {% else %}
+          &mdash; <strong>today</strong>.
+        {% endif %}
+      </p>
+    </td>
+  </tr>
+</table>
+
+<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+  To keep your <strong>{{ plan_name }}</strong> plan, please update your
+  payment method or make a new payment from your billing settings.
+</p>
+
+<p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">
+  If you believe this is an error, please contact us at
+  <a href="mailto:support@analyticsmeta.com"
+     style="color:#f68712;text-decoration:none;">support@analyticsmeta.com</a>.
+</p>
+{% endblock %}

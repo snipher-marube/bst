@@ -32,9 +32,13 @@ when we need the limits to create/refresh a Plan row).
 """
 
 import uuid
+from datetime import timedelta
+
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.db.models import JSONField
+from django.utils import timezone
+
 from apps.workspaces.models import Workspace
 
 User = get_user_model()
@@ -204,6 +208,22 @@ class Subscription(models.Model):
     current_period_end     = models.DateTimeField(null=True, blank=True)
     cancelled_at           = models.DateTimeField(null=True, blank=True)
 
+    # Grace period — set when a payment fails to give the user 7 days to pay
+    # before the workspace is downgraded to the free tier.
+    grace_period_ends_at = models.DateTimeField(null=True, blank=True)
+
+    # Tracks which dunning emails have been sent so the daily task can
+    # advance through the sequence without re-sending:
+    #   0 = day-0 email sent (initial failure notice)
+    #   1 = day-3 reminder sent
+    #   2 = day-7 final warning sent
+    #   3 = grace expired and workspace downgraded
+    DUNNING_INITIAL  = 0
+    DUNNING_DAY3     = 1
+    DUNNING_DAY7     = 2
+    DUNNING_EXPIRED  = 3
+    dunning_stage = models.SmallIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -215,6 +235,40 @@ class Subscription(models.Model):
     def __str__(self) -> str:
         plan_name = self.plan.name if self.plan else 'Free'
         return f"{self.workspace.name} – {plan_name} ({self.status})"
+
+    GRACE_PERIOD_DAYS = 7
+
+    def start_grace_period(self) -> None:
+        """
+        Mark the subscription ``'past_due'`` and open a 7-day grace window.
+
+        Called when Stripe reports a failed invoice payment.  The workspace
+        remains fully accessible during the grace period so the owner has time
+        to update their card.  A dunning email sequence (day 0 → 3 → 7) is
+        driven by the ``process_grace_periods`` Celery Beat task.
+
+        Idempotent — if a grace period is already open this is a no-op so that
+        multiple ``invoice.payment_failed`` events from Stripe don't reset the
+        countdown.
+        """
+        if self.grace_period_ends_at is not None:
+            return  # grace already started — don't reset the clock
+        self.status              = 'past_due'
+        self.grace_period_ends_at = timezone.now() + timedelta(days=self.GRACE_PERIOD_DAYS)
+        self.dunning_stage       = self.DUNNING_INITIAL
+        self.save(update_fields=['status', 'grace_period_ends_at', 'dunning_stage'])
+
+    def clear_grace_period(self) -> None:
+        """
+        Restore the subscription to ``'active'`` and cancel any open grace period.
+
+        Called when Stripe confirms that a previously failed invoice was
+        eventually paid (``invoice.paid`` / ``invoice.payment_succeeded``).
+        """
+        self.status               = 'active'
+        self.grace_period_ends_at = None
+        self.dunning_stage        = self.DUNNING_INITIAL
+        self.save(update_fields=['status', 'grace_period_ends_at', 'dunning_stage'])
 
     def apply_plan_limits(self) -> None:
         """

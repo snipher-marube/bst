@@ -7,6 +7,64 @@
 {% block mobile_menu %}{% endblock %}
 {% block cookie_banner %}{% endblock %}
 {% block main_class %}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+
+{# ── PWA + mobile meta tags ─────────────────────────────────────────────── #}
+{% block extra_head %}
+{# Apple PWA — allows "Add to Home Screen" on iOS #}
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AnalyticsMeta">
+<meta name="mobile-web-app-capable" content="yes">
+{# Theme colour — browser chrome matches our brand on Android #}
+<meta name="theme-color" content="#03466e">
+{# PWA manifest #}
+<link rel="manifest" href="{% static 'manifest.json' %}">
+
+{# Register service worker for offline + caching #}
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('{% static "js/service-worker.js" %}', { scope: '/' })
+      .catch((err) => console.warn('SW registration failed:', err));
+  });
+}
+</script>
+
+{# ── Mobile responsive overrides for the dashboard grid ──────────────────── #}
+<style>
+  /* On small screens the sidebar overlays content (already handled by Alpine),
+     but we also need the widget grid to reflow gracefully. */
+  @media (max-width: 640px) {
+    /* Prevent horizontal overflow on widget titles */
+    .widget-header h3 { font-size: .75rem; }
+
+    /* Stack gridstack items vertically on mobile */
+    .grid-stack > .grid-stack-item {
+      position: static !important;
+      width: 100% !important;
+      margin-bottom: .75rem;
+    }
+    .grid-stack > .grid-stack-item > .grid-stack-item-content {
+      position: static !important;
+      height: auto !important;
+      min-height: 220px;
+    }
+
+    /* Hide resize handles — touch UI has no resize */
+    .ui-resizable-handle { display: none !important; }
+
+    /* Tighten spacing */
+    .p-4.sm\:p-6 { padding: .75rem !important; }
+  }
+
+  /* Touch-friendly tap targets in the topbar */
+  @media (hover: none) {
+    .widget-actions { opacity: 1 !important; }  /* Always visible on touch */
+  }
+</style>
+{% endblock %}
 
 {# ── dashboard shell ────────────────────────────────────────────────────── #}
 {% block content %}
@@ -78,14 +136,14 @@
         {% if stats.tables %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full">{{ stats.tables }}</span>{% endif %}
       </a>
 
-      <a href="{% if insights_dashboard %}{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}{% else %}{% url 'dashboard:home' %}{% endif %}"
+      <a href="{% url 'dashboard:home' %}#dashboards"
          class="nav-link {% if 'dashboard' in url_name and url_name != 'home' %}active{% endif %}">
         <i class="fas fa-chart-pie w-5 text-center"></i>
         <span>Dashboards</span>
       </a>
 
-      <div class="pt-3 pb-1">
-        <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Workspace</p>
+      <div class="pt-4 pb-1">
+        <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Team</p>
       </div>
 
       <a href="{% url 'dashboard:members' %}"
@@ -101,6 +159,22 @@
         {% if unread_notifications_count > 0 %}
         <span class="ml-auto text-[11px] font-bold bg-[#f68712] px-1.5 py-0.5 rounded-full">{{ unread_notifications_count }}</span>
         {% endif %}
+      </a>
+
+      <div class="pt-4 pb-1">
+        <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Integrations</p>
+      </div>
+
+      <a href="{% url 'dashboard:integrations' %}"
+         class="nav-link {% if url_name == 'integrations' or url_name == 'google_sheets_connect' %}active{% endif %}">
+        <i class="fas fa-plug w-5 text-center"></i>
+        <span>Data Sources</span>
+      </a>
+
+      <a href="{% url 'dashboard:sso_settings' %}"
+         class="nav-link {% if url_name == 'sso_settings' %}active{% endif %}">
+        <i class="fas fa-id-badge w-5 text-center"></i>
+        <span>SSO / SAML</span>
       </a>
       {% endwith %}
     </nav>
@@ -162,6 +236,15 @@
       <div class="flex items-center gap-2 shrink-0">
         {# page-level actions slot #}
         {% block topbar_actions %}{% endblock %}
+
+        {# dark mode toggle — vanilla JS to avoid Alpine scope issues #}
+        <button id="theme-toggle-btn"
+                onclick="AMTheme.toggle()"
+                class="theme-toggle"
+                aria-label="Toggle dark mode"
+                title="Toggle dark mode">
+          <i id="theme-icon" class="fas fa-moon text-sm"></i>
+        </button>
 
         {# notification bell #}
         <a href="{% url 'dashboard:activity' %}"

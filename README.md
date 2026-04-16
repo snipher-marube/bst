@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-6.0-092E20?logo=django&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white)
+![Tests](https://github.com/snipher-marube/analyticsmeta/actions/workflows/tests.yml/badge.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -48,10 +49,16 @@ AnalyticsMeta lets any business owner define their own data schema — no SQL, n
 |---|---|
 | Custom data tables | JSON-schema columns, 10 typed field kinds |
 | Live dashboards | Auto-generated on table creation (KPI cards, charts, gauges) |
-| AI insights | Trend / anomaly / prediction / summary via Celery tasks |
+| AI insights | Plain-English narratives powered by Claude (`claude-sonnet-4-6`) via Celery |
+| Public dashboard sharing | Shareable read-only URL (`/d/<uuid>/`) — no login required |
 | Real-time collaboration | Django Channels + Redis WebSocket push |
+| Data alerts | Threshold-based notifications via Celery beat (every 15 min) |
+| Webhook ingestion | Push JSON records from any external system via HMAC-signed endpoint |
+| Audit log | Immutable record of every create/update/delete/export action |
+| Usage analytics | Per-workspace counts — tables, records, storage, members, insights |
 | Exports & reports | CSV, Excel, and PDF via ReportLab |
 | Billing | M-Pesa STK Push (Safaricom Daraja) — KES-denominated plans |
+| PWA | Installable Progressive Web App with offline support via Service Worker |
 
 ---
 
@@ -62,11 +69,18 @@ Extended documentation lives in the [`docs/`](docs/) folder.
 | Topic | File | Status |
 |---|---|---|
 | API authentication & token examples | [docs/api-authentication.md](docs/api-authentication.md) | Complete |
-| WebSocket events reference | [docs/websockets.md](docs/websockets.md) | Complete |
+| OpenAPI schema & Swagger UI setup | [docs/openapi-schema.md](docs/openapi-schema.md) | Complete |
+| WebSocket events, limits & heartbeat | [docs/websockets.md](docs/websockets.md) | Complete |
 | Widget `query_config` & `viz_config` | [docs/widget-configuration.md](docs/widget-configuration.md) | Complete |
+| AI insights — LLM integration & budget | [docs/ai-insights.md](docs/ai-insights.md) | Complete |
+| Data alerts — thresholds & notifications | [docs/data-alerts.md](docs/data-alerts.md) | Complete |
+| Webhook ingestion — HMAC, payload format | [docs/webhooks.md](docs/webhooks.md) | Complete |
 | Google & LinkedIn OAuth setup | [docs/oauth-setup.md](docs/oauth-setup.md) | Complete |
 | Render.com deployment guide | [docs/render-deployment.md](docs/render-deployment.md) | Complete |
 | Dashboard performance bottlenecks | [docs/DASHBOARD_BOTTLENECKS.md](docs/DASHBOARD_BOTTLENECKS.md) | Complete |
+| Testing strategy & patterns | [docs/testing.md](docs/testing.md) | Complete |
+| Frontend patterns (Alpine.js + HTMX) | [docs/frontend-patterns.md](docs/frontend-patterns.md) | Complete |
+| Newsletter system operations | [NEWSLETTER.md](NEWSLETTER.md) | Complete |
 | Open documentation gaps | [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md) | Living document |
 
 > New contributors should read **[docs/api-authentication.md](docs/api-authentication.md)** and **[docs/websockets.md](docs/websockets.md)** before touching the backend, and **[docs/widget-configuration.md](docs/widget-configuration.md)** before touching dashboards.
@@ -86,6 +100,7 @@ Extended documentation lives in the [`docs/`](docs/) folder.
 | Redis | 7 | Message broker + cache + channel layer |
 | PostgreSQL | 18 | Primary database (psycopg 3) |
 | Django Allauth | 65.x | Auth + Google / LinkedIn OAuth2 |
+| anthropic | latest | Claude LLM API — AI-powered insights narratives |
 | requests | 2.32+ | M-Pesa Daraja API calls |
 | Pandas | latest | CSV / Excel import and export |
 | ReportLab | latest | PDF report generation |
@@ -325,6 +340,13 @@ MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
 # Must be a publicly reachable HTTPS URL — use ngrok for local testing
 MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok.io/subscriptions/mpesa/callback/
 
+# ── Anthropic / AI Insights ──────────────────────────────────────────────────
+# Required to enable LLM-powered insight narratives.
+# Leave empty to run in statistical-only mode (no Claude API calls).
+ANTHROPIC_API_KEY=
+# Optional — per-workspace monthly token cap (default: 100,000)
+LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET=100000
+
 # ── Stripe (stubbed, optional) ───────────────────────────────────────────────
 STRIPE_WEBHOOK_SECRET=
 ```
@@ -345,7 +367,8 @@ analyticsmeta/
 │   │                      #   ImportJob — plus REST API v1 views
 │   ├── exports/           # ExportJob — CSV, JSON, Excel async export
 │   ├── reports/           # ReportJob — async PDF generation via ReportLab
-│   ├── insights/          # Insight model, AI generation Celery tasks,
+│   ├── insights/          # Insight model, LLM-powered AI generation Celery tasks,
+│   │                      #   llm.py (ClaudeInsightGenerator + WorkspaceLLMBudget),
 │   │                      #   WebSocket consumer for live dashboard push
 │   ├── subscriptions/     # Plan, Subscription, MpesaTransaction,
 │   │                      #   MpesaService (Daraja), Stripe webhook stub
@@ -353,21 +376,24 @@ analyticsmeta/
 │
 ├── config/
 │   ├── settings/
-│   │   ├── base.py        # Shared settings (Channels, Celery, M-Pesa, email…)
+│   │   ├── base.py        # Shared settings (Channels, Celery, M-Pesa, LLM, email…)
 │   │   ├── development.py # DEBUG=True, Django Debug Toolbar, relaxed hosts
 │   │   └── production.py  # WhiteNoise, Sentry hook, secure cookies
 │   ├── asgi.py            # Daphne / Channels ASGI entry point
 │   ├── celery.py          # Celery app configuration
-│   ├── urls.py            # Root URL configuration
+│   ├── urls.py            # Root URL configuration (incl. /d/<uuid>/ public dashboard)
 │   └── wsgi.py
 │
 ├── templates/
 │   ├── base.html                       # Public marketing shell
 │   ├── account/                        # django-allauth overrides
+│   ├── core/
+│   │   └── offline.html               # PWA offline fallback page
 │   ├── includes/                       # header.html, footer.html, mobile-menu.html
 │   └── dashboard/
-│       ├── base_dashboard.html         # SaaS sidebar shell (Alpine.js)
+│       ├── base_dashboard.html         # SaaS sidebar shell (Alpine.js + PWA manifest)
 │       ├── index.html                  # Analytics home — recent activity, quick stats
+│       ├── public_dashboard.html       # Read-only public dashboard (/d/<uuid>/)
 │       ├── tables.html                 # Table list
 │       ├── table_detail.html           # Record list + import/export actions
 │       ├── table_form.html             # Create / edit table schema
@@ -381,7 +407,10 @@ analyticsmeta/
 │       ├── profile.html                # User profile management
 │       └── activity.html              # Audit log timeline
 │
-├── static/                # Source static files (CSS input, JS, images, video)
+├── static/
+│   ├── js/
+│   │   └── service-worker.js          # PWA service worker — offline + caching
+│   └── manifest.json                  # PWA web app manifest
 ├── staticfiles/           # Collected static (do not edit — gitignored)
 ├── docs/                  # Extended documentation (see Documentation Index above)
 │
@@ -439,6 +468,33 @@ PUT    /api/v1/dashboards/{id}/
 DELETE /api/v1/dashboards/{id}/
 ```
 
+### Widgets
+
+```
+GET    /api/v1/dashboards/{id}/widgets/
+POST   /api/v1/dashboards/{id}/widgets/
+GET    /api/v1/widgets/{id}/
+PUT    /api/v1/widgets/{id}/
+DELETE /api/v1/widgets/{id}/
+GET    /api/v1/widgets/{id}/data/        (execute query_config, returns chart data)
+```
+
+### AI Insights
+
+```
+GET    /api/v1/workspaces/{id}/insights/
+POST   /api/v1/workspaces/{id}/insights/generate/   (triggers Celery task)
+GET    /api/v1/insights/{id}/
+```
+
+### Public Dashboard (no auth required)
+
+```
+GET    /d/<public_uuid>/                 (read-only dashboard view — HTML)
+```
+
+Enable sharing from the dashboard settings panel. Set `is_public=True` and copy the link shown. Private and inactive dashboards return **404**.
+
 ### Auth
 
 ```
@@ -448,7 +504,7 @@ POST   /api/v1/auth/register/
 POST   /api/v1/auth/password/reset/
 ```
 
-> **Note:** An OpenAPI / Swagger schema (`drf-spectacular`) is tracked as an open item in [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
+> **Interactive docs:** Browse and test every endpoint at [`/api/v1/docs/`](http://localhost:8000/api/v1/docs/) (Swagger UI) or download the raw schema from [`/api/v1/schema/`](http://localhost:8000/api/v1/schema/). See [docs/openapi-schema.md](docs/openapi-schema.md) for setup and customisation details.
 
 ---
 
@@ -673,7 +729,7 @@ class DataTableTestCase(TestCase):
 - Use `self.client.force_login(user)` for authenticated view tests
 - Do not mock the database — use real SQLite in tests (the default Django test runner handles this)
 
-> Testing documentation is an open item — see [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
+> Full testing guide including pytest setup, factories, and coverage configuration: [docs/testing.md](docs/testing.md).
 
 ### Submitting a Pull Request
 
@@ -698,11 +754,10 @@ New to the codebase? These areas are well-documented and self-contained:
 
 | Area | What to do | Relevant files |
 |---|---|---|
-| OpenAPI schema | Add `drf-spectacular`, expose `/api/v1/schema/` and Swagger UI | `config/urls.py`, `pyproject.toml` |
-| Template tag docs | Write reference for `dashboard_filters.py` custom filter | `apps/dashboards/templatetags/` |
-| Test coverage | Add `TestCase` classes for `apps/workspaces/` views | `apps/workspaces/tests.py` |
-| Newsletter webhooks | Document bounce/complaint → `WebhookEvent` → Celery task flow | `apps/newsletter/`, `DOCUMENTATION_GAPS.md` |
-| Frontend patterns doc | Write `docs/frontend-patterns.md` covering Alpine.js store + HTMX conventions | any template |
+| Test coverage — workspaces | Add `TestCase` classes for `apps/workspaces/` views | `apps/workspaces/tests.py` |
+| Test coverage — subscriptions | Add `TestCase` classes for M-Pesa and billing views | `apps/subscriptions/tests.py` |
+| `@extend_schema` annotations | Add OpenAPI summaries to all API v1 views | `apps/dashboards/urls_api_v1.py` |
+| Auto-dashboard deep-dive | Write field-by-field reference for `generate_default_dashboard()` | `apps/dashboards/models.py`, `docs/widget-configuration.md` |
 
 > All open items are tracked in [DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md).
 
@@ -779,12 +834,23 @@ Planned features and open documentation tasks are tracked in two places:
 - **[DOCUMENTATION_GAPS.md](DOCUMENTATION_GAPS.md)** — documentation work remaining
 - **[GitHub Issues](https://github.com/snipher-marube/analyticsmeta/issues)** — feature requests and bugs
 
-Highest-priority items right now:
+### Recently shipped
 
-1. OpenAPI / Swagger schema via `drf-spectacular`
-2. Test coverage for `apps/workspaces/` and `apps/subscriptions/`
-3. Newsletter webhook (bounce/complaint) documentation
-4. Frontend patterns documentation (Alpine.js + HTMX conventions)
+| Feature | Branch | Notes |
+|---|---|---|
+| **AI-powered insights** | `fix` | Claude `claude-sonnet-4-6` generates plain-English narratives. See [docs/ai-insights.md](docs/ai-insights.md). |
+| **Public dashboard sharing** | `fix` | Read-only `/d/<uuid>/` URL — no login required. "Powered by AnalyticsMeta" footer. |
+| **Progressive Web App (PWA)** | `fix` | Installable app, offline fallback via Service Worker, web app manifest. |
+| **Idempotent CSV import** | `fix` | `ImportJob.file_hash` prevents duplicate imports of the same file. |
+| **Widget query validation** | `fix` | `Widget.clean()` validates `query_config` before saving — fails fast at the model layer. |
+
+### Up next
+
+1. Data alerts & threshold notifications (`apps/alerts/`)
+2. Webhook data ingestion endpoint (`POST /api/v1/tables/<id>/ingest/`)
+3. Audit log UI (`/dashboard/workspace/activity/`)
+4. Test coverage for `apps/workspaces/` and `apps/subscriptions/`
+5. Soft-delete / archive workflow for DataTables
 
 ---
 

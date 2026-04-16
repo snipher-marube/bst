@@ -99,7 +99,56 @@
     {% endwith %}
   </div>
 
-  <!-- 3. Share & API -->
+  <!-- 3. Integrations / Data Connectors -->
+  <div class="section-card">
+    <p class="section-title"><i class="fas fa-plug text-[var(--primary)]"></i> Data Connectors</p>
+    <p class="text-sm text-gray-500 mb-4">Connect external data sources to query live data directly in your dashboards.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+      {# Google Sheets #}
+      <a href="{% url 'dashboard:google_sheets_connect' %}"
+         class="flex items-center gap-3 p-3.5 rounded-xl border border-gray-200 hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 transition group">
+        <div class="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-lg bg-green-50 border border-green-100">
+          <svg class="w-5 h-5 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-700 group-hover:text-[var(--primary)]">Google Sheets</p>
+          <p class="text-xs text-gray-400 truncate">Query live spreadsheet data</p>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 group-hover:text-[var(--primary)] text-xs ml-auto"></i>
+      </a>
+
+      {# SSO / SAML #}
+      <a href="{% url 'dashboard:sso_settings' %}"
+         class="flex items-center gap-3 p-3.5 rounded-xl border border-gray-200 hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 transition group">
+        <div class="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-lg bg-purple-50 border border-purple-100">
+          <i class="fas fa-id-badge text-purple-500 text-sm"></i>
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-700 group-hover:text-[var(--primary)]">SAML SSO</p>
+          <p class="text-xs text-gray-400 truncate">Okta, Azure AD, Google Workspace</p>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 group-hover:text-[var(--primary)] text-xs ml-auto"></i>
+      </a>
+
+      {# PostgreSQL — link to API docs placeholder #}
+      <div class="flex items-center gap-3 p-3.5 rounded-xl border border-gray-200 bg-gray-50">
+        <div class="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-lg bg-blue-50 border border-blue-100">
+          <i class="fas fa-database text-blue-500 text-sm"></i>
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-600">PostgreSQL / MySQL</p>
+          <p class="text-xs text-gray-400 truncate">Via REST API — see docs</p>
+        </div>
+        <span class="text-[10px] bg-gray-200 text-gray-500 rounded-full px-2 py-0.5 ml-auto whitespace-nowrap">API</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 4. Share & API -->
   <div class="section-card">
     <p class="section-title"><i class="fas fa-share-alt text-purple-500"></i> Share & API</p>
     <div class="space-y-4">

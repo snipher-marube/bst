@@ -145,6 +145,139 @@
     {% endif %}
   </div>
 
+  {# ── AI Insights panel (workspace overview only) ──────────────────── #}
+  {% if ai_insights %}
+  <div class="px-4 sm:px-6 pt-5 pb-1">
+    <div x-data="{ open: true }" class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+      {# Panel header #}
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-50 cursor-pointer select-none"
+           @click="open = !open">
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:#f68712/10;background-color:rgba(246,135,18,.12)">
+            <i class="fas fa-magic text-xs" style="color:#f68712"></i>
+          </div>
+          <span class="text-sm font-semibold text-gray-800">AI Insights</span>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#03466e]/10 text-[#03466e]">
+            {{ ai_insights|length }}
+          </span>
+        </div>
+        <i class="fas text-gray-400 text-sm transition-transform duration-200"
+           :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </div>
+
+      {# Insight cards #}
+      <div x-show="open" x-collapse>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-5">
+          {% for insight in ai_insights %}
+          <div class="rounded-xl border p-4 flex flex-col gap-2
+            {% if insight.insight_type == 'anomaly' %}border-red-100 bg-red-50/40
+            {% elif insight.insight_type == 'trend' %}border-blue-100 bg-blue-50/40
+            {% elif insight.insight_type == 'comparison' %}border-purple-100 bg-purple-50/40
+            {% else %}border-gray-100 bg-gray-50/40{% endif %}">
+
+            {# Badge row #}
+            <div class="flex items-center justify-between">
+              <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full
+                {% if insight.insight_type == 'anomaly' %}bg-red-100 text-red-700
+                {% elif insight.insight_type == 'trend' %}bg-blue-100 text-blue-700
+                {% elif insight.insight_type == 'comparison' %}bg-purple-100 text-purple-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                <i class="fas
+                  {% if insight.insight_type == 'anomaly' %}fa-exclamation-triangle
+                  {% elif insight.insight_type == 'trend' %}fa-chart-line
+                  {% elif insight.insight_type == 'comparison' %}fa-balance-scale
+                  {% else %}fa-info-circle{% endif %} text-[9px]"></i>
+                {{ insight.get_insight_type_display }}
+              </span>
+              {% if insight.llm_model %}
+              <span class="text-[10px] text-gray-400 flex items-center gap-1">
+                <i class="fas fa-robot text-[9px]"></i> AI
+              </span>
+              {% endif %}
+            </div>
+
+            {# Title #}
+            <p class="text-xs font-semibold text-gray-800 leading-snug">{{ insight.title }}</p>
+
+            {# Narrative #}
+            <p class="text-xs text-gray-600 leading-relaxed flex-1">{{ insight.description }}</p>
+
+            {# Footer: table source + token count #}
+            <div class="flex items-center justify-between pt-1 border-t border-white/60">
+              {% if insight.source_table_name %}
+              <span class="text-[10px] text-gray-400">
+                <i class="fas fa-table text-[9px] mr-0.5"></i>{{ insight.source_table_name }}
+              </span>
+              {% else %}<span></span>{% endif %}
+              {% if insight.prompt_tokens %}
+              <span class="text-[10px] text-gray-300">
+                {{ insight.prompt_tokens|add:insight.completion_tokens }} tokens
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Dashboard Filter Bar ──────────────────────────────────────────── #}
+  <div id="filterBar"
+       x-data="filterBar()"
+       x-init="init()"
+       x-show="hasFilters"
+       class="bg-white border-b border-gray-100 px-4 sm:px-6 py-3">
+    <div class="flex flex-wrap items-end gap-3">
+
+      {# Dynamic filter controls – rendered by Alpine once dashboardData is ready #}
+      <template x-for="(filter, idx) in filters" :key="filter.field">
+        <div class="flex flex-col gap-0.5">
+          <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+                 x-text="filter.label || filter.field"></label>
+
+          {# select control #}
+          <template x-if="filter.type === 'select'">
+            <select class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30 min-w-[120px]"
+                    :value="activeFilters[filter.field] ?? ''"
+                    @change="setFilter(filter.field, $event.target.value)">
+              <option value="">All</option>
+              <template x-for="opt in (filter.options || [])" :key="opt">
+                <option :value="opt" :selected="activeFilters[filter.field] === opt" x-text="opt"></option>
+              </template>
+            </select>
+          </template>
+
+          {# date control #}
+          <template x-if="filter.type === 'date'">
+            <input type="date"
+                   class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30"
+                   :value="activeFilters[filter.field] ?? ''"
+                   @change="setFilter(filter.field, $event.target.value)">
+          </template>
+
+          {# text / fallback control #}
+          <template x-if="filter.type !== 'select' && filter.type !== 'date'">
+            <input type="text"
+                   :placeholder="'Filter ' + (filter.label || filter.field)"
+                   class="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-[#f68712] focus:outline-none focus:ring-1 focus:ring-[#f68712]/30 w-40"
+                   :value="activeFilters[filter.field] ?? ''"
+                   @input.debounce.400ms="setFilter(filter.field, $event.target.value)">
+          </template>
+        </div>
+      </template>
+
+      {# Clear all button — only when at least one filter is active #}
+      <button x-show="hasActiveFilters"
+              @click="clearAll()"
+              class="self-end text-xs text-gray-400 hover:text-red-500 transition px-2 py-1.5 rounded-lg hover:bg-red-50 flex items-center gap-1">
+        <i class="fas fa-times text-[10px]"></i> Clear
+      </button>
+    </div>
+  </div>
+
   <div class="p-4 sm:p-6">
     {# Empty state #}
     <div id="emptyState" class="bg-white rounded-xl border border-dashed border-gray-300 py-20 text-center">
@@ -160,9 +293,10 @@
 {# Hidden dashboard data #}
 {{ dashboard_data|json_script:"dashboard-data" }}
 <script>
-  window.DASHBOARD_ID = '{{ dashboard.id }}';
-  window.WS_PROTOCOL  = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  window.WS_HOST      = location.host;
+  window.DASHBOARD_ID        = '{{ dashboard.id }}';
+  window.WS_PROTOCOL         = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  window.WS_HOST             = location.host;
+  window._currentUserEmail   = '{{ request.user.email|escapejs }}';
 </script>
 
 {# Add Widget Modal #}
@@ -201,17 +335,77 @@
           </div>
           <div id="aggregationGroup" class="form-group hidden">
             <label class="form-label">Aggregation</label>
-            <select id="aggregationType" class="form-ctrl">
+            <select id="aggregationType" class="form-ctrl" onchange="onAggTypeChange()">
               <option value="sum">Sum</option>
               <option value="avg">Average</option>
               <option value="count">Count of records</option>
               <option value="min">Minimum</option>
               <option value="max">Maximum</option>
+              <option value="calculated" style="font-weight:600;color:#6366f1">&#x2211; Calculated (expression)</option>
             </select>
           </div>
           <div id="groupByGroup" class="form-group hidden">
             <label class="form-label">Group by</label>
             <select id="groupByField" class="form-ctrl"></select>
+          </div>
+
+          {# ── Calculated expression panel ── #}
+          <div id="calculatedExprGroup" class="hidden"
+               style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:.75rem;padding:.875rem 1rem;margin-bottom:.75rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+              <label class="form-label" style="margin-bottom:0;color:#4f46e5">
+                <i class="fas fa-calculator" style="margin-right:.25rem"></i>Expression
+              </label>
+              <a id="calcFieldsLink" href="#" target="_blank"
+                 style="font-size:.7rem;color:#6366f1;text-decoration:underline">Manage saved fields ↗</a>
+            </div>
+
+            {# Saved calculated fields from this table #}
+            <div id="savedCalcFieldsSection" class="hidden" style="margin-bottom:.625rem">
+              <label class="form-label" style="font-size:.7rem;color:#6b7280">Saved fields for this table — click to use</label>
+              <div id="savedCalcFieldsList"
+                   style="display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.25rem"></div>
+            </div>
+
+            {# Column chips #}
+            <div id="calcColChips"
+                 style="display:flex;flex-wrap:wrap;gap:.2rem;margin-bottom:.375rem;padding:.375rem;background:#ede9fe;border-radius:.5rem;min-height:24px">
+              <span style="font-size:.65rem;color:#7c3aed;align-self:center;margin-right:.25rem">Columns:</span>
+            </div>
+
+            {# Function chips #}
+            <div style="display:flex;flex-wrap:wrap;gap:.2rem;margin-bottom:.375rem">
+              <span style="font-size:.65rem;color:#6b7280;align-self:center">Functions:</span>
+              <button type="button" onclick="calcInsert('sum(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">sum(</button>
+              <button type="button" onclick="calcInsert('count(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">count(</button>
+              <button type="button" onclick="calcInsert('avg(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">avg(</button>
+              <button type="button" onclick="calcInsert('min(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">min(</button>
+              <button type="button" onclick="calcInsert('max(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">max(</button>
+              <button type="button" onclick="calcInsert(')')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">)</button>
+              <button type="button" onclick="calcInsert(' / ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">/</button>
+              <button type="button" onclick="calcInsert(' * ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">*</button>
+              <button type="button" onclick="calcInsert(' + ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">+</button>
+              <button type="button" onclick="calcInsert(' - ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">-</button>
+              <button type="button" onclick="calcInsert(' * 100')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">×100</button>
+            </div>
+
+            <textarea id="calcExpression" rows="2"
+                      placeholder="e.g. sum(revenue) / count(user_id)"
+                      style="width:100%;border:1px solid #c4b5fd;border-radius:.5rem;padding:.4rem .6rem;font-size:.8125rem;font-family:monospace;resize:none;background:#fff;box-sizing:border-box;outline:none"
+                      onfocus="this.style.borderColor='#7c3aed'"
+                      onblur="this.style.borderColor='#c4b5fd'; validateCalcExpr()"></textarea>
+            <div id="calcExprFeedback" style="min-height:16px;margin-top:.2rem;font-size:.7rem"></div>
           </div>
         </div>
 
@@ -259,11 +453,25 @@ const KPI_PALETTE = {
 // ───────────────────────────────────────────────────────────────
 //  STATE
 // ───────────────────────────────────────────────────────────────
-let grid         = null;
-let widgetMap    = new Map();
-let ws           = null;
-let dashboardData= null;
-let wsReconnectT = null;
+let grid          = null;
+let widgetMap     = new Map();
+let dashboardData = null;
+
+// ── WebSocket engine state ──────────────────────────────────────
+const WS_CLOSE_NO_RETRY = new Set([4001, 4003]);          // auth / forbidden — never reconnect
+const WS_BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000]; // exp-backoff caps at 30 s
+let wsState = {
+  socket:         null,
+  attempts:       0,
+  wasConnected:   false,
+  reconnectTimer: null,
+  pingInterval:   null,
+  openTimer:      null,
+  lastPong:       0,
+};
+
+// Expose globals so the Alpine filterBar component can access them
+window.widgetMap = widgetMap;
 
 // ───────────────────────────────────────────────────────────────
 //  INIT
@@ -273,6 +481,7 @@ async function initDashboard() {
     const el = document.getElementById('dashboard-data');
     if (!el) throw new Error('Dashboard data missing');
     dashboardData = JSON.parse(el.textContent);
+    window.dashboardData = dashboardData; // expose for Alpine filterBar component
 
     initGrid();
     renderWidgets();
@@ -414,6 +623,7 @@ function renderKPI(el, widget, data) {
   const prefix = viz.prefix || '';
   const suffix = viz.suffix || '';
   const icon   = viz.icon   || 'fa-chart-bar';
+  const desc   = viz.description || '';
   const pal    = KPI_PALETTE[viz.color] || KPI_PALETTE.blue;
 
   let value = data.val !== undefined ? data.val : Object.values(data)[0];
@@ -428,6 +638,7 @@ function renderKPI(el, widget, data) {
       <div style="min-width:0;flex:1">
         <div class="kpi-num" style="color:${pal.numColor}">${prefix}${fmtNum(value)}${suffix}</div>
         <div class="kpi-label">${esc(widget.title)}</div>
+        ${desc ? `<div style="font-size:.6rem;color:#9ca3af;margin-top:.2rem;line-height:1.35;white-space:normal">${esc(desc)}</div>` : ''}
       </div>
     </div>`;
 }
@@ -458,6 +669,20 @@ function renderTable(el, data) {
 }
 
 // ── Charts ──────────────────────────────────────────────────────
+
+// Returns true when every non-empty label looks like an ISO date or datetime.
+// Matches: "2025-11-24", "2025-11-24T00:00:00", "2025-11-24 00:00:00"
+function _labelsAreDates(labels) {
+  const iso = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/;
+  return labels.length > 0 && labels.every(l => iso.test(String(l)));
+}
+
+// Truncate "2025-11-24T00:00:00" → "2025-11-24" so Plotly gets a clean date string.
+function _toDateOnly(label) {
+  const s = String(label);
+  return (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) ? s.slice(0, 10) : s;
+}
+
 function renderChart(el, data, chartType, widget) {
   let labels = [], values = [];
 
@@ -473,18 +698,30 @@ function renderChart(el, data, chartType, widget) {
   if (!labels.length) { el.innerHTML = `<div class="state-center"><i class="fas fa-chart-bar" style="color:#e5e7eb"></i><p>Not enough data</p></div>`; return; }
 
   const nums = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
-  const title = ''; // shown in widget header
+
+  // Read axis title overrides from viz_config (e.g. "date", "revenue", "sales")
+  const viz      = widget?.viz_config || {};
+  const xTitle   = viz.x_axis ? String(viz.x_axis).replace(/_/g, ' ') : '';
+  const yTitle   = viz.y_axis ? String(viz.y_axis).replace(/_/g, ' ') : '';
+
+  // Detect whether x labels are ISO dates so we can tell Plotly to treat them
+  // as a time axis (proper tick spacing, formatting, zoom behaviour).
+  const isDateAxis = chartType === 'scatter' && _labelsAreDates(labels);
+  // Always pass clean YYYY-MM-DD strings to Plotly — strip any time component.
+  const xValues = isDateAxis ? labels.map(_toDateOnly) : labels;
 
   let traces = [];
   if (chartType === 'scatter') {
     traces = [{
       type: 'scatter', mode: 'lines+markers',
-      x: labels, y: nums,
+      x: xValues, y: nums,
       line: { color: BRAND.primary, width: 2.5, shape: 'spline' },
       marker: { color: BRAND.accent, size: 6, line: { color: '#fff', width: 1.5 } },
       fill: 'tozeroy',
       fillcolor: 'rgba(3,70,110,.06)',
-      hovertemplate: '<b>%{x}</b><br>%{y}<extra></extra>',
+      hovertemplate: isDateAxis
+        ? '<b>%{x|%d %b %Y}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>'
+        : '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else if (chartType === 'bar') {
     traces = [{
@@ -494,91 +731,345 @@ function renderChart(el, data, chartType, widget) {
         opacity: .85,
         line: { color: 'rgba(255,255,255,.6)', width: 1 },
       },
-      hovertemplate: '<b>%{x}</b><br>%{y}<extra></extra>',
+      hovertemplate: '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else {
     traces = [{
       type: 'pie', labels, values: nums,
       marker: { colors: BRAND.colors, line: { color: '#fff', width: 2 } },
-      hovertemplate: '<b>%{label}</b><br>%{value} (%{percent})<extra></extra>',
+      hovertemplate: '<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
       textinfo: 'percent',
       textfont: { size: 11 },
     }];
   }
 
+  // Bottom margin grows when we show axis titles so the labels aren't clipped.
+  const bMargin = chartType !== 'pie' ? (xTitle ? 56 : 40) : 10;
+  const lMargin = chartType !== 'pie' ? (yTitle ? 64 : 50) : 10;
+
   const layout = {
     paper_bgcolor: BRAND.paper,
     plot_bgcolor:  BRAND.paper,
-    margin: chartType === 'pie' ? {t:10, r:10, b:10, l:10} : {t:10, r:12, b:40, l:50},
+    margin: chartType === 'pie' ? {t:10, r:10, b:10, l:10} : {t:10, r:12, b:bMargin, l:lMargin},
     font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
     showlegend: false,
     xaxis: chartType !== 'pie' ? {
       gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
       tickfont: { size: 10 }, automargin: true,
+      // Tell Plotly this is a date axis so it formats ticks as dates.
+      ...(isDateAxis ? {
+        type: 'date',
+        tickformat: '%d %b %Y',
+        dtick: labels.length <= 14 ? 86400000       // daily ticks up to 14 pts
+             : labels.length <= 60 ? 7 * 86400000   // weekly ticks up to 60 pts
+             : 'M1',                                 // monthly ticks beyond that
+      } : {}),
+      ...(xTitle ? { title: { text: xTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
     yaxis: chartType !== 'pie' ? {
       gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
       tickfont: { size: 10 }, automargin: true,
+      tickformat: ',',
+      ...(yTitle ? { title: { text: yTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
   };
 
   el.innerHTML = '';
+
+  // Optional insight description footer (for non-technical storytelling)
+  const desc = (widget?.viz_config || {}).description;
+  const descHeight = desc ? 36 : 0;
+
   const div = document.createElement('div');
-  div.style.cssText = 'width:100%;height:100%';
+  div.style.cssText = `width:100%;height:calc(100% - ${descHeight}px)`;
   el.appendChild(div);
   Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
   // Register for resize events triggered by GridStack
   if (widget?.id) plotlyDivs.set(widget.id, div);
+
+  if (desc) {
+    const foot = document.createElement('div');
+    foot.style.cssText = [
+      'font-size:.6875rem', 'color:#6b7280', 'padding:.3rem 1rem .4rem',
+      'border-top:1px solid #f3f4f6', 'line-height:1.4',
+      'background:#fafafa', 'white-space:normal',
+    ].join(';');
+    foot.innerHTML = `<i class="fas fa-lightbulb" style="color:#f68712;margin-right:.3rem;font-size:.6rem"></i>${esc(desc)}`;
+    el.appendChild(foot);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
-//  WEBSOCKET – real-time updates
+//  WEBSOCKET – production-quality real-time engine
 // ───────────────────────────────────────────────────────────────
+
 function connectWebSocket() {
-  clearTimeout(wsReconnectT);
-  const url = `${window.WS_PROTOCOL}//${window.WS_HOST}/ws/dashboard/${window.DASHBOARD_ID}/`;
-  ws = new WebSocket(url);
+  _wsCancelTimers();
 
-  ws.onopen = () => {
+  const url  = `${window.WS_PROTOCOL}//${window.WS_HOST}/ws/dashboard/${window.DASHBOARD_ID}/`;
+  const sock = new WebSocket(url);
+  wsState.socket = sock;
+
+  // Connection-open timeout — close and retry if the handshake hangs
+  wsState.openTimer = setTimeout(() => {
+    if (sock.readyState !== WebSocket.OPEN) sock.close();
+  }, 10000);
+
+  sock.onopen = () => {
+    clearTimeout(wsState.openTimer);
+    wsState.attempts = 0;
     setStatus('live');
+    _wsStartPing(sock);
+    // Refresh stale widget data for anything we missed while disconnected
+    if (wsState.wasConnected) {
+      widgetMap.forEach((_, id) => refreshWidget(id));
+    }
+    wsState.wasConnected = true;
   };
 
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'widget_update') {
-        const w = widgetMap.get(msg.widget_id);
-        if (w) { w.widget_data = msg.data; renderWidgetContent(w); }
-      }
-    } catch (_) {}
+  sock.onmessage = (e) => {
+    try { _wsDispatch(JSON.parse(e.data)); } catch (_) {}
   };
 
-  ws.onclose = () => {
-    setStatus('offline');
-    wsReconnectT = setTimeout(connectWebSocket, 5000);
+  sock.onclose = (e) => {
+    _wsCancelTimers();
+
+    // Auth / forbidden — never try to reconnect
+    if (WS_CLOSE_NO_RETRY.has(e.code)) {
+      setStatus('offline');
+      const labels = { 4001: 'Session expired — please reload the page', 4003: 'Access denied to this dashboard' };
+      showToast(labels[e.code] || 'Connection closed', 'error');
+      return;
+    }
+
+    // Too many connections — long back-off
+    if (e.code === 4429) {
+      setStatus('reconnecting', 1);
+      showToast('Too many open connections — retrying in 30 s', 'warning');
+      wsState.reconnectTimer = setTimeout(connectWebSocket, 30000);
+      return;
+    }
+
+    // Normal disconnect / server restart — exponential back-off with jitter
+    const base  = WS_BACKOFF_DELAYS[Math.min(wsState.attempts, WS_BACKOFF_DELAYS.length - 1)];
+    const delay = base + Math.floor(Math.random() * 500);   // ±500 ms jitter
+    wsState.attempts++;
+    setStatus('reconnecting', wsState.attempts);
+    wsState.reconnectTimer = setTimeout(connectWebSocket, delay);
   };
 
-  ws.onerror = () => {
-    setStatus('offline');
-    ws.close();
+  sock.onerror = () => {
+    // onclose fires immediately after and handles all retry logic
   };
 }
 
-function setStatus(state) {
+// ── WS helpers ──────────────────────────────────────────────────
+
+function _wsCancelTimers() {
+  clearTimeout(wsState.reconnectTimer);
+  clearTimeout(wsState.openTimer);
+  clearInterval(wsState.pingInterval);
+  wsState.reconnectTimer = null;
+  wsState.pingInterval   = null;
+  wsState.openTimer      = null;
+}
+
+/** Send a ping every 30 s so the server's 90 s heartbeat timeout never fires. */
+function _wsStartPing(sock) {
+  wsState.pingInterval = setInterval(() => {
+    if (sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+    }
+  }, 30000);
+}
+
+// ── Message dispatcher ──────────────────────────────────────────
+
+function _wsDispatch(msg) {
+  switch (msg.type) {
+
+    case 'widget_update':
+      _ws_onWidgetUpdate(msg);
+      break;
+
+    case 'widget_added':
+      _ws_onWidgetAdded(msg);
+      break;
+
+    case 'widget_deleted':
+      _ws_onWidgetDeleted(msg);
+      break;
+
+    case 'layout_updated':
+      _ws_onLayoutUpdated(msg);
+      break;
+
+    case 'layout_saved':
+      if (msg.success === false)
+        showToast(msg.message || 'Layout save failed — please try again', 'error');
+      break;
+
+    case 'layout_conflict':
+      showToast(
+        'Layout conflict: ' + (msg.message || 'Another collaborator updated the layout'),
+        'warning'
+      );
+      break;
+
+    case 'pong':
+      wsState.lastPong = Date.now();
+      break;
+
+    case 'rate_limited':
+      showToast(`Rate limit reached — slow down. Retry in ${msg.retry_after || 10} s`, 'warning');
+      break;
+
+    case 'error':
+      showToast('Server error: ' + (msg.message || 'Unknown error'), 'error');
+      break;
+
+    case 'user_joined':
+    case 'user_left':
+      _ws_onPresence(msg.type === 'user_joined' ? 'joined' : 'left', msg.user);
+      break;
+
+    case 'insights_generation_started':
+      showToast('Insight analysis started…', 'info');
+      break;
+
+    case 'insights_generation_progress':
+      _ws_onInsightsProgress(msg);
+      break;
+
+    case 'dashboard_update':
+      if (msg.data) Object.assign(dashboardData, msg.data);
+      break;
+
+    default:
+      break;   // silently ignore unknown types
+  }
+}
+
+// ── Individual message handlers ─────────────────────────────────
+
+function _ws_onWidgetUpdate(msg) {
+  const w = widgetMap.get(msg.widget_id);
+  if (!w) return;
+  w.widget_data = msg.data;
+  waitForHeight(`widget-${msg.widget_id}`, () => renderWidgetContent(w));
+}
+
+function _ws_onWidgetAdded(msg) {
+  const widget = msg.widget;
+  if (!widget?.id || widgetMap.has(widget.id)) return;  // guard against duplicates
+  document.getElementById('emptyState').style.display  = 'none';
+  document.getElementById('dashboard-grid').style.display = '';
+  addWidgetToGrid(widget);
+}
+
+function _ws_onWidgetDeleted(msg) {
+  const id = msg.widget_id;
+  const el = document.querySelector(`.grid-stack-item[data-id="${CSS.escape(id)}"]`);
+  if (el && grid) grid.removeWidget(el);
+  widgetMap.delete(id);
+  plotlyDivs.delete(id);
+  if (!widgetMap.size) {
+    document.getElementById('emptyState').style.display    = 'block';
+    document.getElementById('dashboard-grid').style.display = 'none';
+  }
+}
+
+function _ws_onLayoutUpdated(msg) {
+  // Another collaborator moved widgets — apply their positions without
+  // re-triggering our own saveLayout (which would cause an echo loop).
+  if (!msg.updated_by || msg.updated_by === window._currentUserEmail) return;
+  const posMap = {};
+  (msg.widgets || []).forEach(w => { posMap[w.id] = w.position; });
+  if (!grid) return;
+  grid.batchUpdate();
+  grid.engine.nodes.forEach(node => {
+    const id  = node.el.getAttribute('data-id');
+    const pos = posMap[id];
+    if (pos) grid.update(node.el, { x: pos.x, y: pos.y, w: pos.w, h: pos.h });
+  });
+  grid.commit();
+}
+
+function _ws_onPresence(action, email) {
+  if (!email || email === window._currentUserEmail) return;
+  // Presence events are low-signal on a dashboard — suppress toasts but keep
+  // the hook in place for a future online-users indicator component.
+}
+
+let _insightsProgressToast = null;
+function _ws_onInsightsProgress(msg) {
+  const pct = (msg.progress != null) ? Math.round(msg.progress) : null;
+  const txt  = pct != null ? `Insights: ${pct}%` : (msg.message || 'Generating insights…');
+
+  if (!_insightsProgressToast) {
+    _insightsProgressToast = document.createElement('div');
+    _insightsProgressToast.style.cssText = [
+      'position:fixed', 'bottom:4rem', 'right:1.25rem', 'z-index:9999',
+      'display:flex', 'align-items:center', 'gap:.5rem',
+      'padding:.625rem 1rem', 'border-radius:.625rem',
+      'background:#03466e', 'color:#fff',
+      'font-size:.8125rem', 'font-weight:500',
+      'box-shadow:0 4px 16px rgba(0,0,0,.18)',
+    ].join(';');
+    document.body.appendChild(_insightsProgressToast);
+  }
+  _insightsProgressToast.innerHTML =
+    `<i class="fas fa-brain"></i><span>${esc(txt)}</span>`;
+
+  if (msg.done) {
+    showToast('Insights ready!', 'success');
+    _insightsProgressToast.remove();
+    _insightsProgressToast = null;
+  }
+}
+
+// ── Status badge ────────────────────────────────────────────────
+
+function setStatus(state, attempts) {
   const el = document.getElementById('realtimeIndicator');
   if (!el) return;
-  const dot = el.querySelector('span');
-  const lbl = el.querySelectorAll('span')[1];
+  const spans = el.querySelectorAll('span');
+  const dot   = spans[0];
+  const lbl   = spans[1];
   if (state === 'live') {
     el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700';
     dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse';
     lbl.textContent = 'Live';
+  } else if (state === 'reconnecting') {
+    el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-600';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 inline-block animate-pulse';
+    lbl.textContent = (attempts && attempts > 1) ? `Reconnecting (${attempts})…` : 'Reconnecting…';
   } else {
     el.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500';
     dot.className = 'w-1.5 h-1.5 rounded-full bg-gray-400 inline-block';
     lbl.textContent = 'Offline';
   }
 }
+
+// ── Page-lifecycle hooks ────────────────────────────────────────
+
+/** Clean close when navigating away — prevents server-side orphan connections. */
+window.addEventListener('beforeunload', () => {
+  _wsCancelTimers();
+  const sock = wsState.socket;
+  if (sock && sock.readyState === WebSocket.OPEN) sock.close(1001, 'page unload');
+});
+
+/** Re-establish the connection when the user returns to a backgrounded tab. */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const sock = wsState.socket;
+    if (!sock || sock.readyState === WebSocket.CLOSED || sock.readyState === WebSocket.CLOSING) {
+      wsState.attempts = 0;   // reset back-off so the reconnect is immediate
+      connectWebSocket();
+    }
+  }
+});
 
 // ───────────────────────────────────────────────────────────────
 //  SAVE LAYOUT
@@ -590,8 +1081,9 @@ function saveLayout() {
     position: { x: n.x, y: n.y, w: n.w, h: n.h },
   })).filter(i => i.id);
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'layout_update', layout: {}, widgets: items }));
+  const _sock = wsState.socket;
+  if (_sock && _sock.readyState === WebSocket.OPEN) {
+    _sock.send(JSON.stringify({ type: 'layout_update', layout: {}, widgets: items }));
   } else {
     fetch(`/api/dashboards/${window.DASHBOARD_ID}/update_layout/`, {
       method: 'POST',
@@ -630,7 +1122,131 @@ function populateSelect(id, options, placeholder) {
 }
 
 /** Called when table or widget-type changes – rebuild field dropdowns. */
-function onTableChange() { onTypeChange(); }
+function onTableChange() {
+  onTypeChange();
+  // Refresh calculated fields panel when table changes
+  refreshCalcFieldsPanel();
+}
+
+async function refreshCalcFieldsPanel() {
+  const tId = document.getElementById('widgetTable').value;
+  const schema = getSelectedSchema();
+
+  // Populate column chips
+  const chipsEl = document.getElementById('calcColChips');
+  if (chipsEl) {
+    // Keep the label span, replace the rest
+    const label = chipsEl.querySelector('span');
+    chipsEl.innerHTML = '';
+    if (label) chipsEl.appendChild(label);
+    schema.forEach(f => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = f.name;
+      btn.style.cssText = 'font-size:.65rem;padding:.1rem .35rem;background:#fff;border:1px solid #ddd6fe;border-radius:.3rem;color:#5b21b6;cursor:pointer;font-family:monospace';
+      btn.onclick = () => calcInsert(f.name);
+      chipsEl.appendChild(btn);
+    });
+  }
+
+  // Update "Manage saved fields" link
+  if (tId) {
+    const link = document.getElementById('calcFieldsLink');
+    if (link) link.href = `/dashboard/tables/${tId}/calculated-fields/?tab=calcfields`;
+  }
+
+  // Load and display saved CalculatedFields for this table
+  const section = document.getElementById('savedCalcFieldsSection');
+  const list    = document.getElementById('savedCalcFieldsList');
+  if (!section || !list || !tId) return;
+
+  try {
+    const res = await fetch(`/api/v1/tables/${tId}/calculated-fields/`);
+    if (!res.ok) return;
+    const fields = await res.json();
+    if (!fields.length) { section.classList.add('hidden'); return; }
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+    fields.forEach(f => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = f.expression;
+      btn.innerHTML = `<span style="font-weight:600">${f.display_name}</span> <span style="opacity:.6;font-family:monospace;font-size:.65rem">${f.name}</span>`;
+      btn.style.cssText = 'font-size:.7rem;padding:.2rem .5rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.4rem;color:#4f46e5;cursor:pointer';
+      btn.onclick = () => {
+        document.getElementById('calcExpression').value = f.expression;
+        document.getElementById('widgetTitle').value = f.display_name;
+        document.getElementById('widgetTitle').dataset.userEdited = '1';
+        validateCalcExpr();
+      };
+      list.appendChild(btn);
+    });
+  } catch (_) {
+    section.classList.add('hidden');
+  }
+}
+
+function onAggTypeChange() {
+  const agg = document.getElementById('aggregationType')?.value;
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  const numericGroup = document.getElementById('numericFieldGroup');
+  if (!calcGroup) return;
+  if (agg === 'calculated') {
+    calcGroup.style.display = '';
+    // Hide numeric field — not needed for expression-based calc
+    if (numericGroup) numericGroup.classList.add('hidden');
+  } else {
+    calcGroup.style.display = 'none';
+    // Restore numeric field visibility according to widget type
+    const wType = document.getElementById('widgetType').value;
+    const schema = getSelectedSchema();
+    const numericF = schemaFields(schema, NUMERIC_TYPES);
+    if (numericF.length && wType !== 'table') {
+      if (numericGroup) numericGroup.classList.remove('hidden');
+    }
+  }
+}
+
+/** Insert text at the cursor position in the calc expression textarea. */
+function calcInsert(text) {
+  const el = document.getElementById('calcExpression');
+  if (!el) return;
+  const s = el.selectionStart, e = el.selectionEnd;
+  const v = el.value;
+  el.value = v.slice(0, s) + text + v.slice(e);
+  const pos = s + text.length;
+  el.focus();
+  el.setSelectionRange(pos, pos);
+}
+
+/** Validate the expression in the calculated panel and show feedback. */
+async function validateCalcExpr() {
+  const tId = document.getElementById('widgetTable').value;
+  const expr = document.getElementById('calcExpression')?.value?.trim();
+  const fb   = document.getElementById('calcExprFeedback');
+  if (!fb || !expr || !tId) return;
+  fb.textContent = 'Checking…';
+  fb.style.color = '#6b7280';
+  try {
+    const res = await fetch(`/api/v1/tables/${tId}/calculated-fields/validate/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ expression: expr }),
+    });
+    const data = await res.json();
+    if (data.valid) {
+      fb.textContent = '✓ Expression is valid';
+      fb.style.color = '#059669';
+    } else {
+      fb.textContent = '✗ ' + (data.error || 'Invalid expression');
+      fb.style.color = '#dc2626';
+    }
+  } catch (_) {
+    fb.textContent = '';
+  }
+}
+
 function onTypeChange() {
   const wType  = document.getElementById('widgetType').value;
   const schema = getSelectedSchema();
@@ -643,8 +1259,10 @@ function onTypeChange() {
   const show = id => document.getElementById(id).classList.remove('hidden');
   const hide = id => document.getElementById(id).classList.add('hidden');
 
-  // Reset
+  // Reset (keep calculatedExprGroup controlled by onAggTypeChange)
   hide('fieldConfig'); hide('numericFieldGroup'); hide('aggregationGroup'); hide('groupByGroup');
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  if (calcGroup) calcGroup.style.display = 'none';
 
   if (wType === 'table' || !schema.length) {
     updatePreview(wType, null, null, null, schema);
@@ -723,6 +1341,14 @@ async function addWidget() {
 
   if (!tId) { showToast('Please select a table', 'warning'); return; }
 
+  const chosenAgg = document.getElementById('aggregationType')?.value || 'sum';
+
+  // Guard: calculated type requires a non-empty expression
+  if (chosenAgg === 'calculated') {
+    const expr = document.getElementById('calcExpression')?.value?.trim();
+    if (!expr) { showToast('Enter an expression for the calculated metric', 'warning'); return; }
+  }
+
   const schema   = getSelectedSchema();
   const numericF = schemaFields(schema, NUMERIC_TYPES);
   const dateF    = schemaFields(schema, DATE_TYPES);
@@ -730,7 +1356,6 @@ async function addWidget() {
 
   const chosenNumeric = document.getElementById('numericField')?.value  || numericF[0] || null;
   const chosenGroupBy = document.getElementById('groupByField')?.value  || null;
-  const chosenAgg     = document.getElementById('aggregationType')?.value || 'sum';
 
   const query_config = buildQueryConfig(wType, chosenNumeric, chosenGroupBy, chosenAgg, numericF, dateF, textF);
   const viz_config   = buildVizConfig(wType, chosenNumeric, chosenGroupBy || autoGroupBy(wType, dateF, textF), numericF);
@@ -800,6 +1425,23 @@ function autoGroupBy(wType, dateF, textF) {
 function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF, textF) {
   if (wType === 'table') return { limit: 20 };
 
+  // ── Calculated expression widget ────────────────────────────────
+  if (aggType === 'calculated') {
+    const expression = document.getElementById('calcExpression')?.value?.trim() || '';
+    // Metric: single calculated scalar
+    if (wType === 'metric') {
+      return { aggregations: [{ type: 'calculated', name: 'val', expression }] };
+    }
+    // For chart types we fall back to a count group-by + calculated on top
+    const finalGroupBy = groupBy || autoGroupBy(wType, dateF, textF);
+    return {
+      aggregations: [
+        { type: 'calculated', name: 'val', expression },
+      ],
+    };
+  }
+
+  // ── Standard aggregations ────────────────────────────────────────
   const finalGroupBy = groupBy || autoGroupBy(wType, dateF, textF);
   const finalAgg     = aggType || (numericField ? 'sum' : 'count');
   const useNumeric   = numericField && finalAgg !== 'count';
@@ -817,12 +1459,13 @@ function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF
 }
 
 function buildVizConfig(wType, numericField, groupByField, numericF) {
-  if (wType === 'metric') {
+  const chosenAgg = document.getElementById('aggregationType')?.value || 'sum';
+  if (wType === 'metric' || chosenAgg === 'calculated') {
     const idx   = widgetMap.size % METRIC_COLORS.length;
     const schema = getSelectedSchema();
     const ft     = schema.find(f => f.name === numericField)?.type || '';
     return {
-      icon:   METRIC_ICONS[idx],
+      icon:   chosenAgg === 'calculated' ? 'fa-calculator' : METRIC_ICONS[idx],
       color:  METRIC_COLORS[idx],
       prefix: ft === 'currency'   ? '$'  : '',
       suffix: ft === 'percentage' ? '%'  : '',
@@ -834,13 +1477,17 @@ function buildVizConfig(wType, numericField, groupByField, numericF) {
 // ───────────────────────────────────────────────────────────────
 //  REFRESH & DELETE
 // ───────────────────────────────────────────────────────────────
-async function refreshWidget(id) {
+async function refreshWidget(id, extraFilters) {
   const w = widgetMap.get(id);
   if (!w) return;
   const el = document.getElementById(`widget-${id}`);
   if (el) el.innerHTML = `<div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4"></i></div>`;
   try {
-    const res = await fetch(`/api/widgets/${id}/data/`, { credentials: 'same-origin' });
+    let url = `/api/widgets/${id}/data/`;
+    // Attach active dashboard-level filters as a JSON query param
+    const filters = extraFilters || (window._filterBarState ? window._filterBarState.buildApiFilters() : []);
+    if (filters.length) url += `?filters=${encodeURIComponent(JSON.stringify(filters))}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
     const json = await res.json();
     // WidgetDataAPIView wraps data in { data: ... }
     // Accept both wrapped and bare payloads
@@ -892,7 +1539,17 @@ function showToast(message, type = 'info') {
 //  MODAL
 // ───────────────────────────────────────────────────────────────
 function openModal()  { document.getElementById('widgetModal').classList.add('open'); }
-function closeModal() { document.getElementById('widgetModal').classList.remove('open'); document.getElementById('widgetForm').reset(); }
+function closeModal() {
+  document.getElementById('widgetModal').classList.remove('open');
+  document.getElementById('widgetForm').reset();
+  // Reset calculated expression panel
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  if (calcGroup) calcGroup.style.display = 'none';
+  const fb = document.getElementById('calcExprFeedback');
+  if (fb) fb.textContent = '';
+  const calcEl = document.getElementById('calcExpression');
+  if (calcEl) calcEl.value = '';
+}
 
 function setupEventListeners() {
   document.getElementById('addWidgetBtn')?.addEventListener('click', openModal);
@@ -1030,5 +1687,64 @@ function _showShareLink(shareUrl) {
 }
 
 document.addEventListener('DOMContentLoaded', initDashboard);
+
+// ───────────────────────────────────────────────────────────────
+//  Alpine.js — Filter Bar Component
+// ───────────────────────────────────────────────────────────────
+function filterBar() {
+  return {
+    filters: [],       // filter definitions from dashboard filter_config
+    activeFilters: {}, // { field: value }
+
+    get hasFilters() { return this.filters.length > 0; },
+    get hasActiveFilters() {
+      return Object.values(this.activeFilters).some(v => v !== '' && v !== null && v !== undefined);
+    },
+
+    init() {
+      // Expose state globally so refreshWidget can read active filters
+      window._filterBarState = this;
+
+      // Wait until dashboardData is populated by initDashboard()
+      const ready = () => {
+        if (window.dashboardData && window.dashboardData.filter_config) {
+          this.filters = window.dashboardData.filter_config.filters || [];
+        }
+      };
+      // dashboardData may already be set (fast parse) or arrive slightly later
+      if (window.dashboardData) { ready(); } else {
+        document.addEventListener('DOMContentLoaded', ready);
+        // Also poll briefly in case initDashboard runs after Alpine init
+        const t = setInterval(() => {
+          if (window.dashboardData) { ready(); clearInterval(t); }
+        }, 50);
+        setTimeout(() => clearInterval(t), 3000);
+      }
+    },
+
+    setFilter(field, value) {
+      this.activeFilters = { ...this.activeFilters, [field]: value };
+      this.refreshAll();
+    },
+
+    clearAll() {
+      this.activeFilters = {};
+      this.refreshAll();
+    },
+
+    /** Build the filter array expected by WidgetDataAPIView */
+    buildApiFilters() {
+      return Object.entries(this.activeFilters)
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+        .map(([field, value]) => ({ field, operator: 'eq', value }));
+    },
+
+    refreshAll() {
+      if (window.widgetMap) {
+        window.widgetMap.forEach((_, id) => refreshWidget(id, this.buildApiFilters()));
+      }
+    },
+  };
+}
 </script>
 {% endblock %}

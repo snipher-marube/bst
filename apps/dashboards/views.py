@@ -20,7 +20,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog
+    Record, Dashboard, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -173,13 +173,18 @@ class TableCreateView(LoginRequiredMixin, CreateView):
     model = DataTable
     template_name = 'dashboard/table_form.html'
     fields = ['name', 'description', 'schema']
-    
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['schema'].required = False
+        return form
+
     def get_success_url(self):
         return reverse('dashboard:table_detail', kwargs={'pk': self.object.pk})
-    
+
     def form_valid(self, form):
         workspace = self.request.user.current_workspace
-        
+
         if not workspace.can_add_table():
             messages.error(self.request, 'Table limit reached.')
             return redirect('dashboard:tables')
@@ -233,6 +238,25 @@ class TableDetailView(LoginRequiredMixin, DetailView):
             cls=DjangoJSONEncoder,
         )
 
+        # Calculated fields — inline tab context
+        cf_qs = CalculatedField.objects.filter(table=self.object).order_by('name')
+        context['calculated_fields'] = cf_qs
+        context['cf_count'] = cf_qs.count()
+
+        # Column names for expression quick-insert chips
+        columns = [f['name'] for f in (self.object.schema or [])]
+        if not columns:
+            sample = self.object.records.filter(is_active=True).values_list('data', flat=True).first()
+            if sample:
+                columns = list(sample.keys())
+        context['columns'] = columns
+
+        context['cf_api_base']    = f'/api/v1/tables/{self.object.id}/calculated-fields/'
+        context['cf_validate_url'] = f'/api/v1/tables/{self.object.id}/calculated-fields/validate/'
+        context['format_choices'] = CalculatedField.FORMAT_CHOICES
+        context['fn_list']  = ['sum', 'count', 'avg', 'min', 'max']
+        context['op_list']  = ['+', '-', '*', '/', '**']
+
         return context
 
 
@@ -259,21 +283,39 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
     model = DataTable
     template_name = 'dashboard/table_confirm_delete.html'
     success_url = reverse_lazy('dashboard:tables')
-    
+
     def get_queryset(self):
         workspace = self.request.user.current_workspace
         return DataTable.objects.filter(workspace=workspace, is_active=True)
-    
-    def delete(self, request, *args, **kwargs):
+
+    def form_valid(self, form):
         table = self.get_object()
         table.is_active = False
         table.deleted_at = timezone.now()
         table.save()
-        messages.success(request, f'Table "{table.name}" deleted successfully!')
+        messages.success(self.request, f'Table "{table.name}" deleted successfully!')
         return redirect(self.success_url)
 
 
 class TableImportMixin:
+    """Shared multi-step file-import logic for ``TableImportView`` and
+    ``TableCreateFromImportView``.
+
+    The import flow has two POST steps:
+
+    1. **upload** — user submits a CSV/XLSX file.  The mixin parses it with
+       ``DataImportService``, stores the cleaned ``DataFrame`` in the cache
+       under a random ``import_id`` UUID, and renders the preview/mapping
+       template with column name → field type suggestions.
+
+    2. **map** — user confirms or adjusts the column→field mapping and
+       submits a second form.  The mixin retrieves the cached ``DataFrame``,
+       runs ``DataImportService.import_data()``, and returns
+       ``(table, result_dict)`` so the calling view can redirect with a
+       success/warning message.
+
+    Cache TTL for the staged ``DataFrame`` is 3600 seconds (1 hour).
+    """
     """Shared logic for multi-step file imports"""
 
     def handle_upload_step(self, request, table=None):
@@ -429,8 +471,143 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         service = WorkspaceInsightService()
         dashboard = service.generate_workspace_overview(workspace, request.user)
 
+        # Kick off LLM insight generation asynchronously so the user isn't blocked
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        try:
+            from apps.insights.tasks import analyze_workspace_tables
+            task = analyze_workspace_tables.delay(str(workspace.id))
+            _logger.info('analyze_workspace_tables dispatched task_id=%s workspace=%s', task.id, workspace.id)
+        except Exception as exc:
+            _logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
+
         messages.success(request, f'Successfully generated insights in "{dashboard.name}"!')
         return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
+
+
+class SSOSettingsView(LoginRequiredMixin, TemplateView):
+    """
+    GET  /dashboard/sso/   — Show SSO configuration form
+    POST /dashboard/sso/   — Save / update SSO configuration
+
+    Only workspace owners and admins may access this page.
+    """
+    template_name = 'dashboard/sso_settings.html'
+
+    def _require_admin(self, request):
+        ws = request.user.current_workspace
+        if not ws:
+            return None, redirect('dashboard:home')
+        try:
+            m = WorkspaceMembership.objects.get(workspace=ws, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return None, redirect('dashboard:home')
+        if m.role not in ('owner', 'admin'):
+            messages.error(request, 'Only workspace admins can manage SSO settings.')
+            return None, redirect('dashboard:settings')
+        return ws, None
+
+    def get_context_data(self, **kwargs):
+        from apps.workspaces.models import SSOConfiguration
+        context    = super().get_context_data(**kwargs)
+        workspace  = self.request.user.current_workspace
+        base_url   = f"{self.request.scheme}://{self.request.get_host()}"
+        ws_id      = str(workspace.id) if workspace else ''
+
+        sso = None
+        try:
+            sso = SSOConfiguration.objects.get(workspace=workspace)
+        except (SSOConfiguration.DoesNotExist, Exception):
+            pass
+
+        sp_entity_id = (sso.sp_entity_id if sso and sso.sp_entity_id
+                        else f"{base_url}/sso/{ws_id}/metadata/")
+
+        context.update({
+            'sso':          sso,
+            'metadata_url': f"{base_url}/sso/{ws_id}/metadata/",
+            'acs_url':      f"{base_url}/sso/{ws_id}/acs/",
+            'sp_entity_id': sp_entity_id,
+            'sso_login_url': f"{base_url}/sso/{ws_id}/login/",
+        })
+        return context
+
+    def get(self, request, *args, **kwargs):
+        ws, err = self._require_admin(request)
+        if err:
+            return err
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        from apps.workspaces.models import SSOConfiguration
+        ws, err = self._require_admin(request)
+        if err:
+            return err
+
+        d = request.POST
+        defaults = {
+            'idp_entity_id':       d.get('idp_entity_id', '').strip(),
+            'idp_sso_url':         d.get('idp_sso_url', '').strip(),
+            'idp_slo_url':         d.get('idp_slo_url', '').strip(),
+            'idp_x509_cert':       d.get('idp_x509_cert', '').strip(),
+            'sp_entity_id':        d.get('sp_entity_id', '').strip(),
+            'attribute_email':     d.get('attribute_email', 'email').strip() or 'email',
+            'attribute_first_name': d.get('attribute_first_name', 'first_name').strip(),
+            'attribute_last_name':  d.get('attribute_last_name', 'last_name').strip(),
+            'is_active':      bool(d.get('is_active')),
+            'require_sso':    bool(d.get('require_sso')),
+            'auto_provision': bool(d.get('auto_provision')),
+        }
+
+        if not defaults['idp_entity_id'] or not defaults['idp_sso_url'] or not defaults['idp_x509_cert']:
+            messages.error(request, 'IdP Entity ID, SSO URL, and X.509 Certificate are required.')
+            return self.get(request, *args, **kwargs)
+
+        SSOConfiguration.objects.update_or_create(workspace=ws, defaults=defaults)
+        messages.success(request, 'SSO configuration saved.')
+        return redirect('dashboard:sso_settings')
+
+
+class GoogleSheetsConnectView(LoginRequiredMixin, TemplateView):
+    """
+    Step-by-step setup page for connecting a Google Sheets data source.
+    Serves the guide + connection form at /dashboard/integrations/google-sheets/.
+    """
+    template_name = 'dashboard/google_sheets_connect.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        context['workspace_id'] = str(workspace.id) if workspace else ''
+        context['back_url']     = reverse('dashboard:settings')
+        context['steps'] = [
+            'Create a GCP project & enable Sheets API',
+            'Create a service account & download JSON key',
+            'Share your sheet with the service account email',
+            'Paste credentials below and save',
+        ]
+        return context
+
+
+class IntegrationsView(LoginRequiredMixin, TemplateView):
+    """
+    Integrations management page — shows all connected data sources
+    (Google Sheets, PostgreSQL, MySQL) with live status indicators.
+    Users can test connections, browse schema, add new sources, or delete.
+    """
+    template_name = 'dashboard/integrations.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        if workspace:
+            context['data_sources'] = DataSource.objects.filter(
+                workspace=workspace, is_active=True
+            ).order_by('connector_type', 'name')
+        else:
+            context['data_sources'] = DataSource.objects.none()
+        context['workspace_id'] = str(workspace.id) if workspace else ''
+        return context
 
 
 class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
@@ -490,7 +667,18 @@ class RecordListView(LoginRequiredMixin, ListView):
 
 
 class RecordCreateView(LoginRequiredMixin, TemplateView):
-    """Create a new record (data entry form)"""
+    """Render the per-field data-entry form and save a new ``Record``.
+
+    GET renders ``dashboard/record_form.html`` with the parent table in
+    context so the template can build one ``<input>`` per schema field.
+
+    POST reads ``field_<name>`` keys from ``request.POST``, assembles the
+    ``data`` dict, and calls ``Record.objects.create()``.  Validation errors
+    from ``Record.save()`` (schema type checking) are caught and shown as
+    Django messages rather than raising an unhandled exception.
+
+    URL: ``/dashboard/tables/<uuid:table_id>/records/create/``
+    """
     template_name = 'dashboard/record_form.html'
     
     def get_context_data(self, **kwargs):
@@ -534,7 +722,18 @@ class RecordCreateView(LoginRequiredMixin, TemplateView):
 
 
 class RecordEditView(LoginRequiredMixin, TemplateView):
-    """Edit an existing record"""
+    """Render an edit form pre-populated with existing record data, then save changes.
+
+    GET returns ``dashboard/record_form.html`` with ``editing=True`` so the
+    template can adjust the form heading and submit label.
+
+    POST follows the same ``field_<name>`` convention as ``RecordCreateView``:
+    it rebuilds the entire ``data`` dict from POST keys, assigns it to
+    ``record.data``, and calls ``record.save()``.  The record's full history
+    is not retained — if audit history is needed, see ``AuditLog``.
+
+    URL: ``/dashboard/tables/<uuid:table_id>/records/<uuid:record_id>/edit/``
+    """
     template_name = 'dashboard/record_form.html'
 
     def get_record(self, **kwargs):
@@ -584,7 +783,10 @@ class RecordDeleteView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['record'] = self.get_record(**self.kwargs)
+        record = self.get_record(**self.kwargs)
+        context['record'] = record
+        context['object'] = record
+        context['table'] = record.table
         return context
 
     def post(self, request, *args, **kwargs):
@@ -615,13 +817,21 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+
         # Get all tables for widget creation
         context['tables'] = DataTable.objects.filter(
             workspace=self.object.workspace,
             is_active=True
         )
-        
+
+        # Load LLM-generated Insight records when this is the workspace overview dashboard
+        if self.object.slug == 'workspace-overview':
+            from apps.insights.models import Insight
+            context['ai_insights'] = list(
+                Insight.objects.filter(workspace=self.object.workspace)
+                .order_by('insight_type', '-created_at')
+            )
+
         # Serialize dashboard data with proper positions
         dashboard_data = {
             'id': str(self.object.id),
@@ -629,6 +839,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
             'description': self.object.description,
             'slug': self.object.slug,
             'layout_config': self.object.layout_config,
+            'filter_config': self.object.filter_config or {},
             'is_public': self.object.is_public,
             'public_uuid': str(self.object.public_uuid),
             'created_at': self.object.created_at.isoformat(),
@@ -699,13 +910,64 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
         workspace = self.request.user.current_workspace
         return Dashboard.objects.filter(workspace=workspace, is_active=True)
     
-    def delete(self, request, *args, **kwargs):
+    def form_valid(self, form):
         dashboard = self.get_object()
         dashboard.is_active = False
         dashboard.deleted_at = timezone.now()
         dashboard.save()
-        messages.success(request, f'Dashboard "{dashboard.name}" deleted successfully!')
+        messages.success(self.request, f'Dashboard "{dashboard.name}" deleted successfully!')
         return redirect(self.success_url)
+
+
+class PublicDashboardView(TemplateView):
+    """
+    Unauthenticated, read-only view for a shared dashboard.
+
+    URL: ``/d/<public_uuid>/``
+    Renders only when ``dashboard.is_public`` is True; returns 404 otherwise.
+    """
+
+    template_name = 'dashboard/public_dashboard.html'
+
+    def get(self, request, public_uuid, **kwargs):
+        dashboard = get_object_or_404(
+            Dashboard,
+            public_uuid=public_uuid,
+            is_public=True,
+            is_active=True,
+        )
+        # Build the same widget-enriched dict used by DashboardDetailView so the
+        # template can reuse the same Plotly rendering logic.
+        widgets_data = []
+        for widget in dashboard.widgets.all().select_related('table').order_by('created_at'):
+            try:
+                wdata = widget.get_data(limit=100)
+            except Exception as exc:
+                logger.warning("Public dashboard widget %s data error: %s", widget.id, exc)
+                wdata = {"error": str(exc)}
+            widgets_data.append({
+                'id': str(widget.id),
+                'widget_type': widget.widget_type,
+                'title': widget.title,
+                'query_config': widget.query_config,
+                'viz_config': widget.viz_config,
+                'position': widget.position or {'x': 0, 'y': 0, 'w': 4, 'h': 4},
+                'widget_data': wdata,
+            })
+
+        dashboard_data = {
+            'id': str(dashboard.id),
+            'name': dashboard.name,
+            'description': dashboard.description,
+            'workspace_name': dashboard.workspace.name,
+            'layout_config': dashboard.layout_config,
+            'widgets': widgets_data,
+        }
+
+        context = self.get_context_data(**kwargs)
+        context['dashboard'] = dashboard
+        context['dashboard_data'] = dashboard_data
+        return self.render_to_response(context)
 
 
 class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
@@ -811,7 +1073,23 @@ class WorkspaceSettingsView(LoginRequiredMixin, TemplateView):
 
 
 class TeamMembersView(LoginRequiredMixin, ListView):
-    """Team members management"""
+    """List current workspace members and pending invitations.
+
+    Renders ``dashboard/members.html`` with:
+
+    ``memberships``
+        All ``WorkspaceMembership`` rows for the active workspace,
+        with ``user`` pre-fetched to avoid N+1 queries.
+    ``pending_invitations``
+        ``WorkspaceInvitation`` rows that have not been accepted or
+        revoked — shown in a separate section so owners/admins can
+        revoke stale invites.
+    ``workspace``
+        The active ``Workspace`` instance (used by the template to
+        check the viewer's role before showing management actions).
+
+    URL: ``/dashboard/members/``
+    """
     model = WorkspaceMembership
     template_name = 'dashboard/members.html'
     context_object_name = 'memberships'
@@ -837,7 +1115,14 @@ class TeamMembersView(LoginRequiredMixin, ListView):
 
 
 class ActivityLogView(LoginRequiredMixin, ListView):
-    """View workspace activity log"""
+    """Paginated view of the workspace's ``AuditLog`` entries.
+
+    Shows the 50 most recent entries per page, ordered newest-first.
+    Each entry records who performed an action (create, update, delete,
+    export, invite, etc.), on which object, and with what changes.
+
+    URL: ``/dashboard/activity/``
+    """
     model = AuditLog
     template_name = 'dashboard/activity.html'
     context_object_name = 'logs'
@@ -919,7 +1204,23 @@ class BillingView(LoginRequiredMixin, TemplateView):
 
 
 class ProfileView(LoginRequiredMixin, TemplateView):
-    """User profile settings"""
+    """User profile and notification-preference settings.
+
+    GET renders ``dashboard/profile.html`` with the user's current
+    ``NotificationPreference`` row (created on first visit if absent).
+
+    POST dispatches on the hidden ``action`` field:
+
+    ``update_profile``
+        Updates ``first_name`` and ``last_name`` using ``save(update_fields=…)``
+        so only those two columns hit the database.
+
+    ``update_notification_prefs``
+        Reads checkbox presence for ``email_invites``, ``email_imports``,
+        ``email_insights``, and ``email_system``; saves the preference row.
+
+    URL: ``/dashboard/profile/``
+    """
     template_name = 'dashboard/profile.html'
 
     def get_context_data(self, **kwargs):
@@ -955,9 +1256,79 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
 
 class TableExportView(LoginRequiredMixin, TemplateView):
-    """Proxy to the exports app – supports ?format=csv|json|excel"""
+    """Thin proxy to ``apps.exports.views.export_table``.
+
+    Delegates the actual file generation to the exports app so that
+    export logic can be tested and reused independently of the dashboard
+    URL namespace.  Accepts the same ``?format=csv|json|excel`` query
+    parameter as the underlying view.
+
+    URL: ``/dashboard/tables/<uuid:pk>/export/``
+    """
     template_name = None  # no template; returns file download
 
     def get(self, request, *args, **kwargs):
         from apps.exports.views import export_table
         return export_table(request, kwargs['table_id'])
+
+class CalculatedFieldsView(LoginRequiredMixin, TemplateView):
+    """
+    Manage calculated fields for a DataTable.
+
+    URL: /dashboard/tables/<uuid:table_id>/calculated-fields/
+    """
+    template_name = 'dashboard/calculated_fields.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        table_id = self.kwargs['table_id']
+        table = get_object_or_404(DataTable, pk=table_id)
+
+        # Workspace guard
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if workspace and table.workspace_id != workspace.id:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        fields = CalculatedField.objects.filter(table=table).order_by('name')
+        # Schema: infer column names from first record
+        columns = []
+        try:
+            from apps.dashboards.models import Record
+            sample = Record.objects.filter(table=table, is_active=True).values_list('data', flat=True).first()
+            if sample:
+                columns = list(sample.keys())
+        except Exception:
+            pass
+
+        context.update({
+            'table': table,
+            'calculated_fields': fields,
+            'columns': columns,
+            'format_choices': CalculatedField.FORMAT_CHOICES,
+            'api_base': f'/api/v1/tables/{table_id}/calculated-fields/',
+            'validate_url': f'/api/v1/tables/{table_id}/calculated-fields/validate/',
+        })
+        return context
+
+
+class CohortFunnelView(LoginRequiredMixin, TemplateView):
+    """
+    Cohort retention & funnel analysis UI for a DataTable.
+
+    URL: /dashboard/tables/<uuid:table_id>/cohort-funnel/
+    """
+    template_name = 'dashboard/cohort_funnel.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        table_id = self.kwargs['table_id']
+        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
+
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if workspace and table.workspace_id != workspace.id:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        context['table'] = table
+        return context

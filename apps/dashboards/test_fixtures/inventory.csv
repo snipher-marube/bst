@@ -1,0 +1,31 @@
+sku,product,warehouse,stock,reorder_level,unit_cost,supplier,expiry_date,status
+SKU-001,Panadol Tabs,Main Store,500,100,25.00,PharmaCo,2026-06-30,Available
+SKU-002,Amoxicillin 500mg,Main Store,200,50,85.00,MediSupply,2025-12-31,Available
+SKU-003,A4 Paper Ream,Stationery,300,80,420.00,OfficeWorld,,Available
+SKU-004,Printer Ink Black,Stationery,45,20,1200.00,TechSupply,,Available
+SKU-005,Surgical Gloves,Medical,1000,200,8.50,PharmaCo,2027-03-15,Available
+SKU-006,Sanitizer 500ml,General,250,75,150.00,CleanCo,2026-09-30,Available
+SKU-007,Ibuprofen 400mg,Main Store,350,80,35.00,MediSupply,2026-01-31,Available
+SKU-008,Notebooks A4,Stationery,120,40,85.00,OfficeWorld,,Low Stock
+SKU-009,Ballpoint Pens,Stationery,600,150,15.00,OfficeWorld,,Available
+SKU-010,Surgical Masks,Medical,2000,500,5.00,MedEquip,2025-08-31,Available
+SKU-011,Cotton Wool 500g,Medical,80,30,180.00,PharmaCo,2026-12-31,Low Stock
+SKU-012,Diclofenac 50mg,Main Store,280,70,45.00,MediSupply,2025-11-30,Available
+SKU-013,Stapler Heavy Duty,Stationery,25,10,850.00,OfficeWorld,,Available
+SKU-014,Hand Soap 1L,General,180,60,95.00,CleanCo,2026-06-30,Available
+SKU-015,IV Giving Set,Medical,300,100,55.00,MedEquip,2026-03-31,Available
+SKU-016,Metronidazole 400mg,Main Store,160,50,30.00,PharmaCo,2025-10-31,Available
+SKU-017,File Folders,Stationery,200,60,45.00,OfficeWorld,,Available
+SKU-018,Bleach 1L,General,90,40,120.00,CleanCo,2025-06-30,Low Stock
+SKU-019,Examination Gloves,Medical,800,200,7.00,MedEquip,2026-08-31,Available
+SKU-020,Omeprazole 20mg,Main Store,220,60,60.00,MediSupply,2026-04-30,Available
+SKU-021,Whiteboard Markers,Stationery,150,50,75.00,OfficeWorld,,Available
+SKU-022,Mop Head,General,30,15,350.00,CleanCo,,Available
+SKU-023,Syringe 5ml,Medical,1500,400,3.50,MedEquip,2026-12-31,Available
+SKU-024,Ciprofloxacin 500mg,Main Store,130,40,95.00,PharmaCo,2025-09-30,Low Stock
+SKU-025,Calculator,Stationery,20,8,1800.00,TechSupply,,Available
+SKU-026,Toilet Paper Roll,General,400,120,35.00,CleanCo,,Available
+SKU-027,Bandages 10cm,Medical,500,150,22.00,PharmaCo,2027-06-30,Available
+SKU-028,Multivitamins,Main Store,180,50,280.00,MediSupply,2026-02-28,Available
+SKU-029,Scissors Office,Stationery,40,15,250.00,OfficeWorld,,Available
+SKU-030,Gauze Swabs,Medical,600,200,18.00,MedEquip,2026-09-30,Available

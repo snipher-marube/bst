@@ -1,0 +1,31 @@
+patient_id,diagnosis,doctor,ward,treatment,admission_date,discharge_date,bill_amount,status
+PAT-001,Malaria,Dr. Kamau,General,Antimalarial,2024-01-05,2024-01-10,12500,Discharged
+PAT-002,Typhoid,Dr. Odhiambo,General,Antibiotics,2024-01-07,2024-01-14,9800,Discharged
+PAT-003,Diabetes,Dr. Wanjiru,Endocrinology,Insulin,2024-01-10,,45000,Admitted
+PAT-004,Fracture,Dr. Mwangi,Orthopedics,Surgery,2024-01-12,2024-01-20,38000,Discharged
+PAT-005,Pneumonia,Dr. Kamau,General,Antibiotics,2024-01-15,2024-01-21,15000,Discharged
+PAT-006,Appendicitis,Dr. Omondi,Surgery,Surgery,2024-01-18,2024-01-22,52000,Discharged
+PAT-007,Malaria,Dr. Wanjiru,General,Antimalarial,2024-01-20,2024-01-25,11000,Discharged
+PAT-008,Hypertension,Dr. Kimani,General,Medication,2024-01-22,,22000,Admitted
+PAT-009,Typhoid,Dr. Kamau,General,Antibiotics,2024-01-25,2024-02-01,10500,Discharged
+PAT-010,Fracture,Dr. Mwangi,Orthopedics,Physiotherapy,2024-01-28,2024-02-08,28000,Discharged
+PAT-011,Malaria,Dr. Odhiambo,General,Antimalarial,2024-02-01,2024-02-06,12000,Discharged
+PAT-012,Diabetes,Dr. Wanjiru,Endocrinology,Insulin,2024-02-03,,48000,Admitted
+PAT-013,Pneumonia,Dr. Kamau,General,Oxygen Therapy,2024-02-06,2024-02-13,18000,Discharged
+PAT-014,Appendicitis,Dr. Omondi,Surgery,Surgery,2024-02-09,2024-02-13,55000,Discharged
+PAT-015,Hypertension,Dr. Kimani,General,Medication,2024-02-12,2024-02-17,20000,Discharged
+PAT-016,Malaria,Dr. Kamau,ICU,Antimalarial IV,2024-02-15,2024-02-23,35000,Discharged
+PAT-017,Typhoid,Dr. Mwangi,General,Antibiotics,2024-02-18,2024-02-25,10000,Discharged
+PAT-018,Fracture,Dr. Odhiambo,Orthopedics,Surgery,2024-02-21,2024-03-01,42000,Discharged
+PAT-019,Diabetes,Dr. Wanjiru,Endocrinology,Insulin,2024-02-24,,50000,Admitted
+PAT-020,Pneumonia,Dr. Kamau,General,Antibiotics,2024-02-27,2024-03-05,14500,Discharged
+PAT-021,Malaria,Dr. Omondi,General,Antimalarial,2024-03-01,2024-03-07,11500,Discharged
+PAT-022,Appendicitis,Dr. Kimani,Surgery,Surgery,2024-03-04,2024-03-08,54000,Discharged
+PAT-023,Hypertension,Dr. Kamau,General,Medication,2024-03-07,,21000,Admitted
+PAT-024,Typhoid,Dr. Mwangi,General,Antibiotics,2024-03-10,2024-03-17,9500,Discharged
+PAT-025,Malaria,Dr. Odhiambo,General,Antimalarial,2024-03-13,2024-03-18,12500,Discharged
+PAT-026,Fracture,Dr. Wanjiru,Orthopedics,Surgery,2024-03-16,2024-03-25,39000,Discharged
+PAT-027,Diabetes,Dr. Kamau,Endocrinology,Insulin,2024-03-19,,46000,Admitted
+PAT-028,Pneumonia,Dr. Omondi,General,Antibiotics,2024-03-22,2024-03-28,16000,Discharged
+PAT-029,Malaria,Dr. Kimani,General,Antimalarial,2024-03-25,2024-03-30,11000,Discharged
+PAT-030,Appendicitis,Dr. Mwangi,Surgery,Surgery,2024-03-28,2024-04-01,57000,Discharged

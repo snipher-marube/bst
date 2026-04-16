@@ -19,22 +19,35 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from apps.dashboards.views import PublicDashboardView
+from apps.dashboards.api_v1 import WebhookIngestView
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('apps.core.urls')),
     path("accounts/", include("allauth.urls")),
+    # SSO / SAML 2.0
+    path('sso/', include('apps.core.sso_urls', namespace='sso')),
     path('newsletter/', include('apps.newsletter.urls', namespace='newsletter')),
     path('dashboard/', include('apps.dashboards.urls', namespace='dashboard')),
     path('subscriptions/', include('apps.subscriptions.urls', namespace='subscriptions')),
     path('workspaces/', include('apps.workspaces.urls', namespace='workspaces')),
     path('exports/', include('apps.exports.urls', namespace='exports')),
     path('reports/', include('apps.reports.urls', namespace='reports')),
+    # Public shared dashboard (no login required)
+    path('d/<uuid:public_uuid>/', PublicDashboardView.as_view(), name='public_dashboard'),
+    # Webhook ingest (public, HMAC-authenticated)
+    path('webhook/ingest/<str:token>/', WebhookIngestView.as_view(), name='webhook_ingest'),
     # Dashboard API URLs (legacy)
     path('api/', include('apps.dashboards.urls_api')),
     # REST API v1
     path('api/v1/', include('apps.dashboards.urls_api_v1')),
+    # OpenAPI schema & interactive docs
+    path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 
 
@@ -43,5 +56,6 @@ if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-    import debug_toolbar
-    urlpatterns = [path('__debug__/', include(debug_toolbar.urls))] + urlpatterns
+    if 'debug_toolbar' in settings.INSTALLED_APPS:
+        import debug_toolbar
+        urlpatterns = [path('__debug__/', include(debug_toolbar.urls))] + urlpatterns

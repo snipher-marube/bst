@@ -206,7 +206,7 @@
       <h2 class="font-semibold text-gray-900"><i class="fas fa-building mr-2 text-[#03466e]"></i>Your Workspaces</h2>
     </div>
     <div class="section-body">
-      {% with workspaces=request.user.workspaces.filter %}
+      {% with workspaces=request.user.workspaces.all %}
       <div class="space-y-2">
         {% for ws in request.user.workspaces.all %}
         <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">

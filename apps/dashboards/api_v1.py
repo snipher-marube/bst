@@ -8,6 +8,7 @@ import io
 import json
 import logging
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
@@ -22,14 +23,17 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
-from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob
+from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint, DataSource, CalculatedField
 from .permissions import HasWorkspaceAccess, CanEditData, CanManageWorkspace
+from .webhook_crypto import encrypt_secret, decrypt_secret
 from .serializers import (
     WorkspaceSerializer,
     DataTableSerializer,
     RecordSerializer,
     DashboardSerializer,
     WidgetSerializer,
+    DataAlertSerializer,
+    WebhookEndpointSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -318,6 +322,121 @@ class RecordDetailAPIView(APIView):
 
 
 # ---------------------------------------------------------------------------
+# BATCH RECORD OPERATIONS
+# ---------------------------------------------------------------------------
+
+class RecordBatchAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/records/batch/
+
+    Accepts a JSON body with an array of operation objects.  Each object must
+    include an ``op`` field:
+
+    - ``create``: insert a new record.  Requires ``data`` dict.
+    - ``update``: update an existing record by ``id``.  Requires ``id`` + ``data``.
+    - ``upsert``: insert-or-update keyed on ``primary_key`` + ``data``.
+    - ``delete``: soft-delete a record by ``id``.  Requires ``id``.
+
+    Maximum 500 operations per request.
+
+    Response::
+        {
+          "created":  <int>,
+          "updated":  <int>,
+          "deleted":  <int>,
+          "errors":   [{"index": <int>, "op": "<op>", "error": "<msg>"}, ...]
+        }
+    """
+    VALID_OPS  = {'create', 'update', 'upsert', 'delete'}
+    MAX_OPS    = 500
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanEditData]
+
+    def post(self, request, table_id):
+        ws    = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+
+        ops = request.data
+        if not isinstance(ops, list):
+            return Response({'error': 'Request body must be a JSON array of operations'}, status=400)
+        if len(ops) > self.MAX_OPS:
+            return Response(
+                {'error': f'Maximum {self.MAX_OPS} operations per request (received {len(ops)})'},
+                status=400,
+            )
+
+        created = updated = deleted = 0
+        errors = []
+
+        with transaction.atomic():
+            for idx, op_obj in enumerate(ops):
+                if not isinstance(op_obj, dict):
+                    errors.append({'index': idx, 'op': None, 'error': 'Each operation must be a JSON object'})
+                    continue
+
+                op = op_obj.get('op')
+                if op not in self.VALID_OPS:
+                    errors.append({'index': idx, 'op': op, 'error': f'op must be one of: {", ".join(sorted(self.VALID_OPS))}'})
+                    continue
+
+                data       = op_obj.get('data', {})
+                record_id  = op_obj.get('id')
+                primary_key = op_obj.get('primary_key', '')
+
+                try:
+                    if op == 'create':
+                        if not isinstance(data, dict):
+                            raise ValueError('data must be a dict')
+                        Record.objects.create(table=table, data=data, created_by=request.user)
+                        created += 1
+
+                    elif op == 'update':
+                        if not record_id:
+                            raise ValueError('id is required for update')
+                        record = get_object_or_404(Record, pk=record_id, table=table, is_active=True)
+                        record.data = {**record.data, **data} if isinstance(data, dict) else data
+                        record.save(update_fields=['data'])
+                        updated += 1
+
+                    elif op == 'upsert':
+                        if not primary_key:
+                            raise ValueError('primary_key is required for upsert')
+                        if not isinstance(data, dict):
+                            raise ValueError('data must be a dict')
+                        pk_val = data.get(primary_key)
+                        if pk_val is None:
+                            raise ValueError(f'primary_key field "{primary_key}" missing from data')
+                        existing = Record.objects.filter(
+                            table=table, is_active=True, **{f'data__{primary_key}': pk_val}
+                        ).first()
+                        if existing:
+                            existing.data = data
+                            existing.save(update_fields=['data'])
+                            updated += 1
+                        else:
+                            Record.objects.create(table=table, data=data, created_by=request.user)
+                            created += 1
+
+                    elif op == 'delete':
+                        if not record_id:
+                            raise ValueError('id is required for delete')
+                        record = get_object_or_404(Record, pk=record_id, table=table, is_active=True)
+                        record.is_active  = False
+                        record.deleted_at = timezone.now()
+                        record.save(update_fields=['is_active', 'deleted_at'])
+                        deleted += 1
+
+                except Exception as exc:
+                    errors.append({'index': idx, 'op': op, 'error': str(exc)})
+
+        return Response({
+            'created': created,
+            'updated': updated,
+            'deleted': deleted,
+            'errors':  errors[:50],  # cap at 50
+        }, status=200 if not errors or (created + updated + deleted) else 207)
+
+
+# ---------------------------------------------------------------------------
 # DASHBOARDS
 # ---------------------------------------------------------------------------
 
@@ -409,9 +528,8 @@ class WidgetDetailAPIView(APIView):
         serializer = WidgetSerializer(widget, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        # Invalidate cache
-        cache_key = f"widget_data_{widget.id}"
-        cache.delete(cache_key)
+        # QueryEngine cache key includes widget.updated_at, so saving the widget
+        # automatically invalidates the old key — no explicit deletion needed.
         return Response(serializer.data)
 
     def delete(self, request, pk):
@@ -433,12 +551,26 @@ class TableImportAPIView(APIView):
         import uuid as uuid_mod
         import pandas as pd
         import numpy as np
+        import os
 
         ws = _require_workspace(request)
         table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
         uploaded = request.FILES.get('file')
         if not uploaded:
             return Response({'error': 'No file uploaded'}, status=400)
+
+        # ── File size guard (reject before touching pandas) ────────────────
+        MAX_UPLOAD_BYTES = getattr(settings, 'MAX_IMPORT_FILE_BYTES', 50 * 1024 * 1024)  # 50 MB
+        if uploaded.size > MAX_UPLOAD_BYTES:
+            limit_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+            return Response(
+                {'error': f'File too large. Maximum allowed size is {limit_mb} MB '
+                          f'(uploaded {uploaded.size / 1024 / 1024:.1f} MB).'},
+                status=413,
+            )
+
+        # ── Strip path traversal from filename ────────────────────────────
+        uploaded.name = os.path.basename(uploaded.name)
 
         from apps.dashboards.services import DataImportService
         service = DataImportService()
@@ -457,6 +589,17 @@ class TableImportAPIView(APIView):
             table.schema = service._detect_schema_from_df(df)
             table.save(update_fields=['schema'])
 
+        # ── Import mode params ────────────────────────────────────────────
+        import_mode = request.data.get('import_mode', 'append')
+        if import_mode not in {'replace', 'append', 'upsert'}:
+            return Response(
+                {'error': 'import_mode must be one of: append, replace, upsert'},
+                status=400,
+            )
+        primary_key_field = request.data.get('primary_key', '')
+        if import_mode == 'upsert' and not primary_key_field:
+            return Response({'error': 'primary_key is required for upsert mode'}, status=400)
+
         # Create ImportJob
         job = ImportJob.objects.create(
             workspace=table.workspace,
@@ -466,6 +609,8 @@ class TableImportAPIView(APIView):
             file_path=import_id,  # We use import_id as a reference into cache
             status='pending',
             total_rows=len(df),
+            import_mode=import_mode,
+            primary_key_field=primary_key_field,
         )
 
         # Fire Celery task
@@ -621,3 +766,828 @@ class TeamMemberDetailAPIView(APIView):
             return Response({'error': 'Cannot remove the workspace owner'}, status=400)
         membership.delete()
         return Response(status=204)
+
+
+# ---------------------------------------------------------------------------
+# DATA ALERTS
+# ---------------------------------------------------------------------------
+
+class DataAlertListCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = DataAlert.objects.filter(workspace=ws).order_by('-created_at')
+        return Response(DataAlertSerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        # Verify the referenced table belongs to this workspace
+        table_id = request.data.get('table')
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+        serializer = DataAlertSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        alert = serializer.save(workspace=ws, table=table, created_by=request.user)
+        return Response(DataAlertSerializer(alert, context={'request': request}).data, status=201)
+
+
+class DataAlertDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def _get_alert(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(DataAlert, pk=pk, workspace=ws)
+
+    def get(self, request, pk):
+        return Response(DataAlertSerializer(self._get_alert(pk, request), context={'request': request}).data)
+
+    def patch(self, request, pk):
+        alert = self._get_alert(pk, request)
+        serializer = DataAlertSerializer(alert, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        self._get_alert(pk, request).delete()
+        return Response(status=204)
+
+
+# ---------------------------------------------------------------------------
+# WEBHOOK ENDPOINTS
+# ---------------------------------------------------------------------------
+
+class WebhookEndpointListCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = WebhookEndpoint.objects.filter(workspace=ws).order_by('-created_at')
+        return Response(WebhookEndpointSerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        table_id = request.data.get('table')
+        table = get_object_or_404(DataTable, pk=table_id, workspace=ws, is_active=True)
+        serializer = WebhookEndpointSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        plaintext_secret = WebhookEndpoint.generate_secret()
+        endpoint = serializer.save(
+            workspace=ws,
+            table=table,
+            created_by=request.user,
+            token=WebhookEndpoint.generate_token(),
+            secret=encrypt_secret(plaintext_secret),
+        )
+        # Return plaintext secret exactly once — it is not recoverable from
+        # the API after this response.
+        data = WebhookEndpointSerializer(endpoint, context={'request': request}).data
+        data['secret'] = plaintext_secret
+        return Response(data, status=201)
+
+
+class WebhookEndpointDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def _get_endpoint(self, pk, request):
+        ws = _require_workspace(request)
+        return get_object_or_404(WebhookEndpoint, pk=pk, workspace=ws)
+
+    def get(self, request, pk):
+        return Response(WebhookEndpointSerializer(self._get_endpoint(pk, request), context={'request': request}).data)
+
+    def patch(self, request, pk):
+        endpoint = self._get_endpoint(pk, request)
+        serializer = WebhookEndpointSerializer(endpoint, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        self._get_endpoint(pk, request).delete()
+        return Response(status=204)
+
+
+class WebhookEndpointRegenerateSecretAPIView(APIView):
+    """Rotate the signing secret for a webhook endpoint."""
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanManageWorkspace]
+
+    def post(self, request, pk):
+        ws = _require_workspace(request)
+        endpoint = get_object_or_404(WebhookEndpoint, pk=pk, workspace=ws)
+        plaintext_secret = WebhookEndpoint.generate_secret()
+        endpoint.secret = encrypt_secret(plaintext_secret)
+        endpoint.save(update_fields=['secret', 'updated_at'])
+        # Return plaintext exactly once — store it immediately, it won't be shown again.
+        return Response({'secret': plaintext_secret})
+
+
+# ---------------------------------------------------------------------------
+# WEBHOOK INGEST  (public — no authentication required)
+# ---------------------------------------------------------------------------
+
+class WebhookIngestView(APIView):
+    """
+    Public endpoint: ``POST /webhook/ingest/<token>/``
+
+    Validates the ``X-Hub-Signature-256`` HMAC header, then writes Record
+    rows to the target DataTable from the JSON payload.
+
+    Payload formats accepted:
+    - JSON object  → one record
+    - JSON array   → one record per element
+
+    Query parameters:
+    - ``import_mode``: ``replace`` (default) | ``append`` | ``upsert``
+        - ``replace``: mark all existing records inactive, then insert fresh rows
+        - ``append``:  insert new rows without touching existing data
+        - ``upsert``:  insert or update rows keyed on ``primary_key`` field
+    - ``primary_key``: field name used as the unique key for ``upsert`` mode
+    """
+    VALID_MODES = {'replace', 'append', 'upsert'}
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, token):
+        import hashlib
+        import hmac as _hmac_mod
+
+        endpoint = WebhookEndpoint.objects.filter(token=token, is_active=True).first()
+        if not endpoint:
+            return Response(status=404)
+
+        # ── HMAC verification ─────────────────────────────────────────────
+        sig_header = request.META.get('HTTP_X_HUB_SIGNATURE_256', '')
+        raw_body = request.body
+        plaintext_key = endpoint.get_plaintext_secret().encode('utf-8')
+        expected = 'sha256=' + _hmac_mod.new(
+            plaintext_key,
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not _hmac_mod.compare_digest(sig_header, expected):
+            logger.warning('Webhook HMAC mismatch endpoint=%s', endpoint.id)
+            return Response({'error': 'Invalid signature'}, status=401)
+
+        # ── Parse payload ─────────────────────────────────────────────────
+        try:
+            payload = json.loads(raw_body)
+        except (json.JSONDecodeError, ValueError):
+            return Response({'error': 'Invalid JSON payload'}, status=400)
+
+        if isinstance(payload, dict):
+            rows = [payload]
+        elif isinstance(payload, list):
+            rows = payload
+        else:
+            return Response({'error': 'Payload must be a JSON object or array'}, status=400)
+
+        if not rows:
+            return Response({'created': 0, 'updated': 0})
+
+        # ── Import mode ───────────────────────────────────────────────────
+        import_mode = request.query_params.get('import_mode', 'replace')
+        if import_mode not in self.VALID_MODES:
+            return Response(
+                {'error': f'import_mode must be one of: {", ".join(sorted(self.VALID_MODES))}'},
+                status=400,
+            )
+        primary_key = request.query_params.get('primary_key', '')
+        if import_mode == 'upsert' and not primary_key:
+            return Response({'error': 'primary_key is required for upsert mode'}, status=400)
+
+        # ── Write records ─────────────────────────────────────────────────
+        table = endpoint.table
+        created = updated = 0
+        errors = []
+
+        with transaction.atomic():
+            if import_mode == 'replace':
+                # Soft-delete all existing active records for this table
+                Record.objects.filter(table=table, is_active=True).update(is_active=False)
+
+            for i, row in enumerate(rows[:1000]):  # hard cap: 1000 records per request
+                if not isinstance(row, dict):
+                    errors.append({'index': i, 'error': 'Each element must be a JSON object'})
+                    continue
+                try:
+                    if import_mode == 'upsert' and primary_key and primary_key in row:
+                        pk_val = row[primary_key]
+                        existing = Record.objects.filter(
+                            table=table, is_active=True, **{f'data__{primary_key}': pk_val}
+                        ).first()
+                        if existing:
+                            existing.data = row
+                            existing.save(update_fields=['data'])
+                            updated += 1
+                        else:
+                            Record.objects.create(table=table, data=row)
+                            created += 1
+                    else:
+                        Record.objects.create(table=table, data=row)
+                        created += 1
+                except Exception as exc:
+                    errors.append({'index': i, 'error': str(exc)})
+
+        # ── Update telemetry ──────────────────────────────────────────────
+        from django.db.models import F as _F
+        WebhookEndpoint.objects.filter(pk=endpoint.pk).update(
+            total_requests=_F('total_requests') + 1,
+            last_request_at=timezone.now(),
+        )
+
+        response_data = {'created': created, 'updated': updated, 'mode': import_mode}
+        if errors:
+            response_data['errors'] = errors[:10]  # first 10 only
+        return Response(response_data, status=200 if (created or updated) else 400)
+
+
+# ---------------------------------------------------------------------------
+# AUDIT LOG
+# ---------------------------------------------------------------------------
+
+class AuditLogListAPIView(APIView):
+    """
+    Read-only list of AuditLog entries for a workspace.
+    Only admins and owners may view the full audit log.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess, CanManageWorkspace]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        page  = max(int(request.GET.get('page', 1)), 1)
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        offset = (page - 1) * limit
+
+        qs = AuditLog.objects.filter(workspace=ws).order_by('-timestamp')
+
+        # Optional filters
+        action = request.GET.get('action')
+        if action:
+            qs = qs.filter(action=action)
+        content_type = request.GET.get('content_type')
+        if content_type:
+            qs = qs.filter(content_type=content_type)
+
+        data = [
+            {
+                'id':           str(entry.id) if hasattr(entry, 'id') else None,
+                'user_id':      entry.user_id,
+                'user_email':   entry.user.email if entry.user else None,
+                'action':       entry.action,
+                'content_type': entry.content_type,
+                'object_id':    str(entry.object_id),
+                'object_repr':  entry.object_repr,
+                'changes':      entry.changes,
+                'ip_address':   entry.ip_address,
+                'timestamp':    entry.timestamp,
+            }
+            for entry in qs.select_related('user')[offset: offset + limit]
+        ]
+        return Response({'count': qs.count(), 'page': page, 'limit': limit, 'results': data})
+
+
+# ---------------------------------------------------------------------------
+# WORKSPACE USAGE ANALYTICS
+# ---------------------------------------------------------------------------
+
+class WorkspaceUsageAPIView(APIView):
+    """
+    Aggregate usage statistics for a workspace.
+    Returns table count, total records, estimated storage, import history, etc.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, workspace_id):
+        from django.db.models import Sum, Count as DbCount, Max
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+
+        tables_qs = DataTable.objects.filter(workspace=ws, is_active=True)
+        agg = tables_qs.aggregate(
+            total_tables=DbCount('id'),
+            total_records=Sum('record_count'),
+        )
+
+        recent_import = (
+            ImportJob.objects
+            .filter(workspace=ws, status='completed')
+            .order_by('-completed_at')
+            .values('id', 'file_name', 'success_rows', 'completed_at')
+            .first()
+        )
+
+        member_count = WorkspaceMembership.objects.filter(workspace=ws).count()
+
+        total_records = agg['total_records'] or 0
+        estimated_storage_mb = round(total_records * 1024 / (1024 ** 2), 2)  # ~1 KB per record
+
+        from apps.insights.models import Insight
+        insight_count = Insight.objects.filter(workspace=ws).count()
+
+        return Response({
+            'workspace_id':        str(ws.id),
+            'workspace_name':      ws.name,
+            'total_tables':        agg['total_tables'] or 0,
+            'total_records':       total_records,
+            'estimated_storage_mb': estimated_storage_mb,
+            'member_count':        member_count,
+            'insight_count':       insight_count,
+            'recent_import':       recent_import,
+        })
+
+
+# =============================================================================
+# DataSource connector API views (Gap 7 — PostgreSQL direct connector)
+# =============================================================================
+
+class DataSourceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for DataSource.
+
+    DB connectors (postgresql / mysql):
+      • password (write-only) — plaintext password, encrypted at rest.
+      • has_password (read-only) — True when a password has been stored.
+
+    Google Sheets connector:
+      • google_credentials_json (write-only) — service-account JSON, encrypted at rest.
+      • has_google_credentials (read-only)   — True when credentials have been stored.
+      • google_spreadsheet_id                — the sheet ID from the URL.
+    """
+    # ── DB connector fields ──────────────────────────────────────────────
+    password     = serializers.CharField(write_only=True, required=False,
+                                         allow_blank=True, default='')
+    has_password = serializers.SerializerMethodField(read_only=True)
+
+    # ── Google Sheets fields ─────────────────────────────────────────────
+    google_credentials_json = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, default='',
+        help_text='Full service-account JSON string (write-only, stored encrypted).',
+    )
+    has_google_credentials = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model  = DataSource
+        fields = [
+            'id', 'name', 'connector_type',
+            # DB connector
+            'host', 'port', 'database', 'username',
+            'password', 'has_password', 'ssl_mode', 'extra_options',
+            # Google Sheets
+            'google_credentials_json', 'has_google_credentials',
+            'google_spreadsheet_id',
+            # shared status
+            'is_active', 'last_tested_at', 'last_test_ok', 'last_test_error',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'has_password', 'has_google_credentials',
+            'last_tested_at', 'last_test_ok', 'last_test_error',
+            'created_at', 'updated_at',
+        ]
+
+    def get_has_password(self, obj):
+        return bool(obj._password)
+
+    def get_has_google_credentials(self, obj):
+        return bool(obj.google_credentials_enc)
+
+    def validate(self, data):
+        connector = data.get('connector_type', getattr(self.instance, 'connector_type', 'postgresql'))
+        if connector == 'google_sheets':
+            # On create, credentials and spreadsheet ID are required.
+            if not self.instance:
+                if not data.get('google_credentials_json'):
+                    raise serializers.ValidationError(
+                        {'google_credentials_json': 'Required for Google Sheets connector.'}
+                    )
+                if not data.get('google_spreadsheet_id'):
+                    raise serializers.ValidationError(
+                        {'google_spreadsheet_id': 'Required for Google Sheets connector.'}
+                    )
+        else:
+            # DB connectors require host, database, username, password on create.
+            if not self.instance:
+                for field in ('host', 'database', 'username'):
+                    if not data.get(field):
+                        raise serializers.ValidationError({field: 'Required for database connectors.'})
+                if not data.get('password'):
+                    raise serializers.ValidationError({'password': 'Required for database connectors.'})
+        return data
+
+    def create(self, validated_data):
+        password     = validated_data.pop('password', '')
+        creds_json   = validated_data.pop('google_credentials_json', '')
+        ds = DataSource(**validated_data)
+        if password:
+            ds.set_password(password)
+        if creds_json:
+            ds.set_google_credentials(creds_json)
+        ds.save()
+        return ds
+
+    def update(self, instance, validated_data):
+        password   = validated_data.pop('password', None)
+        creds_json = validated_data.pop('google_credentials_json', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        if creds_json:
+            instance.set_google_credentials(creds_json)
+        instance.save()
+        return instance
+
+
+class DataSourceListCreateAPIView(APIView):
+    """
+    GET  /api/v1/workspaces/<workspace_id>/data-sources/
+    POST /api/v1/workspaces/<workspace_id>/data-sources/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        qs = DataSource.objects.filter(workspace=ws, is_active=True).order_by('name')
+        return Response(DataSourceSerializer(qs, many=True).data)
+
+    def post(self, request, workspace_id):
+        ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
+        # Only owner/admin may add connectors
+        try:
+            membership = WorkspaceMembership.objects.get(workspace=ws, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return Response({'error': 'Not a member.'}, status=403)
+        if membership.role not in ('owner', 'admin'):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ser = DataSourceSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=400)
+        ds = ser.save(workspace=ws, created_by=request.user)
+        return Response(DataSourceSerializer(ds).data, status=201)
+
+
+class DataSourceDetailAPIView(APIView):
+    """
+    GET    /api/v1/data-sources/<pk>/
+    PATCH  /api/v1/data-sources/<pk>/
+    DELETE /api/v1/data-sources/<pk>/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_ds(self, request, pk):
+        ds = get_object_or_404(DataSource, pk=pk)
+        # Enforce workspace membership
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return ds
+
+    def _require_manage(self, request, workspace):
+        try:
+            m = WorkspaceMembership.objects.get(workspace=workspace, user=request.user)
+        except WorkspaceMembership.DoesNotExist:
+            return False
+        return m.role in ('owner', 'admin')
+
+    def get(self, request, pk):
+        return Response(DataSourceSerializer(self._get_ds(request, pk)).data)
+
+    def patch(self, request, pk):
+        ds = self._get_ds(request, pk)
+        if not self._require_manage(request, ds.workspace):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ser = DataSourceSerializer(ds, data=request.data, partial=True)
+        if not ser.is_valid():
+            return Response(ser.errors, status=400)
+        return Response(DataSourceSerializer(ser.save()).data)
+
+    def delete(self, request, pk):
+        ds = self._get_ds(request, pk)
+        if not self._require_manage(request, ds.workspace):
+            return Response({'error': 'Admin or owner required.'}, status=403)
+        ds.is_active = False
+        ds.save(update_fields=['is_active'])
+        return Response(status=204)
+
+
+class DataSourceTestAPIView(APIView):
+    """
+    POST /api/v1/data-sources/<pk>/test/
+
+    DB connectors: runs ``SELECT 1`` over a real connection.
+    Google Sheets: opens the spreadsheet and lists worksheets.
+    Updates last_tested_at / last_test_ok / last_test_error.
+    Returns 200 on success, 400 on connection error.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from .services import DataSourceQueryEngine, GoogleSheetsQueryEngine
+
+        ds = get_object_or_404(DataSource, pk=pk)
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        ok    = False
+        error = ''
+        message = ''
+        try:
+            if ds.connector_type == 'google_sheets':
+                engine = GoogleSheetsQueryEngine(ds)
+                ok, message = engine.test_connection()
+                if not ok:
+                    error = message
+            else:
+                engine = DataSourceQueryEngine(ds)
+                with engine._connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT 1')
+                ok      = True
+                message = 'Connection successful.'
+        except Exception as exc:
+            error = str(exc)
+
+        ds.last_tested_at  = timezone.now()
+        ds.last_test_ok    = ok
+        ds.last_test_error = error
+        ds.save(update_fields=['last_tested_at', 'last_test_ok', 'last_test_error'])
+
+        if ok:
+            return Response({'ok': True, 'message': message, 'error': None})
+        return Response({'ok': False, 'error': error}, status=400)
+
+
+class DataSourceSchemaAPIView(APIView):
+    """
+    GET /api/v1/data-sources/<pk>/schema/
+
+    DB connectors: returns tables/views with column metadata.
+    Google Sheets: returns worksheet names with inferred column types.
+    Response shape: [{"name": str, "type": str, "columns": [...]}]
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        from .services import DataSourceQueryEngine, GoogleSheetsQueryEngine
+
+        ds = get_object_or_404(DataSource, pk=pk)
+        if not ds.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        engine = GoogleSheetsQueryEngine(ds) if ds.connector_type == 'google_sheets' \
+            else DataSourceQueryEngine(ds)
+        try:
+            tables = engine.list_tables()
+            for tbl in tables:
+                try:
+                    tbl['columns'] = engine.list_columns(tbl['name'])
+                except Exception:
+                    tbl['columns'] = []
+            return Response(tables)
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=400)
+
+
+# ---------------------------------------------------------------------------
+# Gap 14 — Calculated Fields
+# ---------------------------------------------------------------------------
+
+class CalculatedFieldSerializer(serializers.ModelSerializer):
+    table_id = serializers.UUIDField(source='table.id', read_only=True)
+
+    class Meta:
+        model = CalculatedField
+        fields = [
+            'id', 'table_id', 'name', 'display_name',
+            'expression', 'format_type', 'description',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'table_id', 'created_at', 'updated_at']
+
+    def validate_expression(self, value):
+        from .services import CalculatedFieldEvaluator
+        valid, error = CalculatedFieldEvaluator.validate_expression(value)
+        if not valid:
+            raise serializers.ValidationError(f'Invalid expression: {error}')
+        return value
+
+
+class CalculatedFieldListCreateAPIView(APIView):
+    """
+    GET  /api/v1/tables/<table_id>/calculated-fields/  — list all for this table
+    POST /api/v1/tables/<table_id>/calculated-fields/  — create a new one
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_table(self, request, table_id):
+        table = get_object_or_404(DataTable, pk=table_id)
+        if not table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return table
+
+    def get(self, request, table_id):
+        table = self._get_table(request, table_id)
+        fields = CalculatedField.objects.filter(table=table)
+        return Response(CalculatedFieldSerializer(fields, many=True).data)
+
+    def post(self, request, table_id):
+        table = self._get_table(request, table_id)
+        ser = CalculatedFieldSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        cf = ser.save(table=table)
+        return Response(CalculatedFieldSerializer(cf).data, status=status.HTTP_201_CREATED)
+
+
+class CalculatedFieldDetailAPIView(APIView):
+    """
+    GET    /api/v1/calculated-fields/<pk>/  — retrieve
+    PATCH  /api/v1/calculated-fields/<pk>/  — partial update
+    DELETE /api/v1/calculated-fields/<pk>/  — delete
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_cf(self, request, pk):
+        cf = get_object_or_404(CalculatedField, pk=pk)
+        if not cf.table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return cf
+
+    def get(self, request, pk):
+        cf = self._get_cf(request, pk)
+        return Response(CalculatedFieldSerializer(cf).data)
+
+    def patch(self, request, pk):
+        cf = self._get_cf(request, pk)
+        ser = CalculatedFieldSerializer(cf, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(CalculatedFieldSerializer(cf).data)
+
+    def delete(self, request, pk):
+        cf = self._get_cf(request, pk)
+        cf.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CalculatedFieldPreviewAPIView(APIView):
+    """
+    POST /api/v1/calculated-fields/<pk>/preview/
+
+    Evaluate the calculated field against the first 5 000 records of its
+    table and return the computed result.  Useful for validating an
+    expression before saving.
+
+    Also accepts an ad-hoc ``expression`` body param for live preview
+    before a field is saved.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Record
+        from .services import CalculatedFieldEvaluator
+
+        cf = get_object_or_404(CalculatedField, pk=pk)
+        if not cf.table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        expression = request.data.get('expression', cf.expression)
+
+        records = list(
+            Record.objects.filter(table=cf.table, is_active=True)
+            .values_list('data', flat=True)[:5_000]
+        )
+
+        try:
+            value = CalculatedFieldEvaluator.evaluate_against_records(expression, records)
+            return Response({
+                'expression': expression,
+                'result': value,
+                'record_count': len(records),
+                'format_type': cf.format_type,
+            })
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=400)
+
+
+class CalculatedFieldValidateAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/calculated-fields/validate/
+
+    Validate an expression without saving it.
+    Body: {"expression": "sum(revenue) / count(user_id)"}
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, table_id):
+        from .services import CalculatedFieldEvaluator
+
+        table = get_object_or_404(DataTable, pk=table_id)
+        if not table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        expression = request.data.get('expression', '')
+        if not expression:
+            return Response({'valid': False, 'error': 'expression is required.'}, status=400)
+
+        valid, error = CalculatedFieldEvaluator.validate_expression(expression)
+        return Response({'valid': valid, 'error': error or None})
+
+
+# ---------------------------------------------------------------------------
+# Gap 15 — Cohort & Funnel Analysis
+# ---------------------------------------------------------------------------
+
+class CohortAnalysisAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/cohort-analysis/
+
+    Run an ad-hoc cohort retention analysis on a DataTable without creating a
+    widget first.  The request body mirrors the cohort widget query_config.
+
+    Request body
+    ------------
+    {
+      "user_field":       "user_id",    # required
+      "event_date_field": "created_at", # optional
+      "period":           "week",       # "day" | "week" | "month"
+      "periods":          8,            # number of periods (max 52)
+      "filters":          []            # optional pre-filters
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def post(self, request, table_id):
+        from .services import CohortAnalysisEngine
+
+        workspace = _require_workspace(request)
+        table = get_object_or_404(DataTable, id=table_id, workspace=workspace, is_active=True)
+
+        # Build a transient widget-like object so the engine can be reused
+        class _FakeWidget:
+            pass
+
+        widget = _FakeWidget()
+        widget.table = table
+        widget.query_config = request.data if isinstance(request.data, dict) else {}
+
+        if not widget.query_config.get('user_field'):
+            return Response({'error': 'user_field is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = CohortAnalysisEngine().execute(widget)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+
+class FunnelAnalysisAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/funnel-analysis/
+
+    Run an ad-hoc funnel drop-off analysis on a DataTable without creating a
+    widget first.  The request body mirrors the funnel widget query_config.
+
+    Request body
+    ------------
+    {
+      "user_field": "user_id",    # optional
+      "ordered":    true,         # enforce step ordering (default: true)
+      "steps": [
+        {"name": "Step 1", "filters": [{"field": "event", "operator": "eq", "value": "signup"}]},
+        {"name": "Step 2", "filters": [{"field": "event", "operator": "eq", "value": "purchase"}]}
+      ]
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def post(self, request, table_id):
+        from .services import FunnelAnalysisEngine
+
+        workspace = _require_workspace(request)
+        table = get_object_or_404(DataTable, id=table_id, workspace=workspace, is_active=True)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        steps = body.get('steps', [])
+        if not steps or not isinstance(steps, list):
+            return Response(
+                {'error': 'steps must be a non-empty list'}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        class _FakeWidget:
+            pass
+
+        widget = _FakeWidget()
+        widget.table = table
+        widget.query_config = body
+
+        result = FunnelAnalysisEngine().execute(widget)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)

@@ -1,7 +1,7 @@
 # Documentation Gaps — AnalyticsMeta
 
 Tracks what was missing and what has been written to close each gap.
-Last updated: 2026-04-04
+Last updated: 2026-04-11
 
 ---
 
@@ -33,8 +33,8 @@ Last updated: 2026-04-04
 | README said "JWT" but API uses DRF Token auth | ✅ Closed | `docs/api-authentication.md` |
 | How to obtain and use an API token | ✅ Closed | `docs/api-authentication.md` |
 | Request/response examples for common endpoints | ✅ Closed | `docs/api-authentication.md` |
-| Full endpoint list | ⚠️ Partial | `README.md` has routes; no OpenAPI/Swagger schema yet |
-| OpenAPI / Swagger / drf-spectacular schema | ❌ Open | Not yet set up |
+| Full endpoint list | ✅ Closed | `README.md` has route table; live Swagger UI at `/api/v1/docs/` |
+| OpenAPI / Swagger / drf-spectacular schema | ✅ Closed | `drf-spectacular` wired up; see `docs/openapi-schema.md` |
 
 ---
 
@@ -81,9 +81,9 @@ Last updated: 2026-04-04
 | Item | Status | Location |
 |---|---|---|
 | Debug toolbar setup | ✅ Closed | Added to `development.py` + `urls.py`; access at `/__debug__/` |
-| Testing strategy and how to add tests | ❌ Open | No test documentation yet |
-| Frontend architecture (Alpine.js + HTMX patterns) | ❌ Open | Not yet documented |
-| Custom template tags (`dashboard_filters`) | ❌ Open | Not yet documented |
+| Testing strategy and how to add tests | ✅ Closed | `docs/testing.md` — pytest setup, factories, view/API/Celery patterns, coverage |
+| Frontend architecture (Alpine.js + HTMX patterns) | ✅ Closed | `docs/frontend-patterns.md` — Alpine components, state machines, CSRF, polling, Tailwind |
+| Custom template tags (`dashboard_filters`) | ✅ Closed | `apps/dashboards/templatetags/dashboard_filters.py` — module docstring + full `get_item` docstring |
 
 ---
 
@@ -91,17 +91,38 @@ Last updated: 2026-04-04
 
 | Item | Status | Location |
 |---|---|---|
-| Newsletter subscription flow | ⚠️ Partial | `NEWSLETTER.md` exists — review for completeness |
-| Campaign creation and sending | ⚠️ Partial | `NEWSLETTER.md` |
-| Webhook event processing (bounce/complaint handling) | ❌ Open | Not documented |
-| A/B test campaign setup | ❌ Open | Not documented |
+| Newsletter subscription flow | ✅ Closed | `NEWSLETTER.md` §1–3 |
+| Campaign creation and sending | ✅ Closed | `NEWSLETTER.md` §3–5 |
+| Webhook event processing (bounce/complaint handling) | ✅ Closed | `NEWSLETTER.md` §9 — full flow, payload shape, re-processing recipe |
+| A/B test campaign setup | ✅ Closed | `NEWSLETTER.md` §10 — step-by-step guide with model field reference |
 
 ---
 
-## Remaining open items (priority order)
+## 8. AI Insights & LLM Integration
 
-1. **OpenAPI schema** — Add `drf-spectacular` to generate `/api/v1/schema/` and a Swagger UI at `/api/v1/docs/`
-2. **Testing guide** — Document how to run tests, what factories exist (`factory-boy`), how to write new tests
-3. **Newsletter webhook processing** — Document how bounce/complaint webhooks map to `WebhookEvent` → `process_webhook_event` Celery task
-4. **Frontend patterns** — Document Alpine.js store structure and HTMX partial URL conventions
-5. **Custom template tags** — Document `dashboard_filters.py` filter reference
+| Item | Status | Location |
+|---|---|---|
+| `ClaudeInsightGenerator` API and usage | ✅ Closed | `docs/ai-insights.md` |
+| Token budget enforcement per workspace | ✅ Closed | `docs/ai-insights.md` |
+| Fallback behaviour when API key is absent | ✅ Closed | `docs/ai-insights.md` |
+| `ANTHROPIC_API_KEY` + `LLM_WORKSPACE_MONTHLY_TOKEN_BUDGET` env vars | ✅ Closed | `README.md` — Environment Variables; `docs/ai-insights.md` |
+| Insight types and what each explains | ✅ Closed | `docs/ai-insights.md` |
+
+---
+
+## 9. Public Dashboard Sharing
+
+| Item | Status | Location |
+|---|---|---|
+| `/d/<uuid>/` public URL behaviour | ✅ Closed | `README.md` — REST API section |
+| Enabling/disabling public sharing | ✅ Closed | `README.md` — REST API section |
+
+---
+
+## Remaining open items
+
+All previously open items have been closed. The only ongoing maintenance items are:
+
+- **Auto-dashboard generation detail** — the high-level description in `README.md` is sufficient for most contributors; a full field-by-field reference could be added to `docs/widget-configuration.md` if needed.
+- **Data alerts** — once `apps/alerts/` is built, add `docs/alerts.md`.
+- **Webhook ingestion** — once `/api/v1/tables/<id>/ingest/` is built, document authentication and payload schema.

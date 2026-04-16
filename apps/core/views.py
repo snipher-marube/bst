@@ -642,5 +642,33 @@ def sitemap_view(request):
         'static': StaticViewSitemap,
         'blog': BlogSitemap,
     }
-    
+
     return sitemap(request, sitemaps)
+
+
+def offline_view(request):
+    """Served by the service worker when the user is offline."""
+    return render(request, 'core/offline.html', status=200)
+
+
+def metrics_view(request):
+    """
+    Expose Prometheus metrics in the text/plain; version=0.0.4 format.
+
+    This endpoint is intended to be scraped by a Prometheus server.
+    In production, restrict access at the reverse-proxy layer (e.g. allow
+    only the Prometheus scraper IP via Nginx ``allow``/``deny`` directives).
+
+    Returns 503 if prometheus_client is not available (e.g. in some CI
+    environments) so the scraper can raise an alert rather than silently
+    receiving empty output.
+    """
+    from django.http import HttpResponse
+    try:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        return HttpResponse(
+            generate_latest(),
+            content_type=CONTENT_TYPE_LATEST,
+        )
+    except ImportError:
+        return HttpResponse('prometheus_client not installed', status=503)

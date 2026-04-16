@@ -75,7 +75,7 @@ requires-dist = [
     { name = "django-debug-toolbar", specifier = ">=6.2.0" },
     { name = "django-extensions", specifier = ">=4.1" },
     { name = "django-ratelimit", specifier = ">=4.1.0" },
-    { name = "djangorestframework", specifier = ">=3.16.1" },
+    { name = "djangorestframework", specifier = ">=3.17.1" },
     { name = "ipython", specifier = ">=9.11.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=3.0.1" },

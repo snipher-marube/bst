@@ -1,119 +1,235 @@
+"""
+apps/dashboards/serializers.py
+================================
+DRF serializers for DataTable, Record, Dashboard, Widget, and Workspace.
+"""
+from uuid import UUID
+from datetime import datetime, date
+from decimal import Decimal
+
 from rest_framework import serializers
-from .models import Workspace, DataTable, Record, Dashboard, Widget
-from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
+
+from apps.dashboards.models import DataTable, Record, Dashboard, Widget, DataAlert, WebhookEndpoint
+from apps.workspaces.models import Workspace
+
 import logging
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_json_serializable(obj):
+    """Recursively convert non-JSON-serializable objects to safe Python types."""
+    if isinstance(obj, dict):
+        return {str(k): _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_json_serializable(item) for item in obj]
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    return obj
+
+
+# ---------------------------------------------------------------------------
+# Workspace
+# ---------------------------------------------------------------------------
 
 class WorkspaceSerializer(serializers.ModelSerializer):
-    usage_stats = serializers.SerializerMethodField()
-    
     class Meta:
         model = Workspace
-        fields = ['id', 'name', 'tier', 'created_at', 'usage_stats', 'max_tables']
-        read_only_fields = ['id', 'created_at', 'tier']
-    
-    def get_usage_stats(self, obj):
-        return obj.get_usage_stats()
-    
-    def create(self, validated_data):
-        validated_data['owner'] = self.context['request'].user
-        return super().create(validated_data)
+        fields = ['id', 'name', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
-
-class DataTableSerializer(serializers.ModelSerializer):
-    record_count = serializers.IntegerField(read_only=True)
-    
-    class Meta:
-        model = DataTable
-        fields = ['id', 'workspace', 'name', 'description', 'schema', 
-                 'created_at', 'updated_at', 'record_count']
-        read_only_fields = ['id', 'workspace', 'created_at', 'updated_at', 'record_count']
-    
-    def validate(self, data):
-        # Check workspace limits (workspace passed via context by the view)
-        workspace = self.context.get('workspace')
-        if workspace and not self.instance and not workspace.can_add_table():
-            raise serializers.ValidationError("Workspace has reached maximum table limit")
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('id'):
+            data['id'] = str(data['id'])
         return data
 
+
+# ---------------------------------------------------------------------------
+# DataTable
+# ---------------------------------------------------------------------------
+
+class DataTableSerializer(serializers.ModelSerializer):
+    workspace_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DataTable
+        fields = [
+            'id', 'workspace', 'workspace_name', 'name', 'description',
+            'schema', 'record_count', 'is_active',
+            'created_at', 'updated_at',
+        ]
+        # workspace is injected by the view via serializer.save(workspace=ws)
+        # — never sent in the request body.
+        read_only_fields = ['id', 'workspace', 'record_count', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('id'):
+            data['id'] = str(data['id'])
+        if data.get('workspace'):
+            data['workspace'] = str(data['workspace'])
+        return data
+
+    def get_workspace_name(self, obj):
+        return obj.workspace.name if obj.workspace else None
+
+
+# ---------------------------------------------------------------------------
+# DataAlert
+# ---------------------------------------------------------------------------
+
+class DataAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DataAlert
+        fields = [
+            'id', 'workspace', 'table', 'name', 'field_name',
+            'aggregate', 'operator', 'threshold', 'is_active',
+            'cooldown_minutes', 'last_triggered', 'last_value',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'workspace', 'last_triggered', 'last_value',
+            'created_at', 'updated_at',
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'workspace', 'table'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
+
+
+# ---------------------------------------------------------------------------
+# WebhookEndpoint
+# ---------------------------------------------------------------------------
+
+class WebhookEndpointSerializer(serializers.ModelSerializer):
+    # `secret` is excluded from routine list/detail responses — the ciphertext
+    # stored in the DB is not meaningful to clients and the plaintext is only
+    # returned once (on creation and on explicit rotation).  The creation and
+    # regenerate-secret views inject the plaintext into the response manually.
+    class Meta:
+        model = WebhookEndpoint
+        fields = [
+            'id', 'workspace', 'table', 'name', 'token',
+            'is_active', 'total_requests', 'last_request_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'workspace', 'token',
+            'total_requests', 'last_request_at',
+            'created_at', 'updated_at',
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'workspace', 'table'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
+
+
+# ---------------------------------------------------------------------------
+# Record
+# ---------------------------------------------------------------------------
 
 class RecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = Record
-        fields = ['id', 'table', 'data', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
-    
-    def validate(self, data):
-        # Validate against table schema
-        table = data.get('table')
-        if self.instance:
-            table = self.instance.table
-        
-        if table:
-            is_valid, errors = table.validate_record(data.get('data', {}))
-            if not is_valid:
-                raise ValidationError({'data': errors})
-        
+        fields = ['id', 'table', 'data', 'version', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'version', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('id'):
+            data['id'] = str(data['id'])
+        if data.get('table'):
+            data['table'] = str(data['table'])
         return data
 
 
-class DashboardSerializer(serializers.ModelSerializer):
-    widgets = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Dashboard
-        fields = ['id', 'workspace', 'name', 'description', 'slug', 
-                 'layout_config', 'is_public', 'public_uuid', 'widgets',
-                 'created_at', 'updated_at']
-        read_only_fields = ['id', 'workspace', 'public_uuid', 'created_at', 'updated_at']
-    
-    def get_widgets(self, obj):
-        widgets = obj.widgets.all()
-        return WidgetSerializer(widgets, many=True, context=self.context).data
-
+# ---------------------------------------------------------------------------
+# Widget
+# ---------------------------------------------------------------------------
 
 class WidgetSerializer(serializers.ModelSerializer):
     widget_data = serializers.SerializerMethodField()
-    table_id = serializers.UUIDField(source='table.id', read_only=True)
-    table_name = serializers.CharField(source='table.name', read_only=True)
-    
+    table_name  = serializers.SerializerMethodField()
+
     class Meta:
         model = Widget
-        fields = ['id', 'dashboard', 'widget_type', 'title', 'table', 'table_id', 'table_name',
-                 'query_config', 'viz_config', 'position', 'widget_data', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'widget_data', 'table_id', 'table_name', 'created_at', 'updated_at']
-    
+        fields = [
+            'id', 'dashboard', 'widget_type', 'title', 'table',
+            'table_name', 'query_config', 'viz_config', 'position',
+            'widget_data', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'dashboard', 'table'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
+
     def get_widget_data(self, obj):
-        """
-        Fetch data for the widget with proper error handling and caching
-        """
         try:
-            # Check if we're in a request context
-            request = self.context.get('request')
-            
-            # Try to get from cache
-            from django.core.cache import cache
-            cache_key = f"widget_data_{obj.id}"
-            cached_data = cache.get(cache_key)
-            
-            if cached_data is not None:
-                return cached_data
-            
-            # Get fresh data
-            if obj.table:
-                data = obj.get_data(limit=100)
-                
-                # Cache for 5 minutes
-                cache.set(cache_key, data, 300)
-                
-                # Log the data for debugging
-                logger.debug(f"Widget {obj.id} data: {data}")
-                
-                return data
-            else:
-                return {"error": "No table selected"}
-                
+            if not obj.table:
+                return {'message': 'No table selected'}
+            limit = (obj.query_config or {}).get('limit', 100)
+            data  = obj.get_data(limit=limit)
+            return _make_json_serializable(data) if isinstance(data, dict) else data
         except Exception as e:
-            logger.error(f"Error fetching widget {obj.id} data: {str(e)}", exc_info=True)
-            return {"error": f"Failed to load data: {str(e)}"}
+            logger.error(f"Error getting widget data for {obj.id}: {e}")
+            return {'error': str(e)}
+
+    def get_table_name(self, obj):
+        return obj.table.name if obj.table else None
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+class DashboardSerializer(serializers.ModelSerializer):
+    widgets        = serializers.SerializerMethodField()
+    workspace_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Dashboard
+        fields = [
+            'id', 'workspace', 'workspace_name', 'name', 'description', 'slug',
+            'layout_config', 'is_public', 'public_uuid', 'widgets',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'workspace', 'public_uuid', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in ('id', 'workspace', 'public_uuid'):
+            if data.get(field):
+                data[field] = str(data[field])
+        return data
+
+    def get_widgets(self, obj):
+        try:
+            widgets = obj.widgets.all().order_by('created_at')
+            return WidgetSerializer(widgets, many=True, context=self.context).data
+        except Exception as e:
+            logger.error(f"Error getting widgets for dashboard {obj.id}: {e}")
+            return []
+
+    def get_workspace_name(self, obj):
+        return obj.workspace.name if obj.workspace else None

@@ -1,0 +1,500 @@
+{% extends "dashboard/base_dashboard.html" %}
+{% load static %}
+
+{% block title %}Data Sources & Integrations{% endblock %}
+{% block page_heading %}Data Sources & Integrations{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'dashboard:integrations' %}#add-source"
+   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition"
+   style="background:var(--primary)">
+  <i class="fas fa-plus text-xs"></i>
+  <span class="hidden sm:inline">Add Source</span>
+</a>
+{% endblock %}
+
+{% block main_content %}
+<div class="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto"
+     x-data="integrationsPage()"
+     x-init="init()">
+
+  {# ── Status summary bar ─────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="card card-body flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:var(--primary-light)">
+        <i class="fas fa-database text-sm" style="color:var(--primary)"></i>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-gray-900">{{ data_sources|length }}</p>
+        <p class="text-xs text-gray-500">Total sources</p>
+      </div>
+    </div>
+    <div class="card card-body flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+        <i class="fas fa-check-circle text-sm text-green-600"></i>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-gray-900" id="connected-count">
+          {% with connected=0 %}
+            {% for ds in data_sources %}{% if ds.last_test_ok %}{% with connected=connected|add:1 %}{% endwith %}{% endif %}{% endfor %}
+          {% endwith %}
+          <span x-text="connectedCount">{{ data_sources|length }}</span>
+        </p>
+        <p class="text-xs text-gray-500">Connected</p>
+      </div>
+    </div>
+    <div class="card card-body flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+        <i class="fas fa-exclamation-circle text-sm text-red-500"></i>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-gray-900"><span x-text="failedCount">0</span></p>
+        <p class="text-xs text-gray-500">Failed</p>
+      </div>
+    </div>
+    <div class="card card-body flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+        <i class="fas fa-question-circle text-sm text-amber-500"></i>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-gray-900"><span x-text="untestedCount">0</span></p>
+        <p class="text-xs text-gray-500">Untested</p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Connected sources list ──────────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header">
+      <span><i class="fas fa-link mr-2 opacity-60"></i>Connected Data Sources</span>
+    </div>
+
+    {% if data_sources %}
+    <div class="divide-y divide-gray-50" id="sources-list">
+      {% for ds in data_sources %}
+      <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3"
+           id="source-row-{{ ds.id }}"
+           x-data="sourceRow('{{ ds.id }}', {{ ds.last_test_ok|yesno:'true,false,null' }}, '{{ ds.last_tested_at|date:'Y-m-d H:i' }}')">
+
+        {# Icon + name + type ─────────────────────────────────── #}
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+            {% if ds.connector_type == 'google_sheets' %}bg-green-50{% elif ds.connector_type == 'postgresql' %}bg-blue-50{% else %}bg-orange-50{% endif %}">
+            {% if ds.connector_type == 'google_sheets' %}
+              <i class="fab fa-google text-green-600"></i>
+            {% elif ds.connector_type == 'postgresql' %}
+              <i class="fas fa-elephant text-blue-600"></i>
+            {% else %}
+              <i class="fas fa-database text-orange-500"></i>
+            {% endif %}
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-gray-900 truncate">{{ ds.name }}</p>
+            <p class="text-xs text-gray-400">
+              {% if ds.connector_type == 'google_sheets' %}
+                Google Sheets{% if ds.google_spreadsheet_id %} · <span class="font-mono">{{ ds.google_spreadsheet_id|truncatechars:20 }}</span>{% endif %}
+              {% else %}
+                {{ ds.get_connector_type_display }} · {{ ds.host }}{% if ds.database %}:{{ ds.port }}/{{ ds.database }}{% endif %}
+              {% endif %}
+            </p>
+          </div>
+        </div>
+
+        {# Status badge ──────────────────────────────────────── #}
+        <div class="flex items-center gap-2 shrink-0">
+          <template x-if="status === 'connected'">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+              Connected
+            </span>
+          </template>
+          <template x-if="status === 'failed'">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+              <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+              Failed
+            </span>
+          </template>
+          <template x-if="status === 'untested'">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+              <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+              Untested
+            </span>
+          </template>
+
+          {# Last tested time #}
+          <span class="text-xs text-gray-400 hidden sm:block" x-text="lastTested || 'Never tested'"></span>
+        </div>
+
+        {# Actions ───────────────────────────────────────────── #}
+        <div class="flex items-center gap-2 shrink-0">
+          {# Test connection button #}
+          <button @click="testConnection()"
+                  :disabled="testing"
+                  class="btn btn-secondary btn-sm gap-1.5"
+                  :class="testing ? 'opacity-60 cursor-not-allowed' : ''">
+            <span x-show="!testing"><i class="fas fa-plug text-xs"></i> Test</span>
+            <span x-show="testing" class="flex items-center gap-1">
+              <i class="fas fa-circle-notch fa-spin text-xs"></i> Testing…
+            </span>
+          </button>
+
+          {# Schema browse — only for connected sources #}
+          <button x-show="status === 'connected'"
+                  @click="browseSchema()"
+                  class="btn btn-secondary btn-sm">
+            <i class="fas fa-table text-xs"></i>
+            <span class="hidden sm:inline">Schema</span>
+          </button>
+
+          {# Delete #}
+          <button @click="deleteSource()"
+                  class="btn btn-ghost btn-sm text-red-400 hover:text-red-600 hover:bg-red-50">
+            <i class="fas fa-trash text-xs"></i>
+          </button>
+        </div>
+
+        {# Error message row #}
+        <div x-show="errorMsg" x-cloak
+             class="mt-1 w-full text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 flex items-start gap-2">
+          <i class="fas fa-exclamation-triangle mt-0.5 shrink-0"></i>
+          <span x-text="errorMsg"></span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state py-12">
+      <i class="fas fa-plug text-4xl text-gray-200 mb-4"></i>
+      <p class="text-sm font-medium text-gray-500 mb-1">No data sources connected yet</p>
+      <p class="text-xs text-gray-400 mb-6">Connect Google Sheets, PostgreSQL, or MySQL to query live data.</p>
+      <a href="#add-source"
+         class="btn btn-primary btn-sm">
+        <i class="fas fa-plus"></i> Add your first source
+      </a>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Schema browser modal ────────────────────────────────────────────────── #}
+  <div x-show="schemaModal.open" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+       @click.self="schemaModal.open = false">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900">
+          <i class="fas fa-table mr-2 text-[#03466e]"></i>Schema Browser
+          <span class="text-sm font-normal text-gray-500 ml-2" x-text="schemaModal.sourceName"></span>
+        </h3>
+        <button @click="schemaModal.open = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1 p-4">
+        <template x-if="schemaModal.loading">
+          <div class="flex items-center justify-center py-10 gap-2 text-gray-400">
+            <i class="fas fa-circle-notch fa-spin"></i> Loading schema…
+          </div>
+        </template>
+        <template x-if="!schemaModal.loading && schemaModal.tables.length === 0">
+          <p class="text-center text-sm text-gray-400 py-8">No tables found in this data source.</p>
+        </template>
+        <template x-for="tbl in schemaModal.tables" :key="tbl.name">
+          <div class="mb-3">
+            <button @click="tbl._open = !tbl._open"
+                    class="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-100 transition">
+              <i class="fas fa-table text-[#03466e] text-xs"></i>
+              <span x-text="tbl.name" class="flex-1 text-left"></span>
+              <span class="text-xs text-gray-400" x-text="(tbl.columns || []).length + ' cols'"></span>
+              <i class="fas fa-chevron-down text-xs text-gray-400 transition-transform"
+                 :class="tbl._open ? 'rotate-180' : ''"></i>
+            </button>
+            <div x-show="tbl._open" class="mt-1 ml-4 space-y-0.5">
+              <template x-for="col in tbl.columns || []" :key="col.name">
+                <div class="flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-gray-50">
+                  <i class="fas fa-circle text-[6px] text-gray-300"></i>
+                  <span class="text-sm text-gray-700" x-text="col.name"></span>
+                  <span class="ml-auto text-xs font-mono text-gray-400" x-text="col.type"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# ── Add new source section ──────────────────────────────────────────────── #}
+  <div id="add-source" class="card">
+    <div class="card-header">
+      <span><i class="fas fa-plus-circle mr-2 opacity-60"></i>Add a Data Source</span>
+    </div>
+    <div class="card-body">
+      <p class="text-sm text-gray-500 mb-5">Choose the type of data source you want to connect.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+        {# Google Sheets ─────────────────────────────────────── #}
+        <a href="{% url 'dashboard:google_sheets_connect' %}"
+           class="group flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-gray-200
+                  hover:border-green-400 hover:bg-green-50 transition cursor-pointer text-center">
+          <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <i class="fab fa-google text-xl text-green-600"></i>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-gray-800">Google Sheets</p>
+            <p class="text-xs text-gray-400 mt-0.5">Connect via service account</p>
+          </div>
+          <span class="badge badge-green text-[10px]">Supported</span>
+        </a>
+
+        {# PostgreSQL ─────────────────────────────────────────── #}
+        <div x-data="{open:false}" class="relative">
+          <button @click="open=true"
+                  class="group w-full flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-gray-200
+                         hover:border-blue-400 hover:bg-blue-50 transition cursor-pointer text-center">
+            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i class="fas fa-elephant text-xl text-blue-600"></i>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-800">PostgreSQL</p>
+              <p class="text-xs text-gray-400 mt-0.5">Direct DB connection</p>
+            </div>
+            <span class="badge badge-blue text-[10px]">Supported</span>
+          </button>
+
+          {# Inline quick-add form for PostgreSQL #}
+          <div x-show="open" x-cloak @click.outside="open=false"
+               class="absolute top-full mt-2 left-0 right-0 z-10 bg-white rounded-2xl shadow-lg border border-gray-100 p-4 space-y-3">
+            <p class="text-xs font-semibold text-gray-600 mb-1">Quick connect — PostgreSQL</p>
+            <form method="dialog" @submit.prevent="submitPg($event)">
+              <div class="space-y-2">
+                <input type="text" name="name" placeholder="Connection name *" class="form-ctrl text-xs" required>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="text" name="host" placeholder="Host *" class="form-ctrl text-xs" required>
+                  <input type="number" name="port" placeholder="Port" value="5432" class="form-ctrl text-xs">
+                </div>
+                <input type="text" name="database" placeholder="Database *" class="form-ctrl text-xs" required>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="text" name="username" placeholder="Username" class="form-ctrl text-xs">
+                  <input type="password" name="password" placeholder="Password" class="form-ctrl text-xs">
+                </div>
+              </div>
+              <div class="flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm flex-1">
+                  <i class="fas fa-plus text-xs"></i> Add
+                </button>
+                <button type="button" @click="open=false" class="btn btn-secondary btn-sm">
+                  Cancel
+                </button>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-2">
+                <i class="fas fa-lock text-xs mr-1"></i>Credentials are encrypted at rest (Fernet AES-128).
+              </p>
+            </form>
+          </div>
+        </div>
+
+        {# MySQL ──────────────────────────────────────────────── #}
+        <div x-data="{open:false}" class="relative">
+          <button @click="open=true"
+                  class="group w-full flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-gray-200
+                         hover:border-orange-400 hover:bg-orange-50 transition cursor-pointer text-center">
+            <div class="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i class="fas fa-database text-xl text-orange-500"></i>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-800">MySQL</p>
+              <p class="text-xs text-gray-400 mt-0.5">Direct DB connection</p>
+            </div>
+            <span class="badge badge-orange text-[10px]">Supported</span>
+          </button>
+
+          <div x-show="open" x-cloak @click.outside="open=false"
+               class="absolute top-full mt-2 left-0 right-0 z-10 bg-white rounded-2xl shadow-lg border border-gray-100 p-4 space-y-3">
+            <p class="text-xs font-semibold text-gray-600 mb-1">Quick connect — MySQL</p>
+            <form @submit.prevent="submitMysql($event)">
+              <div class="space-y-2">
+                <input type="text" name="name" placeholder="Connection name *" class="form-ctrl text-xs" required>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="text" name="host" placeholder="Host *" class="form-ctrl text-xs" required>
+                  <input type="number" name="port" placeholder="Port" value="3306" class="form-ctrl text-xs">
+                </div>
+                <input type="text" name="database" placeholder="Database *" class="form-ctrl text-xs" required>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="text" name="username" placeholder="Username" class="form-ctrl text-xs">
+                  <input type="password" name="password" placeholder="Password" class="form-ctrl text-xs">
+                </div>
+              </div>
+              <div class="flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm flex-1">
+                  <i class="fas fa-plus text-xs"></i> Add
+                </button>
+                <button type="button" @click="open=false" class="btn btn-secondary btn-sm">
+                  Cancel
+                </button>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-2">
+                <i class="fas fa-lock text-xs mr-1"></i>Credentials are encrypted at rest (Fernet AES-128).
+              </p>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const WORKSPACE_ID = '{{ workspace_id }}';
+const CSRF = '{{ csrf_token }}';
+
+/* ── Per-row component ─────────────────────────────────────────────────────── */
+function sourceRow(id, initialOk, lastTestedStr) {
+  return {
+    id,
+    testing: false,
+    errorMsg: '',
+    lastTested: lastTestedStr || '',
+
+    get status() {
+      if (this._ok === true)  return 'connected';
+      if (this._ok === false) return 'failed';
+      return 'untested';
+    },
+
+    init() {
+      // Alpine won't react to 'initialOk' being null/undefined vs false properly
+      // so we use a separate reactive property
+      this._ok = initialOk;  // true | false | null
+      this.$dispatch('source-status-changed');
+    },
+
+    async testConnection() {
+      this.testing = true;
+      this.errorMsg = '';
+      try {
+        const r = await fetch(`/api/v1/data-sources/${this.id}/test/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' }
+        });
+        const data = await r.json();
+        this._ok = data.ok === true;
+        this.lastTested = new Date().toLocaleString();
+        if (!this._ok) {
+          this.errorMsg = data.error || data.detail || 'Connection failed.';
+        }
+      } catch(e) {
+        this._ok = false;
+        this.errorMsg = 'Network error: ' + e.message;
+      } finally {
+        this.testing = false;
+        this.$dispatch('source-status-changed');
+      }
+    },
+
+    async browseSchema() {
+      const modal = Alpine.$data(document.querySelector('[x-data="integrationsPage()"]'));
+      modal.openSchema(this.id, this.$el.querySelector('p.font-semibold')?.textContent?.trim() || this.id);
+    },
+
+    async deleteSource() {
+      if (!confirm('Delete this data source? This cannot be undone.')) return;
+      const r = await fetch(`/api/v1/data-sources/${this.id}/`, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': CSRF }
+      });
+      if (r.ok || r.status === 204) {
+        document.getElementById(`source-row-${this.id}`)?.remove();
+        this.$dispatch('source-status-changed');
+      } else {
+        alert('Could not delete this data source.');
+      }
+    }
+  };
+}
+
+/* ── Page-level component ──────────────────────────────────────────────────── */
+function integrationsPage() {
+  return {
+    connectedCount: 0,
+    failedCount: 0,
+    untestedCount: 0,
+
+    schemaModal: {
+      open: false,
+      loading: false,
+      sourceName: '',
+      sourceId: null,
+      tables: []
+    },
+
+    init() {
+      this.$el.addEventListener('source-status-changed', () => this.recount());
+      this.$nextTick(() => this.recount());
+    },
+
+    recount() {
+      let c = 0, f = 0, u = 0;
+      document.querySelectorAll('[id^="source-row-"]').forEach(row => {
+        const data = Alpine.$data(row);
+        if (data && data.status !== undefined) {
+          if (data.status === 'connected') c++;
+          else if (data.status === 'failed') f++;
+          else u++;
+        }
+      });
+      this.connectedCount = c;
+      this.failedCount = f;
+      this.untestedCount = u;
+    },
+
+    async openSchema(sourceId, sourceName) {
+      this.schemaModal = { open: true, loading: true, sourceName, sourceId, tables: [] };
+      try {
+        const r = await fetch(`/api/v1/data-sources/${sourceId}/schema/`, {
+          headers: { 'X-CSRFToken': CSRF }
+        });
+        const data = await r.json();
+        // API returns the array directly (not wrapped in a {tables:[...]} object)
+        const rows = Array.isArray(data) ? data : (data.tables || []);
+        this.schemaModal.tables = rows.map(t => ({ ...t, _open: false }));
+      } catch(e) {
+        this.schemaModal.tables = [];
+      } finally {
+        this.schemaModal.loading = false;
+      }
+    },
+
+    async submitDb(connectorType, formEl) {
+      const fd = new FormData(formEl);
+      const payload = {
+        name: fd.get('name'),
+        connector_type: connectorType,
+        host: fd.get('host'),
+        port: parseInt(fd.get('port') || (connectorType === 'mysql' ? 3306 : 5432)),
+        database: fd.get('database'),
+        username: fd.get('username') || '',
+        password: fd.get('password') || '',
+      };
+      const r = await fetch(`/api/v1/workspaces/${WORKSPACE_ID}/data-sources/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (r.ok) {
+        window.location.reload();
+      } else {
+        const err = await r.json();
+        alert('Error: ' + JSON.stringify(err));
+      }
+    },
+
+    submitPg(event)    { this.submitDb('postgresql', event.target); },
+    submitMysql(event) { this.submitDb('mysql',      event.target); }
+  };
+}
+</script>
+{% endblock %}
