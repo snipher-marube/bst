@@ -20,7 +20,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog
+    Record, Dashboard, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -237,6 +237,25 @@ class TableDetailView(LoginRequiredMixin, DetailView):
             [{'id': str(r.id), 'data': r.data} for r in page],
             cls=DjangoJSONEncoder,
         )
+
+        # Calculated fields — inline tab context
+        cf_qs = CalculatedField.objects.filter(table=self.object).order_by('name')
+        context['calculated_fields'] = cf_qs
+        context['cf_count'] = cf_qs.count()
+
+        # Column names for expression quick-insert chips
+        columns = [f['name'] for f in (self.object.schema or [])]
+        if not columns:
+            sample = self.object.records.filter(is_active=True).values_list('data', flat=True).first()
+            if sample:
+                columns = list(sample.keys())
+        context['columns'] = columns
+
+        context['cf_api_base']    = f'/api/v1/tables/{self.object.id}/calculated-fields/'
+        context['cf_validate_url'] = f'/api/v1/tables/{self.object.id}/calculated-fields/validate/'
+        context['format_choices'] = CalculatedField.FORMAT_CHOICES
+        context['fn_list']  = ['sum', 'count', 'avg', 'min', 'max']
+        context['op_list']  = ['+', '-', '*', '/', '**']
 
         return context
 
@@ -567,6 +586,27 @@ class GoogleSheetsConnectView(LoginRequiredMixin, TemplateView):
             'Share your sheet with the service account email',
             'Paste credentials below and save',
         ]
+        return context
+
+
+class IntegrationsView(LoginRequiredMixin, TemplateView):
+    """
+    Integrations management page — shows all connected data sources
+    (Google Sheets, PostgreSQL, MySQL) with live status indicators.
+    Users can test connections, browse schema, add new sources, or delete.
+    """
+    template_name = 'dashboard/integrations.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        if workspace:
+            context['data_sources'] = DataSource.objects.filter(
+                workspace=workspace, is_active=True
+            ).order_by('connector_type', 'name')
+        else:
+            context['data_sources'] = DataSource.objects.none()
+        context['workspace_id'] = str(workspace.id) if workspace else ''
         return context
 
 
@@ -1230,3 +1270,65 @@ class TableExportView(LoginRequiredMixin, TemplateView):
     def get(self, request, *args, **kwargs):
         from apps.exports.views import export_table
         return export_table(request, kwargs['table_id'])
+
+class CalculatedFieldsView(LoginRequiredMixin, TemplateView):
+    """
+    Manage calculated fields for a DataTable.
+
+    URL: /dashboard/tables/<uuid:table_id>/calculated-fields/
+    """
+    template_name = 'dashboard/calculated_fields.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        table_id = self.kwargs['table_id']
+        table = get_object_or_404(DataTable, pk=table_id)
+
+        # Workspace guard
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if workspace and table.workspace_id != workspace.id:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        fields = CalculatedField.objects.filter(table=table).order_by('name')
+        # Schema: infer column names from first record
+        columns = []
+        try:
+            from apps.dashboards.models import Record
+            sample = Record.objects.filter(table=table, is_active=True).values_list('data', flat=True).first()
+            if sample:
+                columns = list(sample.keys())
+        except Exception:
+            pass
+
+        context.update({
+            'table': table,
+            'calculated_fields': fields,
+            'columns': columns,
+            'format_choices': CalculatedField.FORMAT_CHOICES,
+            'api_base': f'/api/v1/tables/{table_id}/calculated-fields/',
+            'validate_url': f'/api/v1/tables/{table_id}/calculated-fields/validate/',
+        })
+        return context
+
+
+class CohortFunnelView(LoginRequiredMixin, TemplateView):
+    """
+    Cohort retention & funnel analysis UI for a DataTable.
+
+    URL: /dashboard/tables/<uuid:table_id>/cohort-funnel/
+    """
+    template_name = 'dashboard/cohort_funnel.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        table_id = self.kwargs['table_id']
+        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
+
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if workspace and table.workspace_id != workspace.id:
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        context['table'] = table
+        return context

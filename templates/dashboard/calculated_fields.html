@@ -1,0 +1,440 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static %}
+
+{% block title %}Calculated Fields – {{ table.name }}{% endblock %}
+{% block page_heading %}Calculated Fields{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'dashboard:table_detail' pk=table.id %}"
+   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition">
+  <i class="fas fa-arrow-left text-xs"></i> Back to {{ table.name }}
+</a>
+{% endblock %}
+
+{% block main_content %}
+<div class="min-h-full bg-[#f8fafc]" x-data="cfManager()" x-init="init()">
+
+  {# ── Page header ── #}
+  <div class="bg-white border-b border-gray-100 px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+      <div>
+        <h1 class="text-base font-semibold text-gray-800">Calculated Fields</h1>
+        <p class="text-xs text-gray-400 mt-0.5">
+          Table: <span class="font-medium text-gray-600">{{ table.name }}</span>
+          &mdash; define reusable arithmetic metrics evaluated at query time
+        </p>
+      </div>
+      <button @click="openCreate()"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition"
+              style="background:#f68712">
+        <i class="fas fa-plus text-xs"></i> New Field
+      </button>
+    </div>
+  </div>
+
+  {# ── How-it-works callout ── #}
+  <div class="max-w-5xl mx-auto px-6 pt-5">
+    <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
+      <i class="fas fa-calculator text-blue-400 mt-0.5 flex-shrink-0"></i>
+      <div class="text-xs text-blue-700 space-y-1">
+        <p class="font-semibold text-blue-800">How calculated fields work</p>
+        <p>
+          Write an arithmetic expression using <code class="bg-blue-100 px-1 rounded">sum(col)</code>,
+          <code class="bg-blue-100 px-1 rounded">count(col)</code>,
+          <code class="bg-blue-100 px-1 rounded">avg(col)</code>,
+          <code class="bg-blue-100 px-1 rounded">min(col)</code>,
+          <code class="bg-blue-100 px-1 rounded">max(col)</code> on any column name.
+        </p>
+        <p class="font-medium">Example expressions:</p>
+        <ul class="list-disc list-inside space-y-0.5 text-blue-600">
+          <li><code>sum(revenue) / count(user_id)</code> &rarr; revenue per user</li>
+          <li><code>(sum(revenue) - sum(refunds)) / sum(revenue) * 100</code> &rarr; net margin %</li>
+          <li><code>sum(quantity) * avg(unit_price)</code> &rarr; estimated GMV</li>
+        </ul>
+        <p class="pt-1">
+          To use a calculated field in a widget, add an aggregation with
+          <code class="bg-blue-100 px-1 rounded">type: "calculated"</code> and
+          <code class="bg-blue-100 px-1 rounded">expression: "total_revenue / total_users"</code>
+          (referencing other aggregation <em>names</em> in the same widget).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Existing fields list ── #}
+  <div class="max-w-5xl mx-auto px-6 py-5 space-y-3">
+
+    {# Empty state #}
+    <template x-if="fields.length === 0 && !loading">
+      <div class="bg-white rounded-xl border border-dashed border-gray-200 flex flex-col items-center justify-center py-14 gap-3">
+        <i class="fas fa-function text-3xl text-gray-300"></i>
+        <p class="text-sm text-gray-400">No calculated fields yet.</p>
+        <button @click="openCreate()"
+                class="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                style="background:#f68712">
+          <i class="fas fa-plus text-xs"></i> Create your first field
+        </button>
+      </div>
+    </template>
+
+    {# Loading skeleton #}
+    <template x-if="loading">
+      <div class="space-y-2">
+        <template x-for="i in [1,2,3]" :key="i">
+          <div class="bg-white rounded-xl border border-gray-100 h-20 animate-pulse"></div>
+        </template>
+      </div>
+    </template>
+
+    {# Field cards #}
+    <template x-for="field in fields" :key="field.id">
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 flex items-start gap-4">
+        {# Icon #}
+        <div class="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm"
+             style="background:#f68712">
+          <i class="fas fa-calculator"></i>
+        </div>
+
+        {# Info #}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold text-gray-800" x-text="field.display_name"></span>
+            <code class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded" x-text="field.name"></code>
+            <span class="text-xs px-1.5 py-0.5 rounded border"
+                  :class="{
+                    'bg-green-50 border-green-200 text-green-700': field.format_type === 'number',
+                    'bg-yellow-50 border-yellow-200 text-yellow-700': field.format_type === 'currency',
+                    'bg-blue-50 border-blue-200 text-blue-700': field.format_type === 'percentage',
+                    'bg-purple-50 border-purple-200 text-purple-700': field.format_type === 'integer',
+                  }"
+                  x-text="field.format_type"></span>
+          </div>
+          <code class="block mt-1 text-xs text-indigo-600 font-mono" x-text="field.expression"></code>
+          <p class="mt-0.5 text-xs text-gray-400" x-show="field.description" x-text="field.description"></p>
+        </div>
+
+        {# Actions #}
+        <div class="flex-shrink-0 flex items-center gap-2">
+          <button @click="previewField(field)"
+                  class="p-1.5 rounded-lg text-xs text-blue-500 hover:bg-blue-50 transition"
+                  title="Preview result">
+            <i class="fas fa-play"></i>
+          </button>
+          <button @click="openEdit(field)"
+                  class="p-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100 transition"
+                  title="Edit">
+            <i class="fas fa-pencil"></i>
+          </button>
+          <button @click="deleteField(field)"
+                  class="p-1.5 rounded-lg text-xs text-red-400 hover:bg-red-50 transition"
+                  title="Delete">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    </template>
+
+  </div>{# /list #}
+
+  {# ── Create / Edit modal ── #}
+  <div x-show="modal.open" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div @click.outside="modal.open = false"
+         class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+        <h2 class="text-sm font-semibold text-gray-800"
+            x-text="modal.editId ? 'Edit Calculated Field' : 'New Calculated Field'"></h2>
+        <button @click="modal.open = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <form @submit.prevent="saveField()" class="px-6 py-4 space-y-4">
+
+        {# Display name #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Display Name <span class="text-red-400">*</span></label>
+          <input x-model="modal.form.display_name" type="text" required
+                 placeholder="e.g. Revenue per User"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300">
+        </div>
+
+        {# Slug name #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">
+            Field ID <span class="text-red-400">*</span>
+            <span class="font-normal text-gray-400">(slug, used in widget expressions)</span>
+          </label>
+          <input x-model="modal.form.name" type="text" required
+                 pattern="[a-z0-9\-]+"
+                 placeholder="e.g. revenue-per-user"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-300">
+          <p class="text-xs text-gray-400 mt-1">Lowercase letters, digits, and hyphens only.</p>
+        </div>
+
+        {# Expression #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">
+            Expression <span class="text-red-400">*</span>
+          </label>
+          {# Column chips for quick insert #}
+          <div class="mb-1.5 flex flex-wrap gap-1">
+            {% for col in columns %}
+            <button type="button"
+                    @click="insertColumn('{{ col }}')"
+                    class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded hover:bg-orange-100 hover:text-orange-700 transition font-mono">
+              {{ col }}
+            </button>
+            {% endfor %}
+          </div>
+          <textarea x-model="modal.form.expression" required rows="2"
+                    placeholder="sum(revenue) / count(user_id)"
+                    @blur="validateExpression()"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-300 resize-none"></textarea>
+          {# Validation feedback #}
+          <p x-show="modal.validation.checked && modal.validation.valid"
+             class="text-xs text-green-600 mt-1">
+            <i class="fas fa-check-circle"></i> Expression looks valid.
+          </p>
+          <p x-show="modal.validation.checked && !modal.validation.valid"
+             class="text-xs text-red-500 mt-1"
+             x-text="'Error: ' + modal.validation.error"></p>
+        </div>
+
+        {# Format type #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Format</label>
+          <select x-model="modal.form.format_type"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300">
+            {% for val, label in format_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Description #}
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Description <span class="text-gray-400">(optional)</span></label>
+          <input x-model="modal.form.description" type="text"
+                 placeholder="What does this metric measure?"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300">
+        </div>
+
+        {# Error banner #}
+        <div x-show="modal.error" class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600"
+             x-text="modal.error"></div>
+
+        {# Actions #}
+        <div class="flex justify-end gap-3 pt-1">
+          <button type="button" @click="modal.open = false"
+                  class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+          <button type="submit" :disabled="modal.saving"
+                  class="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 transition"
+                  style="background:#f68712">
+            <span x-show="!modal.saving" x-text="modal.editId ? 'Save Changes' : 'Create Field'"></span>
+            <span x-show="modal.saving">Saving…</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Preview modal ── #}
+  <div x-show="preview.open" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div @click.outside="preview.open = false"
+         class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+      <div class="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+        <h2 class="text-sm font-semibold text-gray-800">Preview Result</h2>
+        <button @click="preview.open = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="px-6 py-6 text-center space-y-2">
+        <p class="text-xs text-gray-400" x-text="preview.field ? preview.field.display_name : ''"></p>
+        <div x-show="preview.loading" class="flex justify-center py-4">
+          <div class="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+        <div x-show="!preview.loading">
+          <div x-show="preview.error" class="text-red-500 text-sm" x-text="preview.error"></div>
+          <div x-show="!preview.error">
+            <div class="text-4xl font-bold text-gray-800 tabular-nums"
+                 x-text="formatResult(preview.result, preview.format_type)"></div>
+            <p class="text-xs text-gray-400 mt-1" x-text="preview.record_count + ' records evaluated'"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>{# /x-data #}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function cfManager() {
+  return {
+    fields: [],
+    loading: true,
+    modal: {
+      open: false,
+      editId: null,
+      saving: false,
+      error: '',
+      form: { name: '', display_name: '', expression: '', format_type: 'number', description: '' },
+      validation: { checked: false, valid: false, error: '' },
+    },
+    preview: {
+      open: false,
+      loading: false,
+      field: null,
+      result: null,
+      format_type: 'number',
+      record_count: 0,
+      error: '',
+    },
+
+    async init() {
+      await this.loadFields();
+    },
+
+    async loadFields() {
+      this.loading = true;
+      try {
+        const res = await fetch('{{ api_base }}', {
+          headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        if (res.ok) this.fields = await res.json();
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    openCreate() {
+      this.modal = {
+        open: true, editId: null, saving: false, error: '',
+        form: { name: '', display_name: '', expression: '', format_type: 'number', description: '' },
+        validation: { checked: false, valid: false, error: '' },
+      };
+    },
+
+    openEdit(field) {
+      this.modal = {
+        open: true, editId: field.id, saving: false, error: '',
+        form: {
+          name: field.name,
+          display_name: field.display_name,
+          expression: field.expression,
+          format_type: field.format_type,
+          description: field.description || '',
+        },
+        validation: { checked: false, valid: false, error: '' },
+      };
+    },
+
+    insertColumn(col) {
+      // Wrap in an aggregation function if the cursor is at a place that makes sense
+      this.modal.form.expression += (this.modal.form.expression ? '' : 'sum(') + col;
+    },
+
+    async validateExpression() {
+      const expr = this.modal.form.expression.trim();
+      if (!expr) return;
+      const res = await fetch('{{ validate_url }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({ expression: expr }),
+      });
+      const data = await res.json();
+      this.modal.validation = { checked: true, valid: data.valid, error: data.error || '' };
+    },
+
+    async saveField() {
+      this.modal.saving = true;
+      this.modal.error = '';
+      const url = this.modal.editId
+        ? `/api/v1/calculated-fields/${this.modal.editId}/`
+        : '{{ api_base }}';
+      const method = this.modal.editId ? 'PATCH' : 'POST';
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify(this.modal.form),
+        });
+        if (res.ok) {
+          this.modal.open = false;
+          await this.loadFields();
+        } else {
+          const err = await res.json();
+          this.modal.error = JSON.stringify(err);
+        }
+      } finally {
+        this.modal.saving = false;
+      }
+    },
+
+    async deleteField(field) {
+      if (!confirm(`Delete "${field.display_name}"? This cannot be undone.`)) return;
+      await fetch(`/api/v1/calculated-fields/${field.id}/`, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      });
+      await this.loadFields();
+    },
+
+    async previewField(field) {
+      this.preview = {
+        open: true, loading: true, field,
+        result: null, format_type: field.format_type,
+        record_count: 0, error: '',
+      };
+      try {
+        const res = await fetch(`/api/v1/calculated-fields/${field.id}/preview/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          this.preview.result = data.result;
+          this.preview.record_count = data.record_count;
+        } else {
+          this.preview.error = data.error || 'Preview failed.';
+        }
+      } catch (e) {
+        this.preview.error = e.message;
+      } finally {
+        this.preview.loading = false;
+      }
+    },
+
+    formatResult(val, fmt) {
+      if (val === null || val === undefined) return '—';
+      const n = parseFloat(val);
+      if (isNaN(n)) return String(val);
+      if (fmt === 'currency') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+      if (fmt === 'percentage') return n.toFixed(2) + '%';
+      if (fmt === 'integer') return Math.round(n).toLocaleString();
+      // number
+      return n % 1 === 0 ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    },
+  };
+}
+
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+}
+</script>
+{% endblock %}

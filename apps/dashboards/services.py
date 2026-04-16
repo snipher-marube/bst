@@ -1,4 +1,5 @@
 import json
+import re
 import pandas as pd
 import numpy as np
 from django.conf import settings
@@ -134,6 +135,10 @@ class QueryEngine:
                 data = self._execute_table_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap']:
                 data = self._execute_chart_query(widget, limit, extra_filters=extra_filters)
+            elif widget.widget_type == 'cohort':
+                data = CohortAnalysisEngine().execute(widget)
+            elif widget.widget_type == 'funnel':
+                data = FunnelAnalysisEngine().execute(widget)
             else:
                 data = {"error": f"Unknown widget type: {widget.widget_type}"}
 
@@ -188,11 +193,15 @@ class QueryEngine:
         if extra_filters:
             queryset = self._apply_filters(queryset, extra_filters)
 
-        if not aggregations:
+        # Separate calculated aggs — they must be resolved AFTER base aggs
+        base_aggs = [a for a in aggregations if a.get('type') != 'calculated']
+        calc_aggs = [a for a in aggregations if a.get('type') == 'calculated']
+
+        if not base_aggs and not calc_aggs:
             return {'val': queryset.count()}
 
         result = {}
-        for agg in aggregations:
+        for agg in base_aggs:
             agg_type = agg.get('type', 'count')
             field    = agg.get('field')
             name     = agg.get('name', 'val')
@@ -213,6 +222,10 @@ class QueryEngine:
                     "Falling back to Python-side aggregation."
                 )
                 result[name] = self._python_scalar_agg(queryset, agg_type, field)
+
+        # Resolve calculated aggs — pass queryset for column-level expression support
+        if calc_aggs:
+            result = self._resolve_calculated_aggs(calc_aggs, result, queryset=queryset)
 
         return result
 
@@ -382,11 +395,15 @@ class QueryEngine:
         if extra_filters:
             queryset = self._apply_filters(queryset, extra_filters)
 
+        # Separate calculated aggs — resolve AFTER base aggs
+        base_aggs = [a for a in aggregations if a.get('type') != 'calculated']
+        calc_aggs = [a for a in aggregations if a.get('type') == 'calculated']
+
         # Python-fallback records are fetched lazily — only if a DB path fails.
         _fallback_records = None
 
         result = {}
-        for agg in aggregations:
+        for agg in base_aggs:
             agg_type = agg.get('type', 'count')
             field    = agg.get('field')
             group_by = agg.get('group_by')
@@ -431,8 +448,497 @@ class QueryEngine:
                 logger.error(f"Chart aggregation error for '{name}': {exc}", exc_info=True)
                 result[name] = {"error": str(exc)}
 
+        # Resolve calculated aggs using scalar results as context
+        # (group-by calculated fields are not supported in chart mode)
+        if calc_aggs:
+            scalar_context = {k: v for k, v in result.items() if isinstance(v, (int, float))}
+            result = self._resolve_calculated_aggs(calc_aggs, {**result, **scalar_context}, queryset=queryset)
+
         return result
-    
+
+    # ------------------------------------------------------------------
+    # Calculated field resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_calculated_aggs(self, aggs, base_result, queryset=None):
+        """
+        Process ``type: 'calculated'`` aggregations in *aggs*.
+
+        Two evaluation modes are auto-detected per expression:
+
+        * **Column-level** (expression contains ``sum(``, ``count(``, etc.) —
+          fetches up to 5 000 records from *queryset* and calls
+          ``CalculatedFieldEvaluator.evaluate_against_records``.  Requires
+          *queryset* to be provided.
+
+        * **Context-level** (plain arithmetic referencing other agg names) —
+          calls ``CalculatedFieldEvaluator.evaluate_against_context`` with the
+          current *base_result* dict as the variable namespace.
+
+        Returns an updated copy of *base_result* with calculated values filled in.
+        Only scalar results are supported; group-by calculated aggregations are
+        not yet implemented.
+        """
+        result = dict(base_result)
+        _records_cache = None  # lazy-fetched once if needed
+
+        for agg in aggs:
+            if agg.get('type') != 'calculated':
+                continue
+            name = agg.get('name', 'calc')
+            expression = agg.get('expression', '')
+            try:
+                if CalculatedFieldEvaluator._COL_AGG_RE.search(expression) and queryset is not None:
+                    # Column-level expression (sum(col), count(col), …) — needs records
+                    if _records_cache is None:
+                        _records_cache = list(queryset.values_list('data', flat=True)[:5_000])
+                    result[name] = CalculatedFieldEvaluator.evaluate_against_records(
+                        expression, _records_cache
+                    )
+                else:
+                    # Context-level expression — references other aggregation names
+                    result[name] = CalculatedFieldEvaluator.evaluate_against_context(
+                        expression, result
+                    )
+            except Exception as exc:
+                logger.warning(f"Calculated agg '{name}' failed: {exc}")
+                result[name] = None
+        return result
+
+
+class CalculatedFieldEvaluator:
+    """
+    Safe arithmetic expression evaluator for calculated metrics.
+
+    Two usage modes
+    ───────────────
+    1. **Widget-level** (``evaluate_against_context``):
+       The expression references *names* of other aggregation results.
+       Context = ``{"total_revenue": 1500, "total_users": 30}``
+       Expression = ``"total_revenue / total_users"`` → ``50.0``
+
+    2. **Table-level** (``evaluate_against_records``):
+       The expression uses aggregation *functions* on column names.
+       Expression = ``"sum(revenue) / count(user_id)"``
+       The evaluator pre-computes each ``agg(col)`` call, replaces them
+       with safe variable names, then delegates to ``simpleeval``.
+
+    Both modes use ``simpleeval`` with no allowed attribute access or
+    imports — only arithmetic, comparisons, and a small set of built-ins.
+    """
+
+    # Pattern: word_func( column name — may contain spaces )
+    _COL_AGG_RE = re.compile(r'\b(sum|count|avg|min|max)\s*\(\s*([^)]+?)\s*\)')
+
+    # Built-in functions allowed in expressions
+    _SAFE_FUNCTIONS = {
+        'abs': abs,
+        'round': round,
+    }
+
+    @staticmethod
+    def _safe_var(func: str, col: str) -> str:
+        """Convert agg(col) to a safe Python identifier."""
+        sanitised = re.sub(r'[^a-zA-Z0-9]', '_', col)
+        return f'_agg_{func}_{sanitised}'
+
+    @classmethod
+    def _precompute_col_aggs(cls, expression: str, records: list) -> tuple:
+        """
+        Scan *expression* for ``agg(column)`` calls.
+
+        Pre-compute each aggregation from *records* (list of plain dicts).
+        Returns ``(safe_expression, names_dict)``.
+        """
+        names: dict = {}
+        for m in cls._COL_AGG_RE.finditer(expression):
+            func, col = m.group(1), m.group(2).strip()
+            var = cls._safe_var(func, col)
+            if var in names:
+                continue
+            all_present = []  # all non-None values (for count)
+            nums = []         # numeric-castable values (for sum/avg/min/max)
+            for rec in records:
+                v = rec.get(col)
+                if v is not None:
+                    all_present.append(v)
+                    try:
+                        nums.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+            if func == 'sum':
+                names[var] = sum(nums)
+            elif func == 'count':
+                # count(col) = number of rows that have a non-null value for col
+                names[var] = float(len(all_present))
+            elif func == 'avg':
+                names[var] = (sum(nums) / len(nums)) if nums else 0.0
+            elif func == 'min':
+                names[var] = min(nums) if nums else 0.0
+            elif func == 'max':
+                names[var] = max(nums) if nums else 0.0
+
+        safe_expr = cls._COL_AGG_RE.sub(
+            lambda m: cls._safe_var(m.group(1), m.group(2).strip()),
+            expression,
+        )
+        return safe_expr, names
+
+    @classmethod
+    def evaluate_against_context(cls, expression: str, names: dict) -> float:
+        """
+        Evaluate an arithmetic *expression* with *names* as the variable context.
+
+        Used for widget-level ``type: "calculated"`` aggregations where the
+        expression references names of other aggregations in the same widget.
+
+        Raises ``ValueError`` on evaluation errors (unknown name, syntax error,
+        feature not available).  Callers should catch and handle gracefully.
+        """
+        from simpleeval import simple_eval, NameNotDefined, FeatureNotAvailable
+
+        # Filter names to only include numeric values to prevent injection
+        safe_names = {
+            k: v for k, v in names.items()
+            if isinstance(v, (int, float)) and v is not None
+        }
+        try:
+            result = simple_eval(
+                expression,
+                names=safe_names,
+                functions=cls._SAFE_FUNCTIONS,
+            )
+            if result is None:
+                return 0.0
+            return round(float(result), 6)
+        except ZeroDivisionError:
+            return None
+        except (NameNotDefined, FeatureNotAvailable) as exc:
+            raise ValueError(f"Expression references unknown name: {exc}") from exc
+        except Exception as exc:
+            raise ValueError(f"Expression evaluation error: {exc}") from exc
+
+    @classmethod
+    def evaluate_against_records(cls, expression: str, records: list) -> float:
+        """
+        Evaluate an expression that uses ``agg(column)`` functions against *records*.
+
+        *records* is a list of plain dicts (each dict is one record's data payload).
+
+        Returns a float result.  Raises ``ValueError`` on any evaluation failure.
+        """
+        from simpleeval import simple_eval, NameNotDefined, FeatureNotAvailable
+
+        safe_expr, names = cls._precompute_col_aggs(expression, records)
+        try:
+            result = simple_eval(
+                safe_expr,
+                names=names,
+                functions=cls._SAFE_FUNCTIONS,
+            )
+            if result is None:
+                return 0.0
+            return round(float(result), 6)
+        except ZeroDivisionError:
+            return None
+        except (NameNotDefined, FeatureNotAvailable) as exc:
+            raise ValueError(f"Expression references unknown column/function: {exc}") from exc
+        except Exception as exc:
+            raise ValueError(f"Expression evaluation error: {exc}") from exc
+
+    @classmethod
+    def validate_expression(cls, expression: str) -> tuple:
+        """
+        Validate *expression* syntax without evaluating against real data.
+
+        Returns ``(True, '')`` if valid, ``(False, error_message)`` otherwise.
+        Uses a dummy context where every ``agg(col)`` is replaced with 1.0.
+        """
+        safe_expr, dummy_names = cls._precompute_col_aggs(
+            expression, [{'__dummy__': '1'}]
+        )
+        # Supplement with any remaining bare names by setting them to 1.0
+        try:
+            from simpleeval import simple_eval, NameNotDefined, FeatureNotAvailable
+            # Seed pre-computed agg vars with 1.0 to avoid divide-by-zero in validation
+            for k in list(dummy_names.keys()):
+                dummy_names[k] = 1.0
+            # Collect unknown bare names and retry (up to 10 iterations)
+            for _ in range(10):
+                try:
+                    simple_eval(safe_expr, names=dummy_names, functions=cls._SAFE_FUNCTIONS)
+                    break
+                except NameNotDefined as nd:
+                    dummy_names[str(nd.name)] = 1.0
+                except ZeroDivisionError:
+                    # Valid expression syntax — just divides by zero with dummy data
+                    break
+            return True, ''
+        except FeatureNotAvailable as exc:
+            return False, f'Unsupported operation: {exc}'
+        except Exception as exc:
+            return False, str(exc)
+
+
+class CohortAnalysisEngine:
+    """
+    Compute a cohort retention matrix from DataTable records.
+
+    A *cohort* is the group of distinct users (identified by ``user_field``)
+    whose **first** event falls in a given calendar period.  The matrix then
+    shows what fraction of those users performed any event in each subsequent
+    period (period 0 = cohort origin, period 1 = next period, …).
+
+    query_config schema
+    -------------------
+    {
+      "user_field":        "user_id",           # required — column identifying the user
+      "event_date_field":  "created_at",        # optional (default: record created_at)
+      "period":            "week",              # "day" | "week" | "month"  (default: week)
+      "periods":           8,                  # max number of periods to show (max 52)
+      "filters":           []                  # optional pre-filter (same schema as widget filters)
+    }
+
+    Response
+    --------
+    {
+      "cohort_labels":  ["2024-W01", "2024-W02", ...],
+      "period_labels":  ["Start", "Period 1", "Period 2", ...],
+      "matrix": [
+        {"absolute": [120, 85, 60, ...], "percentage": [100.0, 70.8, 50.0, ...]},
+        ...
+      ],
+      "total_users": 350
+    }
+    """
+
+    MAX_RECORDS = 50_000
+    _FREQ_MAP   = {'day': 'D', 'week': 'W', 'month': 'M'}
+
+    def execute(self, widget):
+        config          = widget.query_config or {}
+        user_field      = config.get('user_field')
+        date_field      = config.get('event_date_field', 'created_at')
+        period          = config.get('period', 'week')
+        num_periods     = min(int(config.get('periods', 8)), 52)
+        filters         = config.get('filters', [])
+
+        if not user_field:
+            return {'error': 'user_field is required in query_config'}
+
+        freq = self._FREQ_MAP.get(period, 'W')
+
+        # ── Fetch records ──────────────────────────────────────────────────
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
+        if filters:
+            queryset = QueryEngine()._apply_filters(queryset, filters)
+        rows = list(queryset.values('data', 'created_at')[:self.MAX_RECORDS])
+        if not rows:
+            return {'cohort_labels': [], 'period_labels': [], 'matrix': [], 'total_users': 0}
+
+        # ── Build DataFrame ────────────────────────────────────────────────
+        from django.utils.dateparse import parse_datetime, parse_date
+        records = []
+        for row in rows:
+            data = row.get('data') or {}
+            user = data.get(user_field)
+            if not user:
+                continue
+            if date_field == 'created_at' or date_field not in data:
+                event_date = row['created_at']
+            else:
+                raw = data.get(date_field)
+                event_date = parse_datetime(str(raw)) or parse_date(str(raw))
+            if not event_date:
+                continue
+            records.append({'user': str(user), 'event_date': pd.Timestamp(event_date)})
+
+        if not records:
+            return {'cohort_labels': [], 'period_labels': [], 'matrix': [], 'total_users': 0}
+
+        df = pd.DataFrame(records)
+        df['event_period']  = df['event_date'].dt.to_period(freq)
+
+        # Each user's cohort = their first-seen period
+        first_seen = df.groupby('user')['event_period'].min().rename('cohort_period')
+        df = df.join(first_seen, on='user')
+
+        # Period offset: 0 = cohort period, 1 = next period, …
+        def _period_diff(row):
+            try:
+                diff = row['event_period'] - row['cohort_period']
+                return int(diff) if isinstance(diff, int) else int(diff.n)
+            except Exception:
+                return -1
+
+        df['period_number'] = df.apply(_period_diff, axis=1)
+        df = df[df['period_number'].between(0, num_periods - 1)]
+
+        # Distinct users per (cohort, offset)
+        cohort_data = (
+            df.groupby(['cohort_period', 'period_number'])['user']
+            .nunique()
+            .reset_index(name='users')
+        )
+
+        if cohort_data.empty:
+            return {'cohort_labels': [], 'period_labels': [], 'matrix': [], 'total_users': 0}
+
+        matrix_df = cohort_data.pivot(
+            index='cohort_period', columns='period_number', values='users'
+        ).fillna(0).sort_index()
+
+        # Ensure all period columns exist (0 … num_periods-1)
+        all_cols = list(range(num_periods))
+        for c in all_cols:
+            if c not in matrix_df.columns:
+                matrix_df[c] = 0
+        matrix_df = matrix_df[all_cols]
+
+        cohort_labels = [str(p) for p in matrix_df.index]
+        period_labels = ['Start'] + [f'Period {i}' for i in range(1, num_periods)]
+
+        matrix = []
+        for _, row in matrix_df.iterrows():
+            base = float(row[0]) if float(row[0]) > 0 else 1.0
+            matrix.append({
+                'absolute':   [int(row[c]) for c in all_cols],
+                'percentage': [round(float(row[c]) / base * 100, 1) for c in all_cols],
+            })
+
+        return {
+            'cohort_labels': cohort_labels,
+            'period_labels': period_labels,
+            'matrix':        matrix,
+            'total_users':   int(df['user'].nunique()),
+        }
+
+
+class FunnelAnalysisEngine:
+    """
+    Compute a sequential funnel from DataTable records.
+
+    Each *step* defines a filter set; the engine counts the distinct users
+    (or record count when no ``user_field`` is configured) who pass each
+    step's filters.  When ``ordered=True`` (default), a user must appear at
+    step N before being counted at step N+1.
+
+    query_config schema
+    -------------------
+    {
+      "user_field": "user_id",    # optional — column identifying the user
+      "ordered":    true,         # enforce step ordering (default: true)
+      "steps": [
+        {"name": "Signed Up",  "filters": [{"field": "event", "operator": "eq", "value": "signup"}]},
+        {"name": "Activated",  "filters": [{"field": "event", "operator": "eq", "value": "activate"}]},
+        {"name": "Purchased",  "filters": [{"field": "event", "operator": "eq", "value": "purchase"}]}
+      ]
+    }
+
+    Response
+    --------
+    {
+      "steps": [
+        {"name": "Signed Up",  "count": 500, "conversion_rate": 100.0, "overall_rate": 100.0, "dropped": 0},
+        {"name": "Activated",  "count": 350, "conversion_rate": 70.0,  "overall_rate": 70.0,  "dropped": 150},
+        {"name": "Purchased",  "count": 140, "conversion_rate": 40.0,  "overall_rate": 28.0,  "dropped": 210}
+      ],
+      "total_users": 500
+    }
+    """
+
+    MAX_RECORDS = 50_000
+
+    def execute(self, widget):
+        config     = widget.query_config or {}
+        user_field = config.get('user_field')
+        steps      = config.get('steps', [])
+        ordered    = config.get('ordered', True)
+
+        if not steps:
+            return {'error': 'steps is required in query_config'}
+
+        # ── Fetch all records once ─────────────────────────────────────────
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
+        rows = list(queryset.values('data', 'created_at')[:self.MAX_RECORDS])
+        if not rows:
+            return {'steps': [{'name': s.get('name', f'Step {i+1}'), 'count': 0,
+                                'conversion_rate': 0.0, 'overall_rate': 0.0, 'dropped': 0}
+                               for i, s in enumerate(steps)],
+                    'total_users': 0}
+
+        # Flatten records into DataFrame
+        flat = []
+        for row in rows:
+            data = row.get('data') or {}
+            entry = {str(k): v for k, v in data.items()}
+            entry['_created_at'] = row['created_at']
+            flat.append(entry)
+        df = pd.DataFrame(flat)
+
+        def _apply_filters(df_in, step_filters):
+            """Return filtered DataFrame for a single step."""
+            mask = pd.Series([True] * len(df_in), index=df_in.index)
+            for f in step_filters:
+                field = f.get('field')
+                op    = f.get('operator', 'eq')
+                value = f.get('value')
+                if not field or value is None or field not in df_in.columns:
+                    continue
+                col = df_in[field]
+                if op == 'eq':
+                    mask &= (col.astype(str) == str(value))
+                elif op == 'neq':
+                    mask &= (col.astype(str) != str(value))
+                elif op == 'contains':
+                    mask &= col.astype(str).str.contains(str(value), na=False, case=False)
+                elif op in ('gt', 'gte', 'lt', 'lte'):
+                    try:
+                        numeric_col = pd.to_numeric(col, errors='coerce')
+                        fval = float(value)
+                        if   op == 'gt':  mask &= (numeric_col >  fval)
+                        elif op == 'gte': mask &= (numeric_col >= fval)
+                        elif op == 'lt':  mask &= (numeric_col <  fval)
+                        elif op == 'lte': mask &= (numeric_col <= fval)
+                    except Exception:
+                        pass
+            return df_in[mask]
+
+        step_results = []
+        prev_users   = None   # set of user identifiers from the previous step
+        first_count  = None
+
+        for i, step in enumerate(steps):
+            step_name     = step.get('name', f'Step {i + 1}')
+            step_filters  = step.get('filters', [])
+
+            step_df = _apply_filters(df, step_filters)
+
+            if user_field and user_field in df.columns:
+                if ordered and prev_users is not None:
+                    step_df = step_df[step_df[user_field].astype(str).isin(prev_users)]
+                users  = set(step_df[user_field].astype(str).dropna().tolist())
+                count  = len(users)
+                prev_users = users
+            else:
+                count = len(step_df)
+
+            if first_count is None:
+                first_count = count
+
+            step_results.append({'name': step_name, 'count': count})
+
+        # Annotate conversion and drop rates
+        first_count = first_count or 1
+        for i, step in enumerate(step_results):
+            prev_count            = step_results[i - 1]['count'] if i > 0 else first_count
+            step['conversion_rate'] = round(step['count'] / max(prev_count, 1) * 100, 1)
+            step['overall_rate']    = round(step['count'] / max(first_count, 1) * 100, 1)
+            step['dropped']         = (step_results[i - 1]['count'] - step['count']) if i > 0 else 0
+
+        return {'steps': step_results, 'total_users': first_count}
+
+
 class DataImportService:
     """
     Handle importing data from various sources
@@ -948,8 +1454,6 @@ class WorkspaceInsightService:
         total_count = 0
 
         for table in tables:
-            if total_count >= 30:
-                break
             logger.info(f"  Profiling table: {table.name} ({table.record_count} records)")
 
             insights = self._generate_table_insights(table)
@@ -1017,29 +1521,118 @@ class WorkspaceInsightService:
             # Leave a 1-unit gap before the next table's section
             current_y = table_y + 5 + 1
 
-        logger.info(f"Generated {total_count} widgets across {tables.count()} tables")
+        logger.info(f"Generated {total_count} widgets from {tables.count()} internal tables")
+
+        # ── External DataSources (Google Sheets, PostgreSQL, MySQL) ────────
+        from .models import DataSource
+        connected_sources = DataSource.objects.filter(
+            workspace=workspace,
+            is_active=True,
+            last_test_ok=True,
+        )
+        for ds in connected_sources:
+            logger.info("  Processing DataSource: %s (%s)", ds.name, ds.connector_type)
+            try:
+                if ds.connector_type == 'google_sheets':
+                    engine = GoogleSheetsQueryEngine(ds)
+                else:
+                    engine = DataSourceQueryEngine(ds)
+                sheet_list = engine.list_tables()
+            except Exception as exc:
+                logger.warning("  Could not list tables for %s: %s", ds.name, exc)
+                continue
+
+            for tbl_info in sheet_list:
+                sheet_name = tbl_info['name']
+                logger.info("    Sheet/table: %s", sheet_name)
+
+                insights = self._generate_datasource_sheet_insights(ds, sheet_name)
+                if not insights:
+                    # At minimum create a table-preview widget
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type='table',
+                        title=f"[Auto] {ds.name} — {sheet_name}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config={"limit": 20},
+                        viz_config={},
+                        position={'x': 0, 'y': current_y, 'w': 12, 'h': 5},
+                    )
+                    current_y += 6
+                    total_count += 1
+                    continue
+
+                kpis   = [i for i in insights if i['type'] == 'metric']
+                charts = [i for i in insights if i['type'] not in ('metric',)]
+
+                kpi_row_h = 2
+                kpi_x, kpi_y = 0, current_y
+                for spec in kpis:
+                    w = spec['width']
+                    if kpi_x + w > 12:
+                        kpi_x  = 0
+                        kpi_y += kpi_row_h
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type=spec['type'],
+                        title=f"[Auto] {spec['title']}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config=spec['query_config'],
+                        viz_config=spec.get('viz_config', {}),
+                        position={'x': kpi_x, 'y': kpi_y, 'w': w, 'h': kpi_row_h},
+                    )
+                    kpi_x += w
+                    total_count += 1
+
+                chart_start_y = (kpi_y + kpi_row_h) if kpis else current_y
+                chart_x, chart_y = 0, chart_start_y
+                for spec in charts:
+                    w, h = spec['width'], spec['height']
+                    if chart_x + w > 12:
+                        chart_x  = 0
+                        chart_y += h
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type=spec['type'],
+                        title=f"[Auto] {spec['title']}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config=spec['query_config'],
+                        viz_config=spec.get('viz_config', {}),
+                        position={'x': chart_x, 'y': chart_y, 'w': w, 'h': h},
+                    )
+                    chart_x += w
+                    total_count += 1
+
+                last_chart_h = charts[-1]['height'] if charts else 0
+                table_y = (chart_y + last_chart_h) if charts else chart_start_y
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='table',
+                    title=f"[Auto] {ds.name} — {sheet_name} Preview",
+                    table=None,
+                    data_source=ds,
+                    source_table_name=sheet_name,
+                    query_config={"limit": 20},
+                    viz_config={},
+                    position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
+                )
+                total_count += 1
+                current_y = table_y + 5 + 1
+
+        logger.info("Generated %d widgets total", total_count)
         return dashboard
 
     # ------------------------------------------------------------------ #
     #  Data profiling + insight spec generation
     # ------------------------------------------------------------------ #
     def _generate_table_insights(self, table):
-        """
-        Profile actual record data and return a list of insight specs.
-
-        Every spec is a dict with:
-          type, title, width, height, query_config, viz_config
-
-        viz_config may contain a 'description' key: a plain-English sentence
-        explaining what the widget shows — rendered for non-technical users.
-
-        The engine:
-          1. Detects the business domain (sales, HR, healthcare, etc.)
-          2. Classifies fields and filters out noise (IDs, free-text, etc.)
-          3. Handles edge cases: no numerics, no dates, text-only, etc.
-          4. Selects the most informative chart types for each dimension
-          5. Generates narrative descriptions on every widget
-        """
+        """Profile an internal DataTable and return insight specs."""
         from .models import Record
 
         schema = {f['name']: f['type'] for f in (table.schema or [])}
@@ -1053,6 +1646,61 @@ class WorkspaceInsightService:
         )
         if not sample:
             return []
+        return self._profile_and_generate(schema, sample)
+
+    def _generate_datasource_sheet_insights(self, data_source, sheet_name):
+        """
+        Profile one sheet / table from an external DataSource and return
+        the same insight-spec list that _generate_table_insights returns.
+        Widgets produced by the caller must set data_source + source_table_name.
+        """
+        import pandas as pd
+        try:
+            if data_source.connector_type == 'google_sheets':
+                engine = GoogleSheetsQueryEngine(data_source)
+                df = engine._sheet_to_df(sheet_name, max_rows=500)
+            else:
+                engine = DataSourceQueryEngine(data_source)
+                df = engine.fetch_sample(sheet_name, max_rows=500)
+        except Exception as exc:
+            logger.warning(
+                "Could not read %s / %s for insight generation: %s",
+                data_source.name, sheet_name, exc,
+            )
+            return []
+
+        if df.empty:
+            return []
+
+        # ── Preprocess: coerce currency strings and date strings so the
+        #    profiler can detect numeric and date columns correctly.
+        #    (This copy is only used for profiling — widget queries hit the
+        #     live source independently.)
+        df_prof = df.copy()
+        _currency_re = r'[\$£€¥₹,\s]'
+        for col in df_prof.columns:
+            raw = df_prof[col].astype(str).str.strip()
+            # Try currency / numeric: strip symbols then coerce
+            stripped = raw.str.replace(_currency_re, '', regex=True)
+            numeric  = pd.to_numeric(stripped, errors='coerce')
+            if numeric.notna().mean() >= 0.7:
+                df_prof[col] = numeric
+                continue
+            # Try date
+            try:
+                df_prof[col] = pd.to_datetime(raw, infer_datetime_format=True, errors='raise')
+            except (ValueError, TypeError):
+                pass   # leave as text
+
+        # Build schema from inferred column types on the preprocessed data
+        schema = {
+            col: GoogleSheetsQueryEngine._infer_column_type(df_prof[col])
+            for col in df_prof.columns
+        }
+        sample = df_prof.where(df_prof.notna(), None).to_dict('records')
+        return self._profile_and_generate(schema, sample)
+
+    def _profile_and_generate(self, schema, sample):
 
         # ── Step 1: Detect domain ─────────────────────────────────────────
         domain      = self._detect_data_domain(schema, sample)
@@ -2069,6 +2717,24 @@ class DataSourceQueryEngine:
         """Quote a SQL identifier by wrapping in double-quotes."""
         return f'"{name}"'
 
+    def fetch_sample(self, table_name: str, max_rows: int = 500):
+        """
+        Return a pandas DataFrame of the first *max_rows* rows from *table_name*.
+        Used by WorkspaceInsightService for external-DB insight profiling.
+        """
+        import pandas as pd
+        if not self._validate_identifier(table_name):
+            raise ValueError(f"Invalid table name: {table_name!r}")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f'SELECT * FROM {self._qi(table_name)} LIMIT %(limit)s',
+                    {'limit': max_rows},
+                )
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+        return pd.DataFrame(rows, columns=cols)
+
 
 # ── GoogleSheetsQueryEngine ─────────────────────────────────────────────────
 
@@ -2157,7 +2823,7 @@ class GoogleSheetsQueryEngine:
 
     # ── widget query ────────────────────────────────────────────────────────
 
-    def execute_widget_query(self, widget, extra_filters=None):
+    def execute_widget_query(self, widget, limit=1000, extra_filters=None):
         """
         Execute a widget query against a Google Sheet.
         Returns the same dict/list shape as QueryEngine.execute_widget_query.
@@ -2191,7 +2857,10 @@ class GoogleSheetsQueryEngine:
             if   op == 'eq':  df = df[s == str(val)]
             elif op == 'neq': df = df[s != str(val)]
             elif op in ('gt', 'gte', 'lt', 'lte'):
-                numeric = pd.to_numeric(df[col], errors='coerce')
+                numeric = pd.to_numeric(
+                    df[col].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True),
+                    errors='coerce',
+                )
                 v       = float(val)
                 if   op == 'gt':  df = df[numeric >  v]
                 elif op == 'gte': df = df[numeric >= v]
@@ -2214,9 +2883,11 @@ class GoogleSheetsQueryEngine:
         field    = agg.get('field')
         group_by = agg.get('group_by')
 
-        # Coerce the measure column to numeric upfront
+        # Coerce the measure column to numeric, handling currency formatting
+        # e.g. "$20,200.00" → 20200.0
         if field and field in df.columns:
-            df[field] = pd.to_numeric(df[field], errors='coerce')
+            cleaned = df[field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True)
+            df[field] = pd.to_numeric(cleaned, errors='coerce')
 
         if group_by and group_by in df.columns:
             grouped = df.groupby(group_by, sort=True)

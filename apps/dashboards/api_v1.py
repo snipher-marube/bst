@@ -23,7 +23,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
-from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint, DataSource
+from .models import DataTable, Record, Dashboard, Widget, AuditLog, ImportJob, DataAlert, WebhookEndpoint, DataSource, CalculatedField
 from .permissions import HasWorkspaceAccess, CanEditData, CanManageWorkspace
 from .webhook_crypto import encrypt_secret, decrypt_secret
 from .serializers import (
@@ -1350,3 +1350,244 @@ class DataSourceSchemaAPIView(APIView):
             return Response(tables)
         except Exception as exc:
             return Response({'error': str(exc)}, status=400)
+
+
+# ---------------------------------------------------------------------------
+# Gap 14 — Calculated Fields
+# ---------------------------------------------------------------------------
+
+class CalculatedFieldSerializer(serializers.ModelSerializer):
+    table_id = serializers.UUIDField(source='table.id', read_only=True)
+
+    class Meta:
+        model = CalculatedField
+        fields = [
+            'id', 'table_id', 'name', 'display_name',
+            'expression', 'format_type', 'description',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'table_id', 'created_at', 'updated_at']
+
+    def validate_expression(self, value):
+        from .services import CalculatedFieldEvaluator
+        valid, error = CalculatedFieldEvaluator.validate_expression(value)
+        if not valid:
+            raise serializers.ValidationError(f'Invalid expression: {error}')
+        return value
+
+
+class CalculatedFieldListCreateAPIView(APIView):
+    """
+    GET  /api/v1/tables/<table_id>/calculated-fields/  — list all for this table
+    POST /api/v1/tables/<table_id>/calculated-fields/  — create a new one
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_table(self, request, table_id):
+        table = get_object_or_404(DataTable, pk=table_id)
+        if not table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return table
+
+    def get(self, request, table_id):
+        table = self._get_table(request, table_id)
+        fields = CalculatedField.objects.filter(table=table)
+        return Response(CalculatedFieldSerializer(fields, many=True).data)
+
+    def post(self, request, table_id):
+        table = self._get_table(request, table_id)
+        ser = CalculatedFieldSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        cf = ser.save(table=table)
+        return Response(CalculatedFieldSerializer(cf).data, status=status.HTTP_201_CREATED)
+
+
+class CalculatedFieldDetailAPIView(APIView):
+    """
+    GET    /api/v1/calculated-fields/<pk>/  — retrieve
+    PATCH  /api/v1/calculated-fields/<pk>/  — partial update
+    DELETE /api/v1/calculated-fields/<pk>/  — delete
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_cf(self, request, pk):
+        cf = get_object_or_404(CalculatedField, pk=pk)
+        if not cf.table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return cf
+
+    def get(self, request, pk):
+        cf = self._get_cf(request, pk)
+        return Response(CalculatedFieldSerializer(cf).data)
+
+    def patch(self, request, pk):
+        cf = self._get_cf(request, pk)
+        ser = CalculatedFieldSerializer(cf, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(CalculatedFieldSerializer(cf).data)
+
+    def delete(self, request, pk):
+        cf = self._get_cf(request, pk)
+        cf.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CalculatedFieldPreviewAPIView(APIView):
+    """
+    POST /api/v1/calculated-fields/<pk>/preview/
+
+    Evaluate the calculated field against the first 5 000 records of its
+    table and return the computed result.  Useful for validating an
+    expression before saving.
+
+    Also accepts an ad-hoc ``expression`` body param for live preview
+    before a field is saved.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Record
+        from .services import CalculatedFieldEvaluator
+
+        cf = get_object_or_404(CalculatedField, pk=pk)
+        if not cf.table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        expression = request.data.get('expression', cf.expression)
+
+        records = list(
+            Record.objects.filter(table=cf.table, is_active=True)
+            .values_list('data', flat=True)[:5_000]
+        )
+
+        try:
+            value = CalculatedFieldEvaluator.evaluate_against_records(expression, records)
+            return Response({
+                'expression': expression,
+                'result': value,
+                'record_count': len(records),
+                'format_type': cf.format_type,
+            })
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=400)
+
+
+class CalculatedFieldValidateAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/calculated-fields/validate/
+
+    Validate an expression without saving it.
+    Body: {"expression": "sum(revenue) / count(user_id)"}
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, table_id):
+        from .services import CalculatedFieldEvaluator
+
+        table = get_object_or_404(DataTable, pk=table_id)
+        if not table.workspace.members.filter(id=request.user.id).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+
+        expression = request.data.get('expression', '')
+        if not expression:
+            return Response({'valid': False, 'error': 'expression is required.'}, status=400)
+
+        valid, error = CalculatedFieldEvaluator.validate_expression(expression)
+        return Response({'valid': valid, 'error': error or None})
+
+
+# ---------------------------------------------------------------------------
+# Gap 15 — Cohort & Funnel Analysis
+# ---------------------------------------------------------------------------
+
+class CohortAnalysisAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/cohort-analysis/
+
+    Run an ad-hoc cohort retention analysis on a DataTable without creating a
+    widget first.  The request body mirrors the cohort widget query_config.
+
+    Request body
+    ------------
+    {
+      "user_field":       "user_id",    # required
+      "event_date_field": "created_at", # optional
+      "period":           "week",       # "day" | "week" | "month"
+      "periods":          8,            # number of periods (max 52)
+      "filters":          []            # optional pre-filters
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def post(self, request, table_id):
+        from .services import CohortAnalysisEngine
+
+        workspace = _require_workspace(request)
+        table = get_object_or_404(DataTable, id=table_id, workspace=workspace, is_active=True)
+
+        # Build a transient widget-like object so the engine can be reused
+        class _FakeWidget:
+            pass
+
+        widget = _FakeWidget()
+        widget.table = table
+        widget.query_config = request.data if isinstance(request.data, dict) else {}
+
+        if not widget.query_config.get('user_field'):
+            return Response({'error': 'user_field is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = CohortAnalysisEngine().execute(widget)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+
+class FunnelAnalysisAPIView(APIView):
+    """
+    POST /api/v1/tables/<table_id>/funnel-analysis/
+
+    Run an ad-hoc funnel drop-off analysis on a DataTable without creating a
+    widget first.  The request body mirrors the funnel widget query_config.
+
+    Request body
+    ------------
+    {
+      "user_field": "user_id",    # optional
+      "ordered":    true,         # enforce step ordering (default: true)
+      "steps": [
+        {"name": "Step 1", "filters": [{"field": "event", "operator": "eq", "value": "signup"}]},
+        {"name": "Step 2", "filters": [{"field": "event", "operator": "eq", "value": "purchase"}]}
+      ]
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def post(self, request, table_id):
+        from .services import FunnelAnalysisEngine
+
+        workspace = _require_workspace(request)
+        table = get_object_or_404(DataTable, id=table_id, workspace=workspace, is_active=True)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        steps = body.get('steps', [])
+        if not steps or not isinstance(steps, list):
+            return Response(
+                {'error': 'steps must be a non-empty list'}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        class _FakeWidget:
+            pass
+
+        widget = _FakeWidget()
+        widget.table = table
+        widget.query_config = body
+
+        result = FunnelAnalysisEngine().execute(widget)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)

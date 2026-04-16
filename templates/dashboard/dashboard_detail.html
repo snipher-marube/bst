@@ -335,17 +335,77 @@
           </div>
           <div id="aggregationGroup" class="form-group hidden">
             <label class="form-label">Aggregation</label>
-            <select id="aggregationType" class="form-ctrl">
+            <select id="aggregationType" class="form-ctrl" onchange="onAggTypeChange()">
               <option value="sum">Sum</option>
               <option value="avg">Average</option>
               <option value="count">Count of records</option>
               <option value="min">Minimum</option>
               <option value="max">Maximum</option>
+              <option value="calculated" style="font-weight:600;color:#6366f1">&#x2211; Calculated (expression)</option>
             </select>
           </div>
           <div id="groupByGroup" class="form-group hidden">
             <label class="form-label">Group by</label>
             <select id="groupByField" class="form-ctrl"></select>
+          </div>
+
+          {# ── Calculated expression panel ── #}
+          <div id="calculatedExprGroup" class="hidden"
+               style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:.75rem;padding:.875rem 1rem;margin-bottom:.75rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+              <label class="form-label" style="margin-bottom:0;color:#4f46e5">
+                <i class="fas fa-calculator" style="margin-right:.25rem"></i>Expression
+              </label>
+              <a id="calcFieldsLink" href="#" target="_blank"
+                 style="font-size:.7rem;color:#6366f1;text-decoration:underline">Manage saved fields ↗</a>
+            </div>
+
+            {# Saved calculated fields from this table #}
+            <div id="savedCalcFieldsSection" class="hidden" style="margin-bottom:.625rem">
+              <label class="form-label" style="font-size:.7rem;color:#6b7280">Saved fields for this table — click to use</label>
+              <div id="savedCalcFieldsList"
+                   style="display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.25rem"></div>
+            </div>
+
+            {# Column chips #}
+            <div id="calcColChips"
+                 style="display:flex;flex-wrap:wrap;gap:.2rem;margin-bottom:.375rem;padding:.375rem;background:#ede9fe;border-radius:.5rem;min-height:24px">
+              <span style="font-size:.65rem;color:#7c3aed;align-self:center;margin-right:.25rem">Columns:</span>
+            </div>
+
+            {# Function chips #}
+            <div style="display:flex;flex-wrap:wrap;gap:.2rem;margin-bottom:.375rem">
+              <span style="font-size:.65rem;color:#6b7280;align-self:center">Functions:</span>
+              <button type="button" onclick="calcInsert('sum(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">sum(</button>
+              <button type="button" onclick="calcInsert('count(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">count(</button>
+              <button type="button" onclick="calcInsert('avg(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">avg(</button>
+              <button type="button" onclick="calcInsert('min(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">min(</button>
+              <button type="button" onclick="calcInsert('max(')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.3rem;color:#6d28d9;cursor:pointer;font-family:monospace">max(</button>
+              <button type="button" onclick="calcInsert(')')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">)</button>
+              <button type="button" onclick="calcInsert(' / ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">/</button>
+              <button type="button" onclick="calcInsert(' * ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">*</button>
+              <button type="button" onclick="calcInsert(' + ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">+</button>
+              <button type="button" onclick="calcInsert(' - ')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">-</button>
+              <button type="button" onclick="calcInsert(' * 100')"
+                      style="font-size:.7rem;padding:.1rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:.3rem;color:#374151;cursor:pointer;font-family:monospace">×100</button>
+            </div>
+
+            <textarea id="calcExpression" rows="2"
+                      placeholder="e.g. sum(revenue) / count(user_id)"
+                      style="width:100%;border:1px solid #c4b5fd;border-radius:.5rem;padding:.4rem .6rem;font-size:.8125rem;font-family:monospace;resize:none;background:#fff;box-sizing:border-box;outline:none"
+                      onfocus="this.style.borderColor='#7c3aed'"
+                      onblur="this.style.borderColor='#c4b5fd'; validateCalcExpr()"></textarea>
+            <div id="calcExprFeedback" style="min-height:16px;margin-top:.2rem;font-size:.7rem"></div>
           </div>
         </div>
 
@@ -1062,7 +1122,131 @@ function populateSelect(id, options, placeholder) {
 }
 
 /** Called when table or widget-type changes – rebuild field dropdowns. */
-function onTableChange() { onTypeChange(); }
+function onTableChange() {
+  onTypeChange();
+  // Refresh calculated fields panel when table changes
+  refreshCalcFieldsPanel();
+}
+
+async function refreshCalcFieldsPanel() {
+  const tId = document.getElementById('widgetTable').value;
+  const schema = getSelectedSchema();
+
+  // Populate column chips
+  const chipsEl = document.getElementById('calcColChips');
+  if (chipsEl) {
+    // Keep the label span, replace the rest
+    const label = chipsEl.querySelector('span');
+    chipsEl.innerHTML = '';
+    if (label) chipsEl.appendChild(label);
+    schema.forEach(f => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = f.name;
+      btn.style.cssText = 'font-size:.65rem;padding:.1rem .35rem;background:#fff;border:1px solid #ddd6fe;border-radius:.3rem;color:#5b21b6;cursor:pointer;font-family:monospace';
+      btn.onclick = () => calcInsert(f.name);
+      chipsEl.appendChild(btn);
+    });
+  }
+
+  // Update "Manage saved fields" link
+  if (tId) {
+    const link = document.getElementById('calcFieldsLink');
+    if (link) link.href = `/dashboard/tables/${tId}/calculated-fields/?tab=calcfields`;
+  }
+
+  // Load and display saved CalculatedFields for this table
+  const section = document.getElementById('savedCalcFieldsSection');
+  const list    = document.getElementById('savedCalcFieldsList');
+  if (!section || !list || !tId) return;
+
+  try {
+    const res = await fetch(`/api/v1/tables/${tId}/calculated-fields/`);
+    if (!res.ok) return;
+    const fields = await res.json();
+    if (!fields.length) { section.classList.add('hidden'); return; }
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+    fields.forEach(f => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = f.expression;
+      btn.innerHTML = `<span style="font-weight:600">${f.display_name}</span> <span style="opacity:.6;font-family:monospace;font-size:.65rem">${f.name}</span>`;
+      btn.style.cssText = 'font-size:.7rem;padding:.2rem .5rem;background:#ede9fe;border:1px solid #c4b5fd;border-radius:.4rem;color:#4f46e5;cursor:pointer';
+      btn.onclick = () => {
+        document.getElementById('calcExpression').value = f.expression;
+        document.getElementById('widgetTitle').value = f.display_name;
+        document.getElementById('widgetTitle').dataset.userEdited = '1';
+        validateCalcExpr();
+      };
+      list.appendChild(btn);
+    });
+  } catch (_) {
+    section.classList.add('hidden');
+  }
+}
+
+function onAggTypeChange() {
+  const agg = document.getElementById('aggregationType')?.value;
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  const numericGroup = document.getElementById('numericFieldGroup');
+  if (!calcGroup) return;
+  if (agg === 'calculated') {
+    calcGroup.style.display = '';
+    // Hide numeric field — not needed for expression-based calc
+    if (numericGroup) numericGroup.classList.add('hidden');
+  } else {
+    calcGroup.style.display = 'none';
+    // Restore numeric field visibility according to widget type
+    const wType = document.getElementById('widgetType').value;
+    const schema = getSelectedSchema();
+    const numericF = schemaFields(schema, NUMERIC_TYPES);
+    if (numericF.length && wType !== 'table') {
+      if (numericGroup) numericGroup.classList.remove('hidden');
+    }
+  }
+}
+
+/** Insert text at the cursor position in the calc expression textarea. */
+function calcInsert(text) {
+  const el = document.getElementById('calcExpression');
+  if (!el) return;
+  const s = el.selectionStart, e = el.selectionEnd;
+  const v = el.value;
+  el.value = v.slice(0, s) + text + v.slice(e);
+  const pos = s + text.length;
+  el.focus();
+  el.setSelectionRange(pos, pos);
+}
+
+/** Validate the expression in the calculated panel and show feedback. */
+async function validateCalcExpr() {
+  const tId = document.getElementById('widgetTable').value;
+  const expr = document.getElementById('calcExpression')?.value?.trim();
+  const fb   = document.getElementById('calcExprFeedback');
+  if (!fb || !expr || !tId) return;
+  fb.textContent = 'Checking…';
+  fb.style.color = '#6b7280';
+  try {
+    const res = await fetch(`/api/v1/tables/${tId}/calculated-fields/validate/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ expression: expr }),
+    });
+    const data = await res.json();
+    if (data.valid) {
+      fb.textContent = '✓ Expression is valid';
+      fb.style.color = '#059669';
+    } else {
+      fb.textContent = '✗ ' + (data.error || 'Invalid expression');
+      fb.style.color = '#dc2626';
+    }
+  } catch (_) {
+    fb.textContent = '';
+  }
+}
+
 function onTypeChange() {
   const wType  = document.getElementById('widgetType').value;
   const schema = getSelectedSchema();
@@ -1075,8 +1259,10 @@ function onTypeChange() {
   const show = id => document.getElementById(id).classList.remove('hidden');
   const hide = id => document.getElementById(id).classList.add('hidden');
 
-  // Reset
+  // Reset (keep calculatedExprGroup controlled by onAggTypeChange)
   hide('fieldConfig'); hide('numericFieldGroup'); hide('aggregationGroup'); hide('groupByGroup');
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  if (calcGroup) calcGroup.style.display = 'none';
 
   if (wType === 'table' || !schema.length) {
     updatePreview(wType, null, null, null, schema);
@@ -1155,6 +1341,14 @@ async function addWidget() {
 
   if (!tId) { showToast('Please select a table', 'warning'); return; }
 
+  const chosenAgg = document.getElementById('aggregationType')?.value || 'sum';
+
+  // Guard: calculated type requires a non-empty expression
+  if (chosenAgg === 'calculated') {
+    const expr = document.getElementById('calcExpression')?.value?.trim();
+    if (!expr) { showToast('Enter an expression for the calculated metric', 'warning'); return; }
+  }
+
   const schema   = getSelectedSchema();
   const numericF = schemaFields(schema, NUMERIC_TYPES);
   const dateF    = schemaFields(schema, DATE_TYPES);
@@ -1162,7 +1356,6 @@ async function addWidget() {
 
   const chosenNumeric = document.getElementById('numericField')?.value  || numericF[0] || null;
   const chosenGroupBy = document.getElementById('groupByField')?.value  || null;
-  const chosenAgg     = document.getElementById('aggregationType')?.value || 'sum';
 
   const query_config = buildQueryConfig(wType, chosenNumeric, chosenGroupBy, chosenAgg, numericF, dateF, textF);
   const viz_config   = buildVizConfig(wType, chosenNumeric, chosenGroupBy || autoGroupBy(wType, dateF, textF), numericF);
@@ -1232,6 +1425,23 @@ function autoGroupBy(wType, dateF, textF) {
 function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF, textF) {
   if (wType === 'table') return { limit: 20 };
 
+  // ── Calculated expression widget ────────────────────────────────
+  if (aggType === 'calculated') {
+    const expression = document.getElementById('calcExpression')?.value?.trim() || '';
+    // Metric: single calculated scalar
+    if (wType === 'metric') {
+      return { aggregations: [{ type: 'calculated', name: 'val', expression }] };
+    }
+    // For chart types we fall back to a count group-by + calculated on top
+    const finalGroupBy = groupBy || autoGroupBy(wType, dateF, textF);
+    return {
+      aggregations: [
+        { type: 'calculated', name: 'val', expression },
+      ],
+    };
+  }
+
+  // ── Standard aggregations ────────────────────────────────────────
   const finalGroupBy = groupBy || autoGroupBy(wType, dateF, textF);
   const finalAgg     = aggType || (numericField ? 'sum' : 'count');
   const useNumeric   = numericField && finalAgg !== 'count';
@@ -1249,12 +1459,13 @@ function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF
 }
 
 function buildVizConfig(wType, numericField, groupByField, numericF) {
-  if (wType === 'metric') {
+  const chosenAgg = document.getElementById('aggregationType')?.value || 'sum';
+  if (wType === 'metric' || chosenAgg === 'calculated') {
     const idx   = widgetMap.size % METRIC_COLORS.length;
     const schema = getSelectedSchema();
     const ft     = schema.find(f => f.name === numericField)?.type || '';
     return {
-      icon:   METRIC_ICONS[idx],
+      icon:   chosenAgg === 'calculated' ? 'fa-calculator' : METRIC_ICONS[idx],
       color:  METRIC_COLORS[idx],
       prefix: ft === 'currency'   ? '$'  : '',
       suffix: ft === 'percentage' ? '%'  : '',
@@ -1328,7 +1539,17 @@ function showToast(message, type = 'info') {
 //  MODAL
 // ───────────────────────────────────────────────────────────────
 function openModal()  { document.getElementById('widgetModal').classList.add('open'); }
-function closeModal() { document.getElementById('widgetModal').classList.remove('open'); document.getElementById('widgetForm').reset(); }
+function closeModal() {
+  document.getElementById('widgetModal').classList.remove('open');
+  document.getElementById('widgetForm').reset();
+  // Reset calculated expression panel
+  const calcGroup = document.getElementById('calculatedExprGroup');
+  if (calcGroup) calcGroup.style.display = 'none';
+  const fb = document.getElementById('calcExprFeedback');
+  if (fb) fb.textContent = '';
+  const calcEl = document.getElementById('calcExpression');
+  if (calcEl) calcEl.value = '';
+}
 
 function setupEventListeners() {
   document.getElementById('addWidgetBtn')?.addEventListener('click', openModal);

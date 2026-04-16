@@ -447,6 +447,8 @@ class Widget(models.Model):
         ('gauge', 'Gauge'),
         ('heatmap', 'Heatmap'),
         ('scatter', 'Scatter Plot'),
+        ('cohort', 'Cohort Retention'),
+        ('funnel', 'Funnel Analysis'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -473,7 +475,8 @@ class Widget(models.Model):
     MAX_QUERY_LIMIT = 10_000
 
     # Aggregation types the query engine actually supports.
-    ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct'}
+    # 'calculated' is a special type: expression referencing other aggregation names.
+    ALLOWED_AGG_TYPES = {'count', 'sum', 'avg', 'min', 'max', 'distinct', 'calculated'}
 
     # Field/group_by names may contain any printable character that real-world
     # column names use (spaces, parentheses, slashes, %, #, etc.).
@@ -500,12 +503,20 @@ class Widget(models.Model):
     def __str__(self):
         return f"{self.title} ({self.widget_type})"
 
+    # Widget types that use their own query_config schema (not aggregations-based).
+    _ANALYSIS_WIDGET_TYPES = {'cohort', 'funnel'}
+
     def clean(self):
         """Validate query_config so malformed or oversized configs are rejected
         at model-save time rather than silently exploding at render time."""
         from django.core.exceptions import ValidationError
 
         qc = self.query_config or {}
+
+        # Cohort / funnel widgets use a different query_config schema; skip
+        # aggregation validation so they are not rejected at save time.
+        if self.widget_type in self._ANALYSIS_WIDGET_TYPES:
+            return
 
         # ── Row limit cap ────────────────────────────────────────────────
         limit = qc.get('limit')
@@ -554,7 +565,20 @@ class Widget(models.Model):
                             f"Allowed: {', '.join(sorted(self.ALLOWED_AGG_TYPES))}."
                         )}
                     )
-                # Validate field and group_by names — only safe identifier chars.
+                # 'calculated' aggregations require 'expression'; no 'field' needed.
+                if agg_type == 'calculated':
+                    expr = agg.get('expression')
+                    if not expr or not isinstance(expr, str):
+                        raise ValidationError(
+                            {'query_config': (
+                                f"aggregations[{i}].expression is required for type 'calculated'."
+                            )}
+                        )
+                    if len(expr) > 512:
+                        raise ValidationError(
+                            {'query_config': f"aggregations[{i}].expression exceeds 512 chars."}
+                        )
+                # Validate field, group_by, and name — only safe identifier chars.
                 for key in ('field', 'group_by', 'name'):
                     val = agg.get(key)
                     if val is not None:
@@ -619,9 +643,12 @@ class Widget(models.Model):
             return {"error": "No data source selected"}
 
         try:
-            from .services import QueryEngine, DataSourceQueryEngine
+            from .services import QueryEngine, DataSourceQueryEngine, GoogleSheetsQueryEngine
             if self.data_source_id and self.source_table_name:
-                engine = DataSourceQueryEngine(self.data_source)
+                if self.data_source.connector_type == 'google_sheets':
+                    engine = GoogleSheetsQueryEngine(self.data_source)
+                else:
+                    engine = DataSourceQueryEngine(self.data_source)
                 result = engine.execute_widget_query(self, limit=limit)
             else:
                 engine = QueryEngine()
@@ -635,6 +662,60 @@ class Widget(models.Model):
             logger.error(f"Widget query error: {str(e)}", exc_info=True)
             return {"error": str(e)}
     
+class CalculatedField(models.Model):
+    """
+    Reusable calculated metric defined at the DataTable level.
+
+    The ``expression`` is an arithmetic formula that may reference:
+      - column-level aggregations: sum(col), count(col), avg(col), min(col), max(col)
+      - numeric constants and standard arithmetic operators (+, -, *, /, **)
+      - built-in helpers: abs(), round()
+
+    Example::
+        sum(revenue) / count(user_id)
+        (sum(revenue) - sum(refunds)) / count(user_id) * 100
+
+    Widget-level calculated aggregations (``type: "calculated"``) reference the
+    *names* of other aggregations in the same widget result set, e.g.::
+        total_revenue / total_users
+    """
+
+    FORMAT_CHOICES = [
+        ('number', 'Number'),
+        ('currency', 'Currency'),
+        ('percentage', 'Percentage'),
+        ('integer', 'Integer'),
+    ]
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    table        = models.ForeignKey(
+        DataTable, on_delete=models.CASCADE, related_name='calculated_fields',
+    )
+    name         = models.SlugField(
+        max_length=64,
+        help_text='Identifier used to reference this field in expressions (letters, digits, hyphens).',
+    )
+    display_name = models.CharField(max_length=128)
+    expression   = models.TextField(
+        max_length=512,
+        help_text=(
+            'Arithmetic expression. Use sum(col), count(col), avg(col), min(col), max(col) '
+            'to aggregate column values. E.g.: sum(revenue) / count(user_id)'
+        ),
+    )
+    format_type  = models.CharField(max_length=20, choices=FORMAT_CHOICES, default='number')
+    description  = models.TextField(blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['table', 'name']
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.table.name} / {self.name}: {self.expression}'
+
+
 class AuditLog(models.Model):
     """
     Immutable audit log for compliance and debugging

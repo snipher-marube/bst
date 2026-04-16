@@ -338,10 +338,12 @@ def _run_insight_generation(workspace_id, task_self):
         'insight_count': len(created_insights),
     })
 
-    logger.info('Insights complete workspace=%s dashboard=%s insights=%d',
-                workspace_id, dashboard.id, len(created_insights))
+    from apps.dashboards.models import Widget
+    widget_count = Widget.objects.filter(dashboard=dashboard).count()
+    logger.info('Insights complete workspace=%s dashboard=%s widgets=%d insights=%d',
+                workspace_id, dashboard.id, widget_count, len(created_insights))
     return {'status': 'completed', 'dashboard_id': str(dashboard.id),
-            'insight_count': len(created_insights)}
+            'widget_count': widget_count, 'insight_count': len(created_insights)}
 
 
 # ---------------------------------------------------------------------------

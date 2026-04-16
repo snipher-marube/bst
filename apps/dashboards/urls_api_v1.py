@@ -63,4 +63,14 @@ urlpatterns = [
     path('data-sources/<uuid:pk>/', api_v1.DataSourceDetailAPIView.as_view(), name='api_v1_data_source_detail'),
     path('data-sources/<uuid:pk>/test/', api_v1.DataSourceTestAPIView.as_view(), name='api_v1_data_source_test'),
     path('data-sources/<uuid:pk>/schema/', api_v1.DataSourceSchemaAPIView.as_view(), name='api_v1_data_source_schema'),
+
+    # Calculated Fields (Gap 14)
+    path('tables/<uuid:table_id>/calculated-fields/', api_v1.CalculatedFieldListCreateAPIView.as_view(), name='api_v1_calculated_fields'),
+    path('tables/<uuid:table_id>/calculated-fields/validate/', api_v1.CalculatedFieldValidateAPIView.as_view(), name='api_v1_calculated_field_validate'),
+    path('calculated-fields/<uuid:pk>/', api_v1.CalculatedFieldDetailAPIView.as_view(), name='api_v1_calculated_field_detail'),
+    path('calculated-fields/<uuid:pk>/preview/', api_v1.CalculatedFieldPreviewAPIView.as_view(), name='api_v1_calculated_field_preview'),
+
+    # Cohort & Funnel Analysis (Gap 15)
+    path('tables/<uuid:table_id>/cohort-analysis/', api_v1.CohortAnalysisAPIView.as_view(), name='api_v1_cohort_analysis'),
+    path('tables/<uuid:table_id>/funnel-analysis/', api_v1.FunnelAnalysisAPIView.as_view(), name='api_v1_funnel_analysis'),
 ]
