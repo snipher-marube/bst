@@ -3226,7 +3226,10 @@ class TestCohortAnalysisEngine(TestCase):
         import datetime
         for uid, date_str in user_events:
             dt = make_aware(datetime.datetime.fromisoformat(date_str))
-            RecordFactory(table=self.table, data={'user_id': uid}, created_at=dt)
+            r = RecordFactory(table=self.table, data={'user_id': uid})
+            # created_at is auto_now_add=True so it cannot be set via save();
+            # use update() to bypass the restriction and stamp the test date.
+            Record.objects.filter(pk=r.pk).update(created_at=dt)
 
     def test_returns_error_without_user_field(self):
         from apps.dashboards.services import CohortAnalysisEngine
