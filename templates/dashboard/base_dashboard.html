@@ -165,10 +165,10 @@ if ('serviceWorker' in navigator) {
         <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Integrations</p>
       </div>
 
-      <a href="{% url 'dashboard:google_sheets_connect' %}"
-         class="nav-link {% if url_name == 'google_sheets_connect' %}active{% endif %}">
-        <i class="fas fa-table w-5 text-center"></i>
-        <span>Google Sheets</span>
+      <a href="{% url 'dashboard:integrations' %}"
+         class="nav-link {% if url_name == 'integrations' or url_name == 'google_sheets_connect' %}active{% endif %}">
+        <i class="fas fa-plug w-5 text-center"></i>
+        <span>Data Sources</span>
       </a>
 
       <a href="{% url 'dashboard:sso_settings' %}"

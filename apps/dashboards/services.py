@@ -1454,8 +1454,6 @@ class WorkspaceInsightService:
         total_count = 0
 
         for table in tables:
-            if total_count >= 30:
-                break
             logger.info(f"  Profiling table: {table.name} ({table.record_count} records)")
 
             insights = self._generate_table_insights(table)
@@ -1523,29 +1521,118 @@ class WorkspaceInsightService:
             # Leave a 1-unit gap before the next table's section
             current_y = table_y + 5 + 1
 
-        logger.info(f"Generated {total_count} widgets across {tables.count()} tables")
+        logger.info(f"Generated {total_count} widgets from {tables.count()} internal tables")
+
+        # ── External DataSources (Google Sheets, PostgreSQL, MySQL) ────────
+        from .models import DataSource
+        connected_sources = DataSource.objects.filter(
+            workspace=workspace,
+            is_active=True,
+            last_test_ok=True,
+        )
+        for ds in connected_sources:
+            logger.info("  Processing DataSource: %s (%s)", ds.name, ds.connector_type)
+            try:
+                if ds.connector_type == 'google_sheets':
+                    engine = GoogleSheetsQueryEngine(ds)
+                else:
+                    engine = DataSourceQueryEngine(ds)
+                sheet_list = engine.list_tables()
+            except Exception as exc:
+                logger.warning("  Could not list tables for %s: %s", ds.name, exc)
+                continue
+
+            for tbl_info in sheet_list:
+                sheet_name = tbl_info['name']
+                logger.info("    Sheet/table: %s", sheet_name)
+
+                insights = self._generate_datasource_sheet_insights(ds, sheet_name)
+                if not insights:
+                    # At minimum create a table-preview widget
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type='table',
+                        title=f"[Auto] {ds.name} — {sheet_name}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config={"limit": 20},
+                        viz_config={},
+                        position={'x': 0, 'y': current_y, 'w': 12, 'h': 5},
+                    )
+                    current_y += 6
+                    total_count += 1
+                    continue
+
+                kpis   = [i for i in insights if i['type'] == 'metric']
+                charts = [i for i in insights if i['type'] not in ('metric',)]
+
+                kpi_row_h = 2
+                kpi_x, kpi_y = 0, current_y
+                for spec in kpis:
+                    w = spec['width']
+                    if kpi_x + w > 12:
+                        kpi_x  = 0
+                        kpi_y += kpi_row_h
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type=spec['type'],
+                        title=f"[Auto] {spec['title']}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config=spec['query_config'],
+                        viz_config=spec.get('viz_config', {}),
+                        position={'x': kpi_x, 'y': kpi_y, 'w': w, 'h': kpi_row_h},
+                    )
+                    kpi_x += w
+                    total_count += 1
+
+                chart_start_y = (kpi_y + kpi_row_h) if kpis else current_y
+                chart_x, chart_y = 0, chart_start_y
+                for spec in charts:
+                    w, h = spec['width'], spec['height']
+                    if chart_x + w > 12:
+                        chart_x  = 0
+                        chart_y += h
+                    Widget.objects.create(
+                        dashboard=dashboard,
+                        widget_type=spec['type'],
+                        title=f"[Auto] {spec['title']}",
+                        table=None,
+                        data_source=ds,
+                        source_table_name=sheet_name,
+                        query_config=spec['query_config'],
+                        viz_config=spec.get('viz_config', {}),
+                        position={'x': chart_x, 'y': chart_y, 'w': w, 'h': h},
+                    )
+                    chart_x += w
+                    total_count += 1
+
+                last_chart_h = charts[-1]['height'] if charts else 0
+                table_y = (chart_y + last_chart_h) if charts else chart_start_y
+                Widget.objects.create(
+                    dashboard=dashboard,
+                    widget_type='table',
+                    title=f"[Auto] {ds.name} — {sheet_name} Preview",
+                    table=None,
+                    data_source=ds,
+                    source_table_name=sheet_name,
+                    query_config={"limit": 20},
+                    viz_config={},
+                    position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
+                )
+                total_count += 1
+                current_y = table_y + 5 + 1
+
+        logger.info("Generated %d widgets total", total_count)
         return dashboard
 
     # ------------------------------------------------------------------ #
     #  Data profiling + insight spec generation
     # ------------------------------------------------------------------ #
     def _generate_table_insights(self, table):
-        """
-        Profile actual record data and return a list of insight specs.
-
-        Every spec is a dict with:
-          type, title, width, height, query_config, viz_config
-
-        viz_config may contain a 'description' key: a plain-English sentence
-        explaining what the widget shows — rendered for non-technical users.
-
-        The engine:
-          1. Detects the business domain (sales, HR, healthcare, etc.)
-          2. Classifies fields and filters out noise (IDs, free-text, etc.)
-          3. Handles edge cases: no numerics, no dates, text-only, etc.
-          4. Selects the most informative chart types for each dimension
-          5. Generates narrative descriptions on every widget
-        """
+        """Profile an internal DataTable and return insight specs."""
         from .models import Record
 
         schema = {f['name']: f['type'] for f in (table.schema or [])}
@@ -1559,6 +1646,61 @@ class WorkspaceInsightService:
         )
         if not sample:
             return []
+        return self._profile_and_generate(schema, sample)
+
+    def _generate_datasource_sheet_insights(self, data_source, sheet_name):
+        """
+        Profile one sheet / table from an external DataSource and return
+        the same insight-spec list that _generate_table_insights returns.
+        Widgets produced by the caller must set data_source + source_table_name.
+        """
+        import pandas as pd
+        try:
+            if data_source.connector_type == 'google_sheets':
+                engine = GoogleSheetsQueryEngine(data_source)
+                df = engine._sheet_to_df(sheet_name, max_rows=500)
+            else:
+                engine = DataSourceQueryEngine(data_source)
+                df = engine.fetch_sample(sheet_name, max_rows=500)
+        except Exception as exc:
+            logger.warning(
+                "Could not read %s / %s for insight generation: %s",
+                data_source.name, sheet_name, exc,
+            )
+            return []
+
+        if df.empty:
+            return []
+
+        # ── Preprocess: coerce currency strings and date strings so the
+        #    profiler can detect numeric and date columns correctly.
+        #    (This copy is only used for profiling — widget queries hit the
+        #     live source independently.)
+        df_prof = df.copy()
+        _currency_re = r'[\$£€¥₹,\s]'
+        for col in df_prof.columns:
+            raw = df_prof[col].astype(str).str.strip()
+            # Try currency / numeric: strip symbols then coerce
+            stripped = raw.str.replace(_currency_re, '', regex=True)
+            numeric  = pd.to_numeric(stripped, errors='coerce')
+            if numeric.notna().mean() >= 0.7:
+                df_prof[col] = numeric
+                continue
+            # Try date
+            try:
+                df_prof[col] = pd.to_datetime(raw, infer_datetime_format=True, errors='raise')
+            except (ValueError, TypeError):
+                pass   # leave as text
+
+        # Build schema from inferred column types on the preprocessed data
+        schema = {
+            col: GoogleSheetsQueryEngine._infer_column_type(df_prof[col])
+            for col in df_prof.columns
+        }
+        sample = df_prof.where(df_prof.notna(), None).to_dict('records')
+        return self._profile_and_generate(schema, sample)
+
+    def _profile_and_generate(self, schema, sample):
 
         # ── Step 1: Detect domain ─────────────────────────────────────────
         domain      = self._detect_data_domain(schema, sample)
@@ -2575,6 +2717,24 @@ class DataSourceQueryEngine:
         """Quote a SQL identifier by wrapping in double-quotes."""
         return f'"{name}"'
 
+    def fetch_sample(self, table_name: str, max_rows: int = 500):
+        """
+        Return a pandas DataFrame of the first *max_rows* rows from *table_name*.
+        Used by WorkspaceInsightService for external-DB insight profiling.
+        """
+        import pandas as pd
+        if not self._validate_identifier(table_name):
+            raise ValueError(f"Invalid table name: {table_name!r}")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f'SELECT * FROM {self._qi(table_name)} LIMIT %(limit)s',
+                    {'limit': max_rows},
+                )
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+        return pd.DataFrame(rows, columns=cols)
+
 
 # ── GoogleSheetsQueryEngine ─────────────────────────────────────────────────
 
@@ -2663,7 +2823,7 @@ class GoogleSheetsQueryEngine:
 
     # ── widget query ────────────────────────────────────────────────────────
 
-    def execute_widget_query(self, widget, extra_filters=None):
+    def execute_widget_query(self, widget, limit=1000, extra_filters=None):
         """
         Execute a widget query against a Google Sheet.
         Returns the same dict/list shape as QueryEngine.execute_widget_query.
@@ -2697,7 +2857,10 @@ class GoogleSheetsQueryEngine:
             if   op == 'eq':  df = df[s == str(val)]
             elif op == 'neq': df = df[s != str(val)]
             elif op in ('gt', 'gte', 'lt', 'lte'):
-                numeric = pd.to_numeric(df[col], errors='coerce')
+                numeric = pd.to_numeric(
+                    df[col].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True),
+                    errors='coerce',
+                )
                 v       = float(val)
                 if   op == 'gt':  df = df[numeric >  v]
                 elif op == 'gte': df = df[numeric >= v]
@@ -2720,9 +2883,11 @@ class GoogleSheetsQueryEngine:
         field    = agg.get('field')
         group_by = agg.get('group_by')
 
-        # Coerce the measure column to numeric upfront
+        # Coerce the measure column to numeric, handling currency formatting
+        # e.g. "$20,200.00" → 20200.0
         if field and field in df.columns:
-            df[field] = pd.to_numeric(df[field], errors='coerce')
+            cleaned = df[field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True)
+            df[field] = pd.to_numeric(cleaned, errors='coerce')
 
         if group_by and group_by in df.columns:
             grouped = df.groupby(group_by, sort=True)

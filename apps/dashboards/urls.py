@@ -38,6 +38,7 @@ urlpatterns = [
     path('sso/', views.SSOSettingsView.as_view(), name='sso_settings'),
 
     # Integrations
+    path('integrations/', views.IntegrationsView.as_view(), name='integrations'),
     path('integrations/google-sheets/', views.GoogleSheetsConnectView.as_view(), name='google_sheets_connect'),
 
     # Calculated Fields (Gap 14)

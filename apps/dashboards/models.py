@@ -643,9 +643,12 @@ class Widget(models.Model):
             return {"error": "No data source selected"}
 
         try:
-            from .services import QueryEngine, DataSourceQueryEngine
+            from .services import QueryEngine, DataSourceQueryEngine, GoogleSheetsQueryEngine
             if self.data_source_id and self.source_table_name:
-                engine = DataSourceQueryEngine(self.data_source)
+                if self.data_source.connector_type == 'google_sheets':
+                    engine = GoogleSheetsQueryEngine(self.data_source)
+                else:
+                    engine = DataSourceQueryEngine(self.data_source)
                 result = engine.execute_widget_query(self, limit=limit)
             else:
                 engine = QueryEngine()

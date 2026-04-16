@@ -20,7 +20,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog, CalculatedField
+    Record, Dashboard, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -586,6 +586,27 @@ class GoogleSheetsConnectView(LoginRequiredMixin, TemplateView):
             'Share your sheet with the service account email',
             'Paste credentials below and save',
         ]
+        return context
+
+
+class IntegrationsView(LoginRequiredMixin, TemplateView):
+    """
+    Integrations management page — shows all connected data sources
+    (Google Sheets, PostgreSQL, MySQL) with live status indicators.
+    Users can test connections, browse schema, add new sources, or delete.
+    """
+    template_name = 'dashboard/integrations.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        if workspace:
+            context['data_sources'] = DataSource.objects.filter(
+                workspace=workspace, is_active=True
+            ).order_by('connector_type', 'name')
+        else:
+            context['data_sources'] = DataSource.objects.none()
+        context['workspace_id'] = str(workspace.id) if workspace else ''
         return context
 
 

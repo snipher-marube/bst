@@ -218,16 +218,17 @@ function gSheetsConnectForm() {
       google_credentials_json: '',
       connector_type:          'google_sheets',
     },
-    testing: false,
-    saving:  false,
-    status:  null,
+    testing:  false,
+    saving:   false,
+    status:   null,
+    savedId:  null,   // track created source so Test+Save share one record
 
     async testConnection() {
       this.status  = null;
       this.testing = true;
       try {
-        // Save first (or update) so the backend can use stored credentials to test
-        const ds = await this._save(true);
+        // Upsert: create once, patch on subsequent calls
+        const ds = await this._upsert();
         if (!ds) { this.testing = false; return; }
 
         const res  = await fetch(`/api/v1/data-sources/${ds.id}/test/`, {
@@ -236,7 +237,7 @@ function gSheetsConnectForm() {
         });
         const data = await res.json();
         this.status = {
-          ok:      data.ok,
+          ok:      data.ok === true,
           message: data.ok ? (data.message || 'Connection successful!') : (data.error || 'Connection failed'),
         };
       } catch (err) {
@@ -250,23 +251,34 @@ function gSheetsConnectForm() {
       this.status = null;
       this.saving = true;
       try {
-        const ds = await this._save(false);
+        const ds = await this._upsert();
         if (ds) {
           this.status = { ok: true, message: 'Connection saved! Redirecting…' };
-          setTimeout(() => { window.location.href = '{% url 'dashboard:settings' %}'; }, 1200);
+          setTimeout(() => { window.location.href = '{% url 'dashboard:integrations' %}'; }, 1000);
         }
       } finally {
         this.saving = false;
       }
     },
 
-    async _save(isTest) {
+    // Create on first call, PATCH on subsequent calls — avoids duplicates
+    async _upsert() {
       const workspace_id = '{{ workspace_id }}';
-      const res = await fetch(`/api/v1/workspaces/${workspace_id}/data-sources/`, {
-        method:  'POST',
+      let url, method;
+
+      if (this.savedId) {
+        url    = `/api/v1/data-sources/${this.savedId}/`;
+        method = 'PATCH';
+      } else {
+        url    = `/api/v1/workspaces/${workspace_id}/data-sources/`;
+        method = 'POST';
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: {
-          'Content-Type':  'application/json',
-          'X-CSRFToken':   this._csrf(),
+          'Content-Type':   'application/json',
+          'X-CSRFToken':    this._csrf(),
           'X-Workspace-Id': workspace_id,
         },
         credentials: 'same-origin',
@@ -278,6 +290,7 @@ function gSheetsConnectForm() {
         this.status = { ok: false, message: msg };
         return null;
       }
+      this.savedId = data.id;   // remember so future calls PATCH instead of POST
       return data;
     },
 

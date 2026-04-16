@@ -42,7 +42,7 @@ RATE_LIMIT_MAX_MSGS = int(getattr(settings, 'WS_RATE_LIMIT_MAX_MSGS', 30))    # 
 # Server-side heartbeat: close connection if no message in this many seconds
 HEARTBEAT_TIMEOUT   = int(getattr(settings, 'WS_HEARTBEAT_TIMEOUT',   90))    # seconds
 # Max concurrent WebSocket connections per user (across all consumer types)
-WS_MAX_CONNECTIONS  = int(getattr(settings, 'WS_MAX_CONNECTIONS_PER_USER', 10))
+WS_MAX_CONNECTIONS  = int(getattr(settings, 'WS_MAX_CONNECTIONS_PER_USER', 200))
 
 # ---------------------------------------------------------------------------
 # Connection-limit helpers (Redis counters)
@@ -204,8 +204,14 @@ class DashboardConsumer(AsyncWebsocketConsumer):
                 'user': self.user.email,
             })
 
-        # Clean up rate-limit key
-        cache.delete(self._rate_key)
+        # Release connection slot so the counter doesn't accumulate
+        if getattr(self, '_conn_acquired', False):
+            await database_sync_to_async(_release_connection)(self.user.id)
+            self._conn_acquired = False
+
+        # Clean up rate-limit key (use async-safe wrapper)
+        if hasattr(self, '_rate_key'):
+            await database_sync_to_async(cache.delete)(self._rate_key)
 
     # ── Receive (inbound from client) ──────────────────────────────────────
 
