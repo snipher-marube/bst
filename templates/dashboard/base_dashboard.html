@@ -68,6 +68,13 @@ if ('serviceWorker' in navigator) {
 
 {# ── dashboard shell ────────────────────────────────────────────────────── #}
 {% block content %}
+{# Skip-to-content link — visible on focus for keyboard users #}
+<a href="#main-content"
+   class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[10000]
+          focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#03466e] focus:text-white focus:text-sm focus:font-semibold
+          focus:shadow-lg focus:outline-none">
+  Skip to main content
+</a>
 <div class="flex h-screen overflow-hidden bg-[#f8fafc]" x-data="dashboardShell()" x-init="init()">
 
   {# ── sidebar overlay (mobile) ───────────────────────────────────────── #}
@@ -79,25 +86,30 @@ if ('serviceWorker' in navigator) {
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0"
        @click="sidebarOpen = false"
+       :aria-hidden="!sidebarOpen"
+       aria-hidden="true"
        class="fixed inset-0 bg-black/40 z-30 lg:hidden"
        style="display:none"></div>
 
   {# ── SIDEBAR ────────────────────────────────────────────────────────── #}
   <aside id="sidebar"
          :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+         :aria-hidden="!sidebarOpen && $el.offsetWidth < 1024 ? 'true' : 'false'"
          class="fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#03466e] text-white
-                transition-transform duration-200 ease-in-out lg:static lg:inset-auto lg:translate-x-0">
+                transition-transform duration-200 ease-in-out lg:static lg:inset-auto lg:translate-x-0"
+         aria-label="Main navigation">
 
     {# brand #}
     <div class="flex items-center gap-3 px-5 h-16 border-b border-white/10 shrink-0">
-      <a href="{% url 'core:home' %}" class="flex items-center gap-2.5 min-w-0">
-        <div class="w-8 h-8 rounded-lg bg-[#f68712] flex items-center justify-center shrink-0">
+      <a href="{% url 'core:home' %}" class="flex items-center gap-2.5 min-w-0" aria-label="AnalyticsMeta home">
+        <div class="w-8 h-8 rounded-lg bg-[#f68712] flex items-center justify-center shrink-0" aria-hidden="true">
           <i class="fas fa-chart-pie text-white text-sm"></i>
         </div>
         <span class="font-bold text-lg leading-none truncate">AnalyticsMeta</span>
       </a>
-      <button @click="sidebarOpen = false" class="ml-auto lg:hidden text-white/60 hover:text-white">
-        <i class="fas fa-times"></i>
+      <button @click="sidebarOpen = false" class="ml-auto lg:hidden text-white/60 hover:text-white"
+              aria-label="Close navigation menu">
+        <i class="fas fa-times" aria-hidden="true"></i>
       </button>
     </div>
 
@@ -105,75 +117,91 @@ if ('serviceWorker' in navigator) {
     {% if workspace %}
     <div class="px-4 py-3 border-b border-white/10 shrink-0">
       <a href="{% url 'dashboard:workspaces' %}"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition group">
-        <div class="w-8 h-8 rounded-lg bg-[#f68712]/80 flex items-center justify-center text-white font-bold text-sm shrink-0">
+         class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition group"
+         aria-label="Switch workspace: {{ workspace.name }}">
+        <div class="w-8 h-8 rounded-lg bg-[#f68712]/80 flex items-center justify-center text-white font-bold text-sm shrink-0" aria-hidden="true">
           {{ workspace.name|first|upper }}
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-white truncate">{{ workspace.name }}</p>
           <p class="text-[11px] text-white/60 capitalize">{{ workspace.tier }} plan</p>
         </div>
-        <i class="fas fa-chevron-down text-white/50 text-xs group-hover:text-white/80 transition shrink-0"></i>
+        <i class="fas fa-chevron-down text-white/50 text-xs group-hover:text-white/80 transition shrink-0" aria-hidden="true"></i>
       </a>
     </div>
     {% endif %}
 
     {# main navigation #}
-    <nav class="flex-1 px-3 py-4 overflow-y-auto space-y-1">
-      <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Workspace</p>
+    <nav class="flex-1 px-3 py-4 overflow-y-auto space-y-1" aria-label="Workspace navigation">
+      <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40" aria-hidden="true">Workspace</p>
 
       {% with url_name=request.resolver_match.url_name %}
       <a href="{% url 'dashboard:home' %}"
-         class="nav-link {% if url_name == 'home' %}active{% endif %}">
-        <i class="fas fa-chart-bar w-5 text-center"></i>
+         class="nav-link {% if url_name == 'home' %}active{% endif %}"
+         {% if url_name == 'home' %}aria-current="page"{% endif %}>
+        <i class="fas fa-chart-bar w-5 text-center" aria-hidden="true"></i>
         <span>Overview</span>
       </a>
 
       <a href="{% url 'dashboard:tables' %}"
-         class="nav-link {% if 'table' in url_name or 'record' in url_name %}active{% endif %}">
-        <i class="fas fa-table w-5 text-center"></i>
+         class="nav-link {% if 'table' in url_name or 'record' in url_name %}active{% endif %}"
+         {% if 'table' in url_name or 'record' in url_name %}aria-current="page"{% endif %}>
+        <i class="fas fa-table w-5 text-center" aria-hidden="true"></i>
         <span>Tables</span>
-        {% if stats.tables %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full">{{ stats.tables }}</span>{% endif %}
+        {% if stats.tables %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full" aria-label="{{ stats.tables }} tables">{{ stats.tables }}</span>{% endif %}
       </a>
 
       <a href="{% url 'dashboard:home' %}#dashboards"
-         class="nav-link {% if 'dashboard' in url_name and url_name != 'home' %}active{% endif %}">
-        <i class="fas fa-chart-pie w-5 text-center"></i>
+         class="nav-link {% if 'dashboard' in url_name and url_name != 'home' %}active{% endif %}"
+         {% if 'dashboard' in url_name and url_name != 'home' %}aria-current="page"{% endif %}>
+        <i class="fas fa-chart-pie w-5 text-center" aria-hidden="true"></i>
         <span>Dashboards</span>
       </a>
 
-      <div class="pt-4 pb-1">
+      <div class="pt-4 pb-1" role="separator" aria-hidden="true">
         <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Team</p>
       </div>
 
       <a href="{% url 'dashboard:members' %}"
-         class="nav-link {% if url_name == 'members' %}active{% endif %}">
-        <i class="fas fa-users w-5 text-center"></i>
+         class="nav-link {% if url_name == 'members' %}active{% endif %}"
+         {% if url_name == 'members' %}aria-current="page"{% endif %}>
+        <i class="fas fa-users w-5 text-center" aria-hidden="true"></i>
         <span>Team</span>
       </a>
 
       <a href="{% url 'dashboard:activity' %}"
-         class="nav-link {% if url_name == 'activity' %}active{% endif %}">
-        <i class="fas fa-history w-5 text-center"></i>
+         class="nav-link {% if url_name == 'activity' %}active{% endif %}"
+         {% if url_name == 'activity' %}aria-current="page"{% endif %}>
+        <i class="fas fa-history w-5 text-center" aria-hidden="true"></i>
         <span>Activity</span>
         {% if unread_notifications_count > 0 %}
-        <span class="ml-auto text-[11px] font-bold bg-[#f68712] px-1.5 py-0.5 rounded-full">{{ unread_notifications_count }}</span>
+        <span class="ml-auto text-[11px] font-bold bg-[#f68712] px-1.5 py-0.5 rounded-full"
+              aria-label="{{ unread_notifications_count }} unread notifications">{{ unread_notifications_count }}</span>
         {% endif %}
       </a>
 
-      <div class="pt-4 pb-1">
+      <a href="{% url 'dashboard:template_gallery' %}"
+         class="nav-link {% if url_name == 'template_gallery' %}active{% endif %}"
+         {% if url_name == 'template_gallery' %}aria-current="page"{% endif %}>
+        <i class="fas fa-magic w-5 text-center" aria-hidden="true"></i>
+        <span>Templates</span>
+      </a>
+
+      <div class="pt-4 pb-1" role="separator" aria-hidden="true">
         <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Integrations</p>
       </div>
 
       <a href="{% url 'dashboard:integrations' %}"
-         class="nav-link {% if url_name == 'integrations' or url_name == 'google_sheets_connect' %}active{% endif %}">
-        <i class="fas fa-plug w-5 text-center"></i>
+         class="nav-link {% if url_name == 'integrations' or url_name == 'google_sheets_connect' %}active{% endif %}"
+         {% if url_name == 'integrations' or url_name == 'google_sheets_connect' %}aria-current="page"{% endif %}>
+        <i class="fas fa-plug w-5 text-center" aria-hidden="true"></i>
         <span>Data Sources</span>
       </a>
 
       <a href="{% url 'dashboard:sso_settings' %}"
-         class="nav-link {% if url_name == 'sso_settings' %}active{% endif %}">
-        <i class="fas fa-id-badge w-5 text-center"></i>
+         class="nav-link {% if url_name == 'sso_settings' %}active{% endif %}"
+         {% if url_name == 'sso_settings' %}aria-current="page"{% endif %}>
+        <i class="fas fa-id-badge w-5 text-center" aria-hidden="true"></i>
         <span>SSO / SAML</span>
       </a>
       {% endwith %}
@@ -183,19 +211,23 @@ if ('serviceWorker' in navigator) {
     <div class="px-3 py-3 border-t border-white/10 shrink-0 space-y-1">
       {% with url_name=request.resolver_match.url_name %}
       <a href="{% url 'dashboard:settings' %}"
-         class="nav-link {% if url_name == 'settings' %}active{% endif %}">
-        <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
+         class="nav-link {% if url_name == 'settings' %}active{% endif %}"
+         {% if url_name == 'settings' %}aria-current="page"{% endif %}>
+        <i class="fas fa-cog w-5 text-center" aria-hidden="true"></i><span>Settings</span>
       </a>
       <a href="{% url 'dashboard:billing' %}"
-         class="nav-link {% if url_name == 'billing' %}active{% endif %}">
-        <i class="fas fa-credit-card w-5 text-center"></i><span>Billing</span>
+         class="nav-link {% if url_name == 'billing' %}active{% endif %}"
+         {% if url_name == 'billing' %}aria-current="page"{% endif %}>
+        <i class="fas fa-credit-card w-5 text-center" aria-hidden="true"></i><span>Billing</span>
       </a>
       {% endwith %}
 
       {# user row #}
       <div class="flex items-center gap-2.5 px-3 py-2.5 mt-2 rounded-xl bg-white/5 border border-white/10">
-        <a href="{% url 'dashboard:profile' %}" class="flex items-center gap-2.5 min-w-0 flex-1 group">
-          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#f68712] to-[#e07810] flex items-center justify-center text-white font-bold text-sm shrink-0">
+        <a href="{% url 'dashboard:profile' %}" class="flex items-center gap-2.5 min-w-0 flex-1 group"
+           aria-label="Your profile: {{ user.get_full_name|default:user.email }}">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#f68712] to-[#e07810] flex items-center justify-center text-white font-bold text-sm shrink-0"
+               aria-hidden="true">
             {{ user.email|first|upper }}
           </div>
           <div class="min-w-0">
@@ -205,9 +237,9 @@ if ('serviceWorker' in navigator) {
             <p class="text-[11px] text-white/50 truncate">{{ user.email|truncatechars:20 }}</p>
           </div>
         </a>
-        <a href="{% url 'account_logout' %}" title="Sign out"
+        <a href="{% url 'account_logout' %}" aria-label="Sign out"
            class="shrink-0 w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition">
-          <i class="fas fa-sign-out-alt text-sm"></i>
+          <i class="fas fa-sign-out-alt text-sm" aria-hidden="true"></i>
         </a>
       </div>
     </div>
@@ -217,10 +249,14 @@ if ('serviceWorker' in navigator) {
   <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
     {# top bar #}
-    <header class="h-14 shrink-0 bg-white border-b border-gray-100 flex items-center gap-3 px-4 sm:px-6 shadow-sm z-20">
+    <header role="banner" class="h-14 shrink-0 bg-white border-b border-gray-100 flex items-center gap-3 px-4 sm:px-6 shadow-sm z-20">
       {# mobile hamburger #}
-      <button @click="sidebarOpen = true" class="lg:hidden text-gray-500 hover:text-[#03466e] p-1.5 rounded-lg hover:bg-gray-100 transition">
-        <i class="fas fa-bars text-lg"></i>
+      <button @click="sidebarOpen = true"
+              :aria-expanded="sidebarOpen.toString()"
+              aria-controls="sidebar"
+              aria-label="Open navigation menu"
+              class="lg:hidden text-gray-500 hover:text-[#03466e] p-1.5 rounded-lg hover:bg-gray-100 transition">
+        <i class="fas fa-bars text-lg" aria-hidden="true"></i>
       </button>
 
       {# breadcrumb / page title #}
@@ -233,7 +269,7 @@ if ('serviceWorker' in navigator) {
       </div>
 
       {# right side actions #}
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-2 shrink-0" role="toolbar" aria-label="Page actions">
         {# page-level actions slot #}
         {% block topbar_actions %}{% endblock %}
 
@@ -243,29 +279,35 @@ if ('serviceWorker' in navigator) {
                 class="theme-toggle"
                 aria-label="Toggle dark mode"
                 title="Toggle dark mode">
-          <i id="theme-icon" class="fas fa-moon text-sm"></i>
+          <i id="theme-icon" class="fas fa-moon text-sm" aria-hidden="true"></i>
         </button>
 
         {# notification bell #}
         <a href="{% url 'dashboard:activity' %}"
-           class="relative p-2 rounded-lg text-gray-400 hover:text-[#03466e] hover:bg-gray-100 transition">
-          <i class="fas fa-bell text-base"></i>
+           class="relative p-2 rounded-lg text-gray-400 hover:text-[#03466e] hover:bg-gray-100 transition"
+           {% if unread_notifications_count > 0 %}
+           aria-label="Notifications, {{ unread_notifications_count }} unread"
+           {% else %}
+           aria-label="Notifications"
+           {% endif %}>
+          <i class="fas fa-bell text-base" aria-hidden="true"></i>
           {% if unread_notifications_count > 0 %}
-          <span class="absolute top-1 right-1 w-2 h-2 bg-[#f68712] rounded-full ring-2 ring-white"></span>
+          <span class="absolute top-1 right-1 w-2 h-2 bg-[#f68712] rounded-full ring-2 ring-white" aria-hidden="true"></span>
           {% endif %}
         </a>
 
         {# workspace switcher shortcut #}
         <a href="{% url 'dashboard:workspaces' %}"
-           class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-[#03466e] text-xs font-medium text-gray-600 hover:text-[#03466e] transition">
-          <i class="fas fa-layer-group text-xs"></i>
+           class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-[#03466e] text-xs font-medium text-gray-600 hover:text-[#03466e] transition"
+           aria-label="Switch workspace: {{ workspace.name|default:'Workspace' }}">
+          <i class="fas fa-layer-group text-xs" aria-hidden="true"></i>
           <span class="truncate max-w-[100px]">{{ workspace.name|default:"Workspace" }}</span>
         </a>
       </div>
     </header>
 
     {# scrollable page content #}
-    <main class="flex-1 overflow-y-auto">
+    <main id="main-content" role="main" class="flex-1 overflow-y-auto" tabindex="-1">
       {% include 'partials/messages.html' %}
       {% block main_content %}{% endblock %}
     </main>
@@ -274,6 +316,8 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <style>
+  [x-cloak] { display: none !important; }
+
   .nav-link {
     display: flex;
     align-items: center;
@@ -288,6 +332,30 @@ if ('serviceWorker' in navigator) {
   }
   .nav-link:hover { background: rgba(255,255,255,.1); color: #fff; }
   .nav-link.active { background: rgba(255,255,255,.15); color: #fff; border-left: 3px solid #f68712; padding-left: calc(.75rem - 3px); }
+
+  /* ── WCAG 2.1 AA: visible focus rings ──────────────────────────────── */
+  :focus-visible {
+    outline: 3px solid #f68712;
+    outline-offset: 2px;
+    border-radius: .25rem;
+  }
+  /* Sidebar links need a lighter ring against dark bg */
+  .nav-link:focus-visible {
+    outline: 3px solid #f68712;
+    outline-offset: 1px;
+  }
+  /* Remove default outline only when :focus-visible is supported */
+  :focus:not(:focus-visible) { outline: none; }
+
+  /* ── WCAG 2.1 AA: respect reduced-motion preference ────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 </style>
 
 <script>
@@ -305,19 +373,23 @@ function dashboardShell() {
 </script>
 
 <!-- ── Keyboard shortcuts ──────────────────────────────────────────────── -->
-<div id="kb-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"
+<div id="kb-modal" role="dialog" aria-modal="true" aria-labelledby="kb-modal-title"
   style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:1rem;width:min(480px,90vw);max-height:80vh;overflow-y:auto;padding:1.5rem;box-shadow:0 25px 60px rgba(0,0,0,.25)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-      <h2 style="font-size:1rem;font-weight:700;color:#111">Keyboard Shortcuts</h2>
-      <button onclick="document.getElementById('kb-modal').style.display='none'"
-        style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:1.25rem" aria-label="Close">&#x2715;</button>
+      <h2 id="kb-modal-title" style="font-size:1rem;font-weight:700;color:#111">Keyboard Shortcuts</h2>
+      <button id="kb-modal-close" onclick="closeKbModal()"
+        style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:1.25rem" aria-label="Close keyboard shortcuts">&#x2715;</button>
     </div>
     <div style="display:grid;gap:.5rem">
       {% include "dashboard/_kb_shortcuts.html" %}
     </div>
   </div>
 </div>
+
+{# Live region for toast announcements (screen readers) #}
+<div id="a11y-announcer" role="status" aria-live="polite" aria-atomic="true"
+     class="sr-only"></div>
 
 <script>
 (function () {
@@ -326,16 +398,51 @@ function dashboardShell() {
     return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || document.activeElement?.isContentEditable;
   }
 
+  // Focus trap for modal
+  let _kbTrigger = null;
+
+  window.closeKbModal = function () {
+    const m = document.getElementById('kb-modal');
+    m.style.display = 'none';
+    m.removeAttribute('aria-hidden');
+    if (_kbTrigger) { _kbTrigger.focus(); _kbTrigger = null; }
+  };
+
+  function openKbModal() {
+    _kbTrigger = document.activeElement;
+    const m = document.getElementById('kb-modal');
+    m.style.display = 'flex';
+    // Move focus to close button
+    requestAnimationFrame(() => {
+      document.getElementById('kb-modal-close')?.focus();
+    });
+  }
+
+  // Focus trap: keep Tab inside the modal while it's open
+  document.getElementById('kb-modal')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const focusable = Array.from(
+      document.getElementById('kb-modal').querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(el => !el.disabled);
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+
   const SHORTCUTS = {
-    '?': () => {
-      const m = document.getElementById('kb-modal');
-      m.style.display = m.style.display === 'none' ? 'flex' : 'none';
-    },
+    '?': openKbModal,
     'g h': () => { window.location.href = '/dashboard/'; },
     'g t': () => { window.location.href = '/dashboard/tables/'; },
     'g a': () => { window.location.href = '/dashboard/activity/'; },
     'g b': () => { window.location.href = '/dashboard/billing/'; },
     'g i': () => { window.location.href = '/dashboard/integrations/'; },
+    'g m': () => { window.location.href = '/dashboard/templates/'; },
   };
 
   let pending = '';
@@ -344,7 +451,7 @@ function dashboardShell() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const m = document.getElementById('kb-modal');
-      if (m.style.display !== 'none') { m.style.display = 'none'; return; }
+      if (m.style.display !== 'none') { window.closeKbModal(); return; }
     }
     if (isTyping()) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -358,7 +465,6 @@ function dashboardShell() {
       pending = '';
       return;
     }
-    // If no multi-key sequence can start with pending, reset after timeout
     const hasPrefix = Object.keys(SHORTCUTS).some(k => k.startsWith(pending) && k !== pending);
     if (!hasPrefix) {
       pending = '';

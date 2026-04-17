@@ -214,13 +214,22 @@ class TableDetailView(LoginRequiredMixin, DetailView):
     model = DataTable
     template_name = 'dashboard/table_detail.html'
     context_object_name = 'table'
-    
+
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
-        return DataTable.objects.filter(
-            workspace=workspace,
-            is_active=True
-        )
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
+        if not workspace:
+            return DataTable.objects.none()
+        return DataTable.objects.filter(workspace=workspace, is_active=True)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1199,20 +1208,19 @@ class TeamMembersView(LoginRequiredMixin, ListView):
 
 
 class ActivityLogView(LoginRequiredMixin, ListView):
-    """Paginated view of the workspace's ``AuditLog`` entries.
+    """Paginated activity feed combining Notifications + AuditLog entries.
 
-    Shows the 50 most recent entries per page, ordered newest-first.
-    Each entry records who performed an action (create, update, delete,
-    export, invite, etc.), on which object, and with what changes.
+    Notifications (the source of the sidebar badge) are shown first and
+    marked as read on page load.  AuditLog entries (widget/export ops) are
+    also included so the full audit trail is visible in one place.
 
     URL: ``/dashboard/activity/``
     """
-    model = AuditLog
     template_name = 'dashboard/activity.html'
     context_object_name = 'logs'
     paginate_by = 50
-    
-    def get_queryset(self):
+
+    def _resolve_workspace(self):
         workspace = getattr(self.request.user, 'current_workspace', None)
         if not workspace:
             workspace_id = self.request.session.get('current_workspace_id')
@@ -1224,11 +1232,229 @@ class ActivityLogView(LoginRequiredMixin, ListView):
                     pass
         if not workspace:
             workspace = Workspace.objects.filter(members=self.request.user).first()
+        return workspace
+
+    def get_queryset(self):
+        from apps.notifications.models import Notification
+        workspace = self._resolve_workspace()
         if not workspace:
-            return AuditLog.objects.none()
-        return AuditLog.objects.filter(
-            workspace=workspace
-        ).select_related('user').order_by('-timestamp')
+            return Notification.objects.none()
+
+        # Notifications for this user in this workspace (or workspace-agnostic)
+        return Notification.objects.filter(
+            user=self.request.user,
+        ).filter(
+            Q(workspace=workspace) | Q(workspace__isnull=True)
+        ).order_by('-created_at')
+
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        # Mark all unread notifications as read now that user has visited the page
+        from apps.notifications.models import Notification
+        workspace = self._resolve_workspace()
+        if workspace:
+            Notification.objects.filter(
+                user=request.user,
+                is_read=False,
+            ).filter(
+                Q(workspace=workspace) | Q(workspace__isnull=True)
+            ).update(is_read=True)
+        return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Also pass recent AuditLog entries for the workspace (widget/export ops)
+        workspace = self._resolve_workspace()
+        if workspace:
+            context['audit_logs'] = AuditLog.objects.filter(
+                workspace=workspace
+            ).select_related('user').order_by('-timestamp')[:20]
+        return context
+
+
+class DashboardCommentsView(LoginRequiredMixin, View):
+    """
+    GET  — return JSON list of comments for a dashboard.
+    POST — create a new comment; parse @mentions and notify.
+
+    URL: ``/dashboard/dashboards/<uuid>/comments/``
+    """
+
+    def _get_dashboard(self, request, pk):
+        workspace = getattr(request.user, 'current_workspace', None)
+        if not workspace:
+            wid = request.session.get('current_workspace_id')
+            if wid:
+                try:
+                    workspace = Workspace.objects.get(id=wid, members=request.user)
+                except Workspace.DoesNotExist:
+                    pass
+        return get_object_or_404(Dashboard, pk=pk, workspace=workspace, is_active=True)
+
+    def get(self, request, pk):
+        from apps.dashboards.models import DashboardComment
+        dashboard = self._get_dashboard(request, pk)
+        qs = DashboardComment.objects.filter(
+            dashboard=dashboard, is_deleted=False
+        ).select_related('user').order_by('created_at')
+        data = [
+            {
+                'id':         str(c.id),
+                'user_name':  c.user.get_full_name() or c.user.email if c.user else 'Unknown',
+                'user_email': c.user.email if c.user else '',
+                'body':       c.body,
+                'widget_id':  str(c.widget_id) if c.widget_id else None,
+                'created_at': c.created_at.isoformat(),
+                'is_mine':    c.user_id == request.user.id,
+            }
+            for c in qs
+        ]
+        return JsonResponse({'comments': data})
+
+    def post(self, request, pk):
+        from apps.dashboards.models import DashboardComment
+        dashboard = self._get_dashboard(request, pk)
+        try:
+            body = json.loads(request.body).get('body', '').strip()
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+        if not body:
+            return JsonResponse({'error': 'Comment body is required.'}, status=400)
+        if len(body) > 2000:
+            return JsonResponse({'error': 'Comment too long (max 2000 chars).'}, status=400)
+
+        comment = DashboardComment.objects.create(
+            dashboard=dashboard,
+            user=request.user,
+            body=body,
+        )
+
+        # Parse @mentions — match @word or @email patterns
+        import re
+        from apps.notifications.models import Notification
+        from apps.workspaces.models import WorkspaceMembership
+        from django.contrib.auth import get_user_model
+        AuthUser = get_user_model()
+
+        mentions = re.findall(r'@([\w.+-]+)', body)
+        if mentions:
+            members = WorkspaceMembership.objects.filter(
+                workspace=dashboard.workspace
+            ).select_related('user')
+            member_map = {}
+            for m in members:
+                member_map[m.user.email.split('@')[0].lower()] = m.user
+                member_map[m.user.email.lower()] = m.user
+                if m.user.get_full_name():
+                    member_map[m.user.get_full_name().replace(' ', '').lower()] = m.user
+
+            notified = set()
+            for handle in mentions:
+                target = member_map.get(handle.lower())
+                if target and target.id != request.user.id and target.id not in notified:
+                    notified.add(target.id)
+                    Notification.notify(
+                        user=target,
+                        title=f"{request.user.get_full_name() or request.user.email} mentioned you",
+                        message=f'In "{dashboard.name}": {body[:200]}',
+                        notif_type='info',
+                        workspace=dashboard.workspace,
+                        action_url=f"/dashboard/dashboards/{dashboard.id}/",
+                    )
+
+        return JsonResponse({
+            'id':         str(comment.id),
+            'user_name':  request.user.get_full_name() or request.user.email,
+            'user_email': request.user.email,
+            'body':       comment.body,
+            'widget_id':  None,
+            'created_at': comment.created_at.isoformat(),
+            'is_mine':    True,
+        }, status=201)
+
+
+@login_required
+@require_POST
+def delete_dashboard_comment(request, pk, comment_id):
+    """Soft-delete a comment owned by the requesting user."""
+    from apps.dashboards.models import DashboardComment
+    workspace = getattr(request.user, 'current_workspace', None)
+    if not workspace:
+        wid = request.session.get('current_workspace_id')
+        if wid:
+            try:
+                workspace = Workspace.objects.get(id=wid, members=request.user)
+            except Workspace.DoesNotExist:
+                pass
+    get_object_or_404(Dashboard, pk=pk, workspace=workspace, is_active=True)
+    comment = get_object_or_404(
+        DashboardComment, pk=comment_id, dashboard_id=pk, user=request.user
+    )
+    comment.is_deleted = True
+    comment.save(update_fields=['is_deleted'])
+    return JsonResponse({'deleted': True})
+
+
+class TemplateGalleryView(LoginRequiredMixin, TemplateView):
+    """
+    Gallery of pre-built dashboard starter templates.
+
+    Shows all 8 templates with icon, description, and an "Apply" button.
+    Applying creates the DataTable + sample Records + auto-generated Dashboard
+    in the current workspace via OnboardingService.seed_workspace().
+
+    URL: ``/dashboard/templates/``
+    """
+    template_name = 'dashboard/template_gallery.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from apps.workspaces.onboarding import INDUSTRY_LABELS, TEMPLATE_META
+        templates = []
+        for key, label in INDUSTRY_LABELS.items():
+            meta = TEMPLATE_META.get(key, {})
+            templates.append({
+                'key':   key,
+                'label': label,
+                'icon':  meta.get('icon', 'fa-table'),
+                'color': meta.get('color', 'bg-gray-100 text-gray-600'),
+                'desc':  meta.get('desc', ''),
+            })
+        context['templates'] = templates
+        return context
+
+
+@login_required
+@require_POST
+def apply_template(request, template_key):
+    """
+    Seed the current workspace with a starter template and redirect to the
+    generated dashboard.
+    """
+    from apps.workspaces.onboarding import INDUSTRY_LABELS, OnboardingService
+
+    workspace = getattr(request.user, 'current_workspace', None)
+    if not workspace:
+        workspace_id = request.session.get('current_workspace_id')
+        if workspace_id:
+            try:
+                workspace = Workspace.objects.get(id=workspace_id, members=request.user)
+            except Workspace.DoesNotExist:
+                pass
+    if not workspace:
+        workspace = Workspace.objects.filter(members=request.user).first()
+
+    if not workspace:
+        messages.error(request, "No active workspace found.")
+        return redirect('dashboard:template_gallery')
+
+    if template_key not in INDUSTRY_LABELS:
+        messages.error(request, "Unknown template.")
+        return redirect('dashboard:template_gallery')
+
+    dashboard = OnboardingService.seed_workspace(workspace, template_key, request.user)
+    messages.success(request, f"Template applied! Your dashboard is ready.")
+    return redirect('dashboard:dashboard_detail', pk=dashboard.id)
 
 
 class BillingView(LoginRequiredMixin, TemplateView):
@@ -1421,12 +1647,19 @@ class CohortFunnelView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         table_id = self.kwargs['table_id']
-        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
 
         workspace = getattr(self.request.user, 'current_workspace', None)
-        if workspace and table.workspace_id != workspace.id:
-            from django.core.exceptions import PermissionDenied
-            raise PermissionDenied()
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
 
+        table = get_object_or_404(DataTable, pk=table_id, workspace=workspace, is_active=True)
         context['table'] = table
         return context

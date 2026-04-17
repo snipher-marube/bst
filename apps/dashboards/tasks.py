@@ -212,7 +212,7 @@ def _fire_alert(alert, current_value):
             message=message,
             notif_type='warning',
             workspace=alert.workspace,
-            action_url=f"/dashboard/alerts/",
+            action_url="/dashboard/analytics/",
             metadata={
                 'alert_id':     str(alert.id),
                 'current_value': current_value,
