@@ -1104,3 +1104,46 @@ class DataSource(models.Model):
         """Decrypt and return the service-account JSON string."""
         from apps.dashboards.webhook_crypto import decrypt_secret
         return decrypt_secret(self.google_credentials_enc)
+
+class ChatIntegration(models.Model):
+    """
+    Slack or Microsoft Teams incoming-webhook integration per workspace.
+
+    Both providers use the same mechanism: a user-supplied webhook URL that
+    accepts a simple JSON POST.  Slack uses ``{"text": "..."}``; Teams uses
+    an Adaptive Card payload.
+
+    Only one active integration per provider per workspace is allowed (enforced
+    by unique_together).  The webhook URL is stored encrypted via Fernet.
+    """
+    PROVIDER_SLACK = 'slack'
+    PROVIDER_TEAMS = 'teams'
+    PROVIDER_CHOICES = [
+        (PROVIDER_SLACK, 'Slack'),
+        (PROVIDER_TEAMS, 'Microsoft Teams'),
+    ]
+
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace  = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='chat_integrations')
+    provider   = models.CharField(max_length=10, choices=PROVIDER_CHOICES)
+    name       = models.CharField(max_length=100, help_text="Human label, e.g. '#alerts channel'")
+    webhook_url_enc = models.TextField(blank=True, help_text="Fernet-encrypted webhook URL")
+    is_enabled = models.BooleanField(default=True)
+    last_used  = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('workspace', 'provider')]
+        ordering = ['provider']
+
+    def __str__(self):
+        return f"{self.get_provider_display()} — {self.workspace.name}"
+
+    def set_webhook_url(self, url: str) -> None:
+        from apps.dashboards.webhook_crypto import encrypt_secret
+        self.webhook_url_enc = encrypt_secret(url)
+
+    def get_webhook_url(self) -> str:
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        return decrypt_secret(self.webhook_url_enc)

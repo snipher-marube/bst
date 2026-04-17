@@ -92,6 +92,7 @@ reportlab==4.4.10
 requests==2.33.1
 stripe>=10.0.0
 gspread>=6.0.0
+twilio>=9.0.0
 python3-saml>=1.16.0
 google-auth>=2.0.0
 google-auth-oauthlib>=1.0.0

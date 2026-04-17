@@ -83,7 +83,7 @@ class Notification(models.Model):
 
 class NotificationPreference(models.Model):
     """
-    Per-user email opt-in preferences for each notification category.
+    Per-user notification opt-in preferences for email and WhatsApp channels.
 
     Created lazily via get_or_create — all fields default to sensible values
     so existing users without a row still behave correctly.
@@ -92,11 +92,18 @@ class NotificationPreference(models.Model):
         User, on_delete=models.CASCADE, related_name='notification_prefs'
     )
 
-    # Individual category opt-ins
+    # Email opt-ins
     email_invites  = models.BooleanField(default=True,  help_text="Team invitation emails")
     email_imports  = models.BooleanField(default=True,  help_text="Import job completion emails")
     email_insights = models.BooleanField(default=False, help_text="New AI insight emails (can be frequent)")
     email_system   = models.BooleanField(default=True,  help_text="Important system / account emails")
+
+    # WhatsApp channel
+    whatsapp_number  = models.CharField(
+        max_length=20, blank=True,
+        help_text="E.164 format, e.g. +254712345678. Leave blank to disable WhatsApp alerts.",
+    )
+    whatsapp_alerts  = models.BooleanField(default=False, help_text="Send data-alert notifications via WhatsApp")
 
     def __str__(self):
         return f"NotifPrefs({self.user.email})"
@@ -113,3 +120,6 @@ class NotificationPreference(models.Model):
             'error':   self.email_system,
         }
         return mapping.get(notif_type, True)
+
+    def wants_whatsapp_alerts(self) -> bool:
+        return bool(self.whatsapp_alerts and self.whatsapp_number)

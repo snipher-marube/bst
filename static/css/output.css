@@ -2772,6 +2772,11 @@
       background-color: #f68712;
     }
   }
+  .peer-checked\:bg-green-500 {
+    &:is(:where(.peer):checked ~ *) {
+      background-color: var(--color-green-500);
+    }
+  }
   .peer-valid\:-translate-y-6 {
     &:is(:where(.peer):valid ~ *) {
       --tw-translate-y: calc(var(--spacing) * -6);
@@ -2815,6 +2820,14 @@
   .peer-focus\:ring-\[\#f68712\]\/30 {
     &:is(:where(.peer):focus ~ *) {
       --tw-ring-color: color-mix(in oklab, #f68712 30%, transparent);
+    }
+  }
+  .peer-focus\:ring-green-500\/30 {
+    &:is(:where(.peer):focus ~ *) {
+      --tw-ring-color: color-mix(in srgb, oklch(72.3% 0.219 149.579) 30%, transparent);
+      @supports (color: color-mix(in lab, red, red)) {
+        --tw-ring-color: color-mix(in oklab, var(--color-green-500) 30%, transparent);
+      }
     }
   }
   .focus-within\:ring-2 {
@@ -2958,6 +2971,13 @@
     &:hover {
       @media (hover: hover) {
         border-color: var(--color-orange-400);
+      }
+    }
+  }
+  .hover\:border-purple-400 {
+    &:hover {
+      @media (hover: hover) {
+        border-color: var(--color-purple-400);
       }
     }
   }

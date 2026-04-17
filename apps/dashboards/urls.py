@@ -40,6 +40,9 @@ urlpatterns = [
     # Integrations
     path('integrations/', views.IntegrationsView.as_view(), name='integrations'),
     path('integrations/google-sheets/', views.GoogleSheetsConnectView.as_view(), name='google_sheets_connect'),
+    path('integrations/chat/save/', views.ChatIntegrationSaveView.as_view(), name='chat_integration_save'),
+    path('integrations/chat/<uuid:pk>/delete/', views.ChatIntegrationDeleteView.as_view(), name='chat_integration_delete'),
+    path('integrations/chat/test/', views.chat_integration_test, name='chat_integration_test'),
 
     # Calculated Fields (Gap 14)
     path('tables/<uuid:table_id>/calculated-fields/', views.CalculatedFieldsView.as_view(), name='calculated_fields'),
