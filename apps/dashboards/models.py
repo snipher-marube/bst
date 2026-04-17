@@ -5,6 +5,8 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import JSONField, F
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 import logging
 from apps.insights.tasks import broadcast_widget_update, notify_table_change
@@ -457,8 +459,10 @@ class Widget(models.Model):
     title = models.CharField(max_length=100)
     
     # ── data source: one of (table) or (data_source + source_table_name) ────
-    # Imported DataTable (CSV/webhook ingestion)
-    table = models.ForeignKey(DataTable, on_delete=models.SET_NULL, null=True, blank=True)
+    # Imported DataTable (CSV/webhook ingestion).
+    # CASCADE: when a table is deleted its widgets are deleted too.
+    # Empty dashboards are then cleaned up by the post_delete signal below.
+    table = models.ForeignKey(DataTable, on_delete=models.CASCADE, null=True, blank=True)
     # Direct DB connector
     data_source       = models.ForeignKey(
         'DataSource', on_delete=models.SET_NULL,
@@ -1173,3 +1177,21 @@ class DashboardComment(models.Model):
 
     def __str__(self):
         return f"{self.user_id} on {self.dashboard_id}: {self.body[:60]}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Signal: delete empty dashboards after a widget is removed
+# ─────────────────────────────────────────────────────────────────────────────
+@receiver(post_delete, sender=Widget)
+def delete_empty_dashboard(sender, instance, **kwargs):
+    """
+    After a Widget is deleted, remove its parent Dashboard if it has no
+    remaining widgets.  This fires both for manual widget deletion and for the
+    CASCADE delete triggered when a DataTable is deleted.
+    """
+    try:
+        dashboard = instance.dashboard
+        if not dashboard.widgets.exists():
+            dashboard.delete()
+    except Dashboard.DoesNotExist:
+        pass
