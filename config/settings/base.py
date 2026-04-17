@@ -35,7 +35,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'channels',
     'daphne',
+    'cloudinary_storage',
     'django.contrib.staticfiles',
+    'cloudinary',
     'django.contrib.sites',
     'django.contrib.humanize',
 
@@ -186,6 +188,15 @@ MPESA_CALLBACK_URL = config(
     'MPESA_CALLBACK_URL',
     default='https://sandbox.safaricom.co.ke/mpesa/callback/',
 )
+
+# ---------------------------------------------------------------------------
+# Twilio — WhatsApp alert delivery
+# ---------------------------------------------------------------------------
+TWILIO_ACCOUNT_SID  = config('TWILIO_ACCOUNT_SID',  default='')
+TWILIO_AUTH_TOKEN   = config('TWILIO_AUTH_TOKEN',   default='')
+# Twilio sandbox number: whatsapp:+14155238886
+# Production: your approved WhatsApp Business number in E.164 format
+TWILIO_WHATSAPP_FROM = config('TWILIO_WHATSAPP_FROM', default='whatsapp:+14155238886')
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = [

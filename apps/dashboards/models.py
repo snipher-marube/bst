@@ -5,6 +5,8 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import JSONField, F
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 import logging
 from apps.insights.tasks import broadcast_widget_update, notify_table_change
@@ -457,8 +459,10 @@ class Widget(models.Model):
     title = models.CharField(max_length=100)
     
     # ── data source: one of (table) or (data_source + source_table_name) ────
-    # Imported DataTable (CSV/webhook ingestion)
-    table = models.ForeignKey(DataTable, on_delete=models.SET_NULL, null=True, blank=True)
+    # Imported DataTable (CSV/webhook ingestion).
+    # CASCADE: when a table is deleted its widgets are deleted too.
+    # Empty dashboards are then cleaned up by the post_delete signal below.
+    table = models.ForeignKey(DataTable, on_delete=models.CASCADE, null=True, blank=True)
     # Direct DB connector
     data_source       = models.ForeignKey(
         'DataSource', on_delete=models.SET_NULL,
@@ -1104,3 +1108,90 @@ class DataSource(models.Model):
         """Decrypt and return the service-account JSON string."""
         from apps.dashboards.webhook_crypto import decrypt_secret
         return decrypt_secret(self.google_credentials_enc)
+
+class ChatIntegration(models.Model):
+    """
+    Slack or Microsoft Teams incoming-webhook integration per workspace.
+
+    Both providers use the same mechanism: a user-supplied webhook URL that
+    accepts a simple JSON POST.  Slack uses ``{"text": "..."}``; Teams uses
+    an Adaptive Card payload.
+
+    Only one active integration per provider per workspace is allowed (enforced
+    by unique_together).  The webhook URL is stored encrypted via Fernet.
+    """
+    PROVIDER_SLACK = 'slack'
+    PROVIDER_TEAMS = 'teams'
+    PROVIDER_CHOICES = [
+        (PROVIDER_SLACK, 'Slack'),
+        (PROVIDER_TEAMS, 'Microsoft Teams'),
+    ]
+
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace  = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name='chat_integrations')
+    provider   = models.CharField(max_length=10, choices=PROVIDER_CHOICES)
+    name       = models.CharField(max_length=100, help_text="Human label, e.g. '#alerts channel'")
+    webhook_url_enc = models.TextField(blank=True, help_text="Fernet-encrypted webhook URL")
+    is_enabled = models.BooleanField(default=True)
+    last_used  = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('workspace', 'provider')]
+        ordering = ['provider']
+
+    def __str__(self):
+        return f"{self.get_provider_display()} — {self.workspace.name}"
+
+    def set_webhook_url(self, url: str) -> None:
+        from apps.dashboards.webhook_crypto import encrypt_secret
+        self.webhook_url_enc = encrypt_secret(url)
+
+    def get_webhook_url(self) -> str:
+        from apps.dashboards.webhook_crypto import decrypt_secret
+        return decrypt_secret(self.webhook_url_enc)
+
+
+class DashboardComment(models.Model):
+    """
+    Threaded comment on a dashboard, optionally scoped to a specific widget.
+
+    Supports @mention detection in ``body`` — the save signal (or the view)
+    is responsible for parsing mentions and creating Notification records.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dashboard  = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name='comments')
+    widget     = models.ForeignKey(Widget, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
+    user       = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='dashboard_comments')
+    body       = models.TextField(max_length=2000)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['dashboard', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} on {self.dashboard_id}: {self.body[:60]}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Signal: delete empty dashboards after a widget is removed
+# ─────────────────────────────────────────────────────────────────────────────
+@receiver(post_delete, sender=Widget)
+def delete_empty_dashboard(sender, instance, **kwargs):
+    """
+    After a Widget is deleted, remove its parent Dashboard if it has no
+    remaining widgets.  This fires both for manual widget deletion and for the
+    CASCADE delete triggered when a DataTable is deleted.
+    """
+    try:
+        dashboard = instance.dashboard
+        if not dashboard.widgets.exists():
+            dashboard.delete()
+    except Dashboard.DoesNotExist:
+        pass

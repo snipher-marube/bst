@@ -681,7 +681,7 @@ def _notify_anomaly_insights(workspace, anomaly_insights: list):
                 message=message,
                 notif_type='warning',
                 workspace=workspace,
-                action_url='/insights/',
+                action_url='/dashboard/analytics/',
                 metadata={
                     'anomaly_count':   count,
                     'source_tables':   table_names,

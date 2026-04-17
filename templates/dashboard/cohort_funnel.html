@@ -14,7 +14,7 @@
         Table: <span class="font-medium">{{ table.name }}</span>
       </p>
     </div>
-    <a href="{% url 'table_detail' table.id %}"
+    <a href="{% url 'dashboard:table_detail' pk=table.id %}"
        class="text-sm text-blue-600 hover:underline">&larr; Back to table</a>
   </div>
 

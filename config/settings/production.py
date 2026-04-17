@@ -96,12 +96,23 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER', default='noreply@analyticsmeta.com')
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Static / media
+# Static / media — Cloudinary CDN
 # ─────────────────────────────────────────────────────────────────────────────
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-MEDIA_URL = '/media/'
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY':    config('CLOUDINARY_API_KEY'),
+    'API_SECRET': config('CLOUDINARY_API_SECRET'),
+    'STATIC_TAG': 'analyticsmeta_static',
+    'STATICFILES_MANIFEST_ROOT': BASE_DIR / '../staticfiles',
+}
+
+STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticHashedCloudinaryStorage'
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+STATIC_URL  = f"https://res.cloudinary.com/{config('CLOUDINARY_CLOUD_NAME')}/raw/upload/analyticsmeta_static/"
+MEDIA_URL   = f"https://res.cloudinary.com/{config('CLOUDINARY_CLOUD_NAME')}/raw/upload/"
 STATIC_ROOT = BASE_DIR / '../staticfiles'
-MEDIA_ROOT = BASE_DIR / '../static/media'
+MEDIA_ROOT  = BASE_DIR / '../static/media'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # M-Pesa Daraja — all required; no safe defaults in production

@@ -33,6 +33,8 @@ urlpatterns = [
     path('dashboards/<uuid:pk>/', views.DashboardDetailView.as_view(), name='dashboard_detail'),
     path('dashboards/<uuid:pk>/edit/', views.DashboardEditView.as_view(), name='dashboard_edit'),
     path('dashboards/<uuid:pk>/delete/', views.DashboardDeleteView.as_view(), name='dashboard_delete'),
+    path('dashboards/<uuid:pk>/comments/', views.DashboardCommentsView.as_view(), name='dashboard_comments'),
+    path('dashboards/<uuid:pk>/comments/<uuid:comment_id>/delete/', views.delete_dashboard_comment, name='dashboard_comment_delete'),
     
     # SSO / SAML
     path('sso/', views.SSOSettingsView.as_view(), name='sso_settings'),
@@ -40,12 +42,19 @@ urlpatterns = [
     # Integrations
     path('integrations/', views.IntegrationsView.as_view(), name='integrations'),
     path('integrations/google-sheets/', views.GoogleSheetsConnectView.as_view(), name='google_sheets_connect'),
+    path('integrations/chat/save/', views.ChatIntegrationSaveView.as_view(), name='chat_integration_save'),
+    path('integrations/chat/<uuid:pk>/delete/', views.ChatIntegrationDeleteView.as_view(), name='chat_integration_delete'),
+    path('integrations/chat/test/', views.chat_integration_test, name='chat_integration_test'),
 
     # Calculated Fields (Gap 14)
     path('tables/<uuid:table_id>/calculated-fields/', views.CalculatedFieldsView.as_view(), name='calculated_fields'),
 
     # Cohort & Funnel Analysis (Gap 15)
     path('tables/<uuid:table_id>/cohort-funnel/', views.CohortFunnelView.as_view(), name='cohort_funnel'),
+
+    # Dashboard template gallery
+    path('templates/', views.TemplateGalleryView.as_view(), name='template_gallery'),
+    path('templates/<str:template_key>/apply/', views.apply_template, name='template_apply'),
 
     # Settings and account
     path('settings/', views.WorkspaceSettingsView.as_view(), name='settings'),

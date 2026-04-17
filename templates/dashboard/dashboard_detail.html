@@ -10,6 +10,12 @@
   <span class="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block"></span>
   <span>Connecting…</span>
 </span>
+<button id="commentsBtn"
+        onclick="toggleComments()"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition relative">
+  <i class="fas fa-comment-dots text-xs"></i> Comments
+  <span id="commentCountBadge" class="hidden absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center" style="background:#03466e"></span>
+</button>
 <button id="downloadReportBtn"
         onclick="requestReport()"
         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
@@ -129,6 +135,13 @@
 
   /* ── empty dashboard ── */
   #emptyState { display: none; }
+
+  /* ── reduced motion: disable chart animations ─────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .spin { animation: none !important; }
+    .grid-stack-item-content { transition: none !important; }
+    .modal-box { animation: none !important; }
+  }
 </style>
 {% endblock %}
 
@@ -300,13 +313,13 @@
 </script>
 
 {# Add Widget Modal #}
-<div id="widgetModal" class="modal-overlay">
+<div id="widgetModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="widgetModalTitle">
   <div class="modal-box" style="max-width:520px">
-    <div class="modal-head"><h2>Add Widget</h2></div>
+    <div class="modal-head"><h2 id="widgetModalTitle">Add Widget</h2></div>
     <div class="modal-body-wrap">
-      <form id="widgetForm">
+      <form id="widgetForm" aria-label="Add widget configuration">
         <div class="form-group">
-          <label class="form-label">Data Table</label>
+          <label class="form-label" for="widgetTable">Data Table</label>
           <select id="widgetTable" class="form-ctrl" required onchange="onTableChange()">
             <option value="">Select a table…</option>
             {% for table in tables %}
@@ -317,7 +330,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Widget Type</label>
+          <label class="form-label" for="widgetType">Widget Type</label>
           <select id="widgetType" class="form-ctrl" required onchange="onTypeChange()">
             <option value="metric">KPI / Metric Card</option>
             <option value="line_chart">Line Chart – Trend over time</option>
@@ -410,7 +423,7 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Title</label>
+          <label class="form-label" for="widgetTitle">Title</label>
           <input type="text" id="widgetTitle" class="form-ctrl" placeholder="e.g. Total Revenue">
         </div>
 
@@ -427,6 +440,47 @@
     </div>
   </div>
 </div>
+
+{# ── Comments Sidebar ────────────────────────────────────────── #}
+<div id="commentsSidebar"
+     class="fixed top-0 right-0 h-full w-80 bg-white border-l border-gray-100 shadow-2xl z-[900] flex flex-col transform translate-x-full transition-transform duration-300 ease-in-out">
+
+  {# Header #}
+  <div class="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 flex-shrink-0">
+    <div class="flex items-center gap-2">
+      <i class="fas fa-comments text-sm text-[#03466e]"></i>
+      <span class="text-sm font-semibold text-gray-800">Comments</span>
+    </div>
+    <button onclick="closeComments()" class="text-gray-400 hover:text-gray-600 transition p-1 rounded-lg hover:bg-gray-100">
+      <i class="fas fa-times text-sm"></i>
+    </button>
+  </div>
+
+  {# Comments list #}
+  <div id="commentsList" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-0"></div>
+
+  {# Input area #}
+  <div class="border-t border-gray-100 px-4 py-3 flex-shrink-0 bg-gray-50">
+    <div class="flex flex-col gap-2">
+      <textarea id="commentInput" rows="3" maxlength="2000"
+                placeholder="Add a comment… use @name to mention someone"
+                class="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 resize-none bg-white focus:outline-none focus:border-[#f68712] focus:ring-2 focus:ring-[#f68712]/20 transition"
+                onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){postComment();event.preventDefault();}"></textarea>
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] text-gray-400">Ctrl+Enter to post</span>
+        <button id="postCommentBtn" onclick="postComment()"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition disabled:opacity-50"
+                style="background:#03466e">
+          <i class="fas fa-paper-plane text-[10px]"></i> Post
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Backdrop for comments sidebar on mobile #}
+<div id="commentsBackdrop" onclick="closeComments()"
+     class="fixed inset-0 bg-black/20 z-[899] hidden sm:hidden"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack-all.js"></script>
 
@@ -572,17 +626,19 @@ function buildWidgetHTML(widget) {
       <div class="grid-stack-item-content">
         <div class="widget-header">
           <h3 title="${esc(widget.title)}">${esc(widget.title)}</h3>
-          <div class="widget-actions">
-            <button class="widget-action-btn" onclick="refreshWidget('${widget.id}')" title="Refresh">
-              <i class="fas fa-sync-alt"></i>
+          <div class="widget-actions" role="group" aria-label="Widget actions for ${esc(widget.title)}">
+            <button class="widget-action-btn" onclick="refreshWidget('${widget.id}')"
+                    aria-label="Refresh ${esc(widget.title)}">
+              <i class="fas fa-sync-alt" aria-hidden="true"></i>
             </button>
-            <button class="widget-action-btn del" onclick="deleteWidget('${widget.id}')" title="Delete">
-              <i class="fas fa-trash"></i>
+            <button class="widget-action-btn del" onclick="deleteWidget('${widget.id}')"
+                    aria-label="Delete ${esc(widget.title)}">
+              <i class="fas fa-trash" aria-hidden="true"></i>
             </button>
           </div>
         </div>
-        <div class="widget-body" id="widget-${widget.id}">
-          <div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4"></i></div>
+        <div class="widget-body" id="widget-${widget.id}" role="region" aria-label="${esc(widget.title)}">
+          <div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4" aria-hidden="true"></i><span class="sr-only">Loading…</span></div>
         </div>
       </div>
     </div>`;
@@ -1524,32 +1580,72 @@ function showToast(message, type = 'info') {
   const colors = { info: '#03466e', success: '#10b981', warning: '#f59e0b', error: '#ef4444' };
   const icons  = { info: 'fa-info-circle', success: 'fa-check-circle', warning: 'fa-exclamation-triangle', error: 'fa-times-circle' };
   const t = document.createElement('div');
+  t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  t.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  t.setAttribute('aria-atomic', 'true');
   t.style.cssText = `position:fixed;bottom:1.25rem;right:1.25rem;z-index:9999;
     display:flex;align-items:center;gap:.5rem;
     padding:.625rem 1rem;border-radius:.625rem;
     background:${colors[type] || colors.info};color:#fff;
     font-size:.8125rem;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.18);
     animation:slideUp .2s ease-out;`;
-  t.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${esc(message)}</span>`;
+  t.innerHTML = `<i class="fas ${icons[type] || icons.info}" aria-hidden="true"></i><span>${esc(message)}</span>`;
   document.body.appendChild(t);
+  // Also announce via the base template's live region
+  const announcer = document.getElementById('a11y-announcer');
+  if (announcer) { announcer.textContent = ''; requestAnimationFrame(() => { announcer.textContent = message; }); }
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, 3200);
 }
 
 // ───────────────────────────────────────────────────────────────
 //  MODAL
 // ───────────────────────────────────────────────────────────────
-function openModal()  { document.getElementById('widgetModal').classList.add('open'); }
+let _modalTrigger = null;
+
+function openModal() {
+  _modalTrigger = document.activeElement;
+  const m = document.getElementById('widgetModal');
+  m.classList.add('open');
+  // Move focus to first focusable element inside
+  requestAnimationFrame(() => {
+    const first = m.querySelector('select, input, button, [tabindex]:not([tabindex="-1"])');
+    first?.focus();
+  });
+}
+
 function closeModal() {
   document.getElementById('widgetModal').classList.remove('open');
   document.getElementById('widgetForm').reset();
-  // Reset calculated expression panel
   const calcGroup = document.getElementById('calculatedExprGroup');
   if (calcGroup) calcGroup.style.display = 'none';
   const fb = document.getElementById('calcExprFeedback');
   if (fb) fb.textContent = '';
   const calcEl = document.getElementById('calcExpression');
   if (calcEl) calcEl.value = '';
+  // Return focus to the trigger button
+  if (_modalTrigger) { _modalTrigger.focus(); _modalTrigger = null; }
 }
+
+// Focus trap for widget modal
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('widgetModal')?.addEventListener('keydown', (e) => {
+    if (!document.getElementById('widgetModal').classList.contains('open')) return;
+    if (e.key === 'Escape') { closeModal(); return; }
+    if (e.key !== 'Tab') return;
+    const focusable = Array.from(
+      document.getElementById('widgetModal').querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+});
 
 function setupEventListeners() {
   document.getElementById('addWidgetBtn')?.addEventListener('click', openModal);
@@ -1687,6 +1783,135 @@ function _showShareLink(shareUrl) {
 }
 
 document.addEventListener('DOMContentLoaded', initDashboard);
+
+// ───────────────────────────────────────────────────────────────
+//  COMMENTS SIDEBAR
+// ───────────────────────────────────────────────────────────────
+const COMMENTS_URL = `/dashboard/dashboards/${window.DASHBOARD_ID}/comments/`;
+let _commentsOpen  = false;
+let _comments      = [];
+
+function toggleComments() {
+  _commentsOpen ? closeComments() : openComments();
+}
+
+function openComments() {
+  _commentsOpen = true;
+  document.getElementById('commentsSidebar').classList.remove('translate-x-full');
+  loadComments();
+}
+
+function closeComments() {
+  _commentsOpen = false;
+  document.getElementById('commentsSidebar').classList.add('translate-x-full');
+}
+
+async function loadComments() {
+  const list = document.getElementById('commentsList');
+  list.innerHTML = '<div class="flex justify-center py-8"><i class="fas fa-circle-notch fa-spin text-[#03466e] opacity-40"></i></div>';
+  try {
+    const res = await fetch(COMMENTS_URL, { credentials: 'same-origin' });
+    const json = await res.json();
+    _comments = Array.isArray(json) ? json : (json.comments || []);
+    renderComments();
+    updateCommentBadge(_comments.length);
+  } catch (_) {
+    list.innerHTML = '<p class="text-xs text-red-500 text-center py-6">Failed to load comments</p>';
+  }
+}
+
+function renderComments() {
+  const list = document.getElementById('commentsList');
+  if (!_comments.length) {
+    list.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 gap-2 text-center">
+        <i class="fas fa-comments text-3xl text-gray-200"></i>
+        <p class="text-sm text-gray-400">No comments yet</p>
+        <p class="text-xs text-gray-300">Be the first to add one below</p>
+      </div>`;
+    return;
+  }
+  list.innerHTML = _comments.map(c => {
+    const initials = (c.user_name || '?').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+    const ts = new Date(c.created_at).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const body = esc(c.body).replace(/@(\w+)/g, '<span class="text-[#03466e] font-semibold">@$1</span>');
+    return `
+      <div class="flex gap-2.5 group" data-comment-id="${c.id}">
+        <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-0.5"
+             style="background:#03466e">${initials}</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-2 mb-0.5">
+            <span class="text-xs font-semibold text-gray-800">${esc(c.user_name || 'Unknown')}</span>
+            <span class="text-[10px] text-gray-400">${ts}</span>
+            ${c.is_mine ? `
+            <button onclick="deleteComment('${c.id}')"
+                    class="ml-auto opacity-0 group-hover:opacity-100 transition text-[10px] text-gray-400 hover:text-red-500">
+              <i class="fas fa-trash"></i>
+            </button>` : ''}
+          </div>
+          <p class="text-xs text-gray-700 leading-relaxed break-words">${body}</p>
+        </div>
+      </div>`;
+  }).join('<hr class="border-gray-50 my-2">');
+}
+
+function updateCommentBadge(count) {
+  const badge = document.getElementById('commentCountBadge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : count;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function postComment() {
+  const textarea = document.getElementById('commentInput');
+  const body = textarea.value.trim();
+  if (!body) return;
+
+  const btn = document.getElementById('postCommentBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch(COMMENTS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      credentials: 'same-origin',
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) throw new Error('Failed');
+    textarea.value = '';
+    await loadComments();
+    // Scroll to bottom
+    const list = document.getElementById('commentsList');
+    list.scrollTop = list.scrollHeight;
+  } catch (_) {
+    showToast('Failed to post comment', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteComment(id) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    const res = await fetch(`/dashboard/dashboards/${window.DASHBOARD_ID}/comments/${id}/delete/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrf() },
+      credentials: 'same-origin',
+    });
+    if (!res.ok) throw new Error('Failed');
+    await loadComments();
+  } catch (_) {
+    showToast('Failed to delete comment', 'error');
+  }
+}
+
+window.toggleComments = toggleComments;
+window.closeComments  = closeComments;
+window.postComment    = postComment;
+window.deleteComment  = deleteComment;
 
 // ───────────────────────────────────────────────────────────────
 //  Alpine.js — Filter Bar Component

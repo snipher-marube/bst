@@ -223,6 +223,125 @@
     </div>
   </div>
 
+  {# ── Chat / Notifications integrations ──────────────────────────────────── #}
+  <div id="chat-integrations" class="card">
+    <div class="card-header">
+      <span><i class="fas fa-bell mr-2 opacity-60"></i>Notification Channels</span>
+      <span class="text-xs text-gray-400 font-normal ml-2">Alert notifications delivered to Slack or Teams</span>
+    </div>
+
+    {% if chat_integrations %}
+    <div class="divide-y divide-gray-50">
+      {% for ci in chat_integrations %}
+      <div class="px-5 py-4 flex items-center gap-4">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
+          {% if ci.provider == 'slack' %}bg-purple-100{% else %}bg-blue-100{% endif %}">
+          {% if ci.provider == 'slack' %}
+            <i class="fab fa-slack text-purple-600"></i>
+          {% else %}
+            <i class="fab fa-microsoft text-blue-600"></i>
+          {% endif %}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-gray-900">{{ ci.name }}</p>
+          <p class="text-xs text-gray-400">
+            {{ ci.get_provider_display }}
+            {% if ci.last_used %} · Last used {{ ci.last_used|timesince }} ago{% endif %}
+          </p>
+        </div>
+        <span class="{% if ci.is_enabled %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-500{% endif %} text-xs px-2 py-0.5 rounded-full font-medium">
+          {% if ci.is_enabled %}Active{% else %}Disabled{% endif %}
+        </span>
+        <form method="post" action="{% url 'dashboard:chat_integration_delete' ci.id %}"
+              onsubmit="return confirm('Remove this integration?')">
+          {% csrf_token %}
+          <button type="submit" class="text-xs text-red-400 hover:text-red-600 transition">
+            <i class="fas fa-trash"></i>
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card-body border-t border-gray-50">
+      <p class="text-sm text-gray-500 mb-4">Add a Slack or Microsoft Teams incoming webhook to receive data alerts in your team channel.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        {# Slack ──────────────────────────────────────────────── #}
+        <div x-data="{open:false}" class="relative">
+          <button @click="open=!open"
+            class="group w-full flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-gray-200
+                   hover:border-purple-400 hover:bg-purple-50 transition cursor-pointer text-center">
+            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i class="fab fa-slack text-xl text-purple-600"></i>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-800">Slack</p>
+              <p class="text-xs text-gray-400 mt-0.5">Incoming Webhook</p>
+            </div>
+            <span class="badge text-[10px] bg-purple-100 text-purple-700">Add / Update</span>
+          </button>
+
+          <div x-show="open" x-cloak @click.outside="open=false"
+               class="absolute top-full mt-2 left-0 right-0 z-10 bg-white rounded-2xl shadow-lg border border-gray-100 p-4 space-y-3" style="min-width:280px">
+            <p class="text-xs font-semibold text-gray-600">Connect Slack Incoming Webhook</p>
+            <form method="post" action="{% url 'dashboard:chat_integration_save' %}">
+              {% csrf_token %}
+              <input type="hidden" name="provider" value="slack">
+              <div class="space-y-2">
+                <input type="text" name="name" placeholder="Label (e.g. #alerts)" class="form-ctrl text-xs">
+                <input type="url" name="webhook_url" placeholder="https://hooks.slack.com/services/..." class="form-ctrl text-xs" required>
+              </div>
+              <div class="flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm flex-1"><i class="fas fa-save text-xs"></i> Save</button>
+                <button type="button" @click="testWebhook('slack', $el.closest('form')" class="btn btn-secondary btn-sm">Test</button>
+                <button type="button" @click="open=false" class="btn btn-secondary btn-sm">Cancel</button>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-2"><i class="fas fa-lock text-xs mr-1"></i>Webhook URL encrypted at rest.</p>
+            </form>
+          </div>
+        </div>
+
+        {# Microsoft Teams ────────────────────────────────────── #}
+        <div x-data="{open:false}" class="relative">
+          <button @click="open=!open"
+            class="group w-full flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-gray-200
+                   hover:border-blue-400 hover:bg-blue-50 transition cursor-pointer text-center">
+            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i class="fab fa-microsoft text-xl text-blue-600"></i>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-800">Microsoft Teams</p>
+              <p class="text-xs text-gray-400 mt-0.5">Incoming Webhook</p>
+            </div>
+            <span class="badge text-[10px] bg-blue-100 text-blue-700">Add / Update</span>
+          </button>
+
+          <div x-show="open" x-cloak @click.outside="open=false"
+               class="absolute top-full mt-2 left-0 right-0 z-10 bg-white rounded-2xl shadow-lg border border-gray-100 p-4 space-y-3" style="min-width:280px">
+            <p class="text-xs font-semibold text-gray-600">Connect Teams Incoming Webhook</p>
+            <form method="post" action="{% url 'dashboard:chat_integration_save' %}">
+              {% csrf_token %}
+              <input type="hidden" name="provider" value="teams">
+              <div class="space-y-2">
+                <input type="text" name="name" placeholder="Label (e.g. Data Alerts)" class="form-ctrl text-xs">
+                <input type="url" name="webhook_url" placeholder="https://outlook.office.com/webhook/..." class="form-ctrl text-xs" required>
+              </div>
+              <div class="flex gap-2 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm flex-1"><i class="fas fa-save text-xs"></i> Save</button>
+                <button type="button" @click="testWebhook('teams', $el.closest('form'))" class="btn btn-secondary btn-sm">Test</button>
+                <button type="button" @click="open=false" class="btn btn-secondary btn-sm">Cancel</button>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-2"><i class="fas fa-lock text-xs mr-1"></i>Webhook URL encrypted at rest.</p>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   {# ── Add new source section ──────────────────────────────────────────────── #}
   <div id="add-source" class="card">
     <div class="card-header">
@@ -495,6 +614,31 @@ function integrationsPage() {
     submitPg(event)    { this.submitDb('postgresql', event.target); },
     submitMysql(event) { this.submitDb('mysql',      event.target); }
   };
+}
+
+async function testWebhook(provider, formEl) {
+  const url = formEl.querySelector('[name="webhook_url"]').value.trim();
+  if (!url) { alert('Enter a webhook URL first.'); return; }
+  const csrfToken = document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '';
+  const btn = formEl.querySelector('button[type="button"]');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/dashboard/integrations/chat/test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ provider, webhook_url: url }),
+    });
+    const data = await r.json();
+    if (data.success) {
+      alert('Test message sent! Check your channel.');
+    } else {
+      alert('Test failed: ' + (data.message || 'Unknown error'));
+    }
+  } catch { alert('Network error during test.'); }
+  btn.innerHTML = orig;
+  btn.disabled = false;
 }
 </script>
 {% endblock %}
