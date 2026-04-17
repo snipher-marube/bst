@@ -1129,7 +1129,19 @@ class ActivityLogView(LoginRequiredMixin, ListView):
     paginate_by = 50
     
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
+        if not workspace:
+            return AuditLog.objects.none()
         return AuditLog.objects.filter(
             workspace=workspace
         ).select_related('user').order_by('-timestamp')
