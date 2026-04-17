@@ -158,6 +158,96 @@ INDUSTRY_DATA = {
             {'item': 'Team Satisfaction',    'category': 'HR',         'value': 78,     'status': 'Good',        'date': '2026-03-01', 'notes': 'Out of 100'},
         ],
     },
+
+    'ecommerce': {
+        'table_name': 'E-commerce Orders',
+        'description': 'Track orders, revenue, and product performance across your online store.',
+        'schema': [
+            {'name': 'order_id',    'type': 'text',     'required': True},
+            {'name': 'product',     'type': 'text',     'required': True},
+            {'name': 'category',    'type': 'text',     'required': True},
+            {'name': 'quantity',    'type': 'number',   'required': True},
+            {'name': 'unit_price',  'type': 'currency', 'required': True},
+            {'name': 'revenue',     'type': 'currency', 'required': True},
+            {'name': 'status',      'type': 'text',     'required': True},
+            {'name': 'order_date',  'type': 'date',     'required': False},
+        ],
+        'records': [
+            {'order_id': 'ORD-001', 'product': 'Wireless Earbuds',    'category': 'Electronics', 'quantity': 2,  'unit_price': 4500,  'revenue': 9000,  'status': 'Delivered',  'order_date': '2026-03-01'},
+            {'order_id': 'ORD-002', 'product': 'Running Shoes',       'category': 'Fashion',     'quantity': 1,  'unit_price': 8200,  'revenue': 8200,  'status': 'Delivered',  'order_date': '2026-03-03'},
+            {'order_id': 'ORD-003', 'product': 'Blender Pro',         'category': 'Home',        'quantity': 1,  'unit_price': 6800,  'revenue': 6800,  'status': 'Shipped',    'order_date': '2026-03-05'},
+            {'order_id': 'ORD-004', 'product': 'Yoga Mat',            'category': 'Sports',      'quantity': 3,  'unit_price': 1500,  'revenue': 4500,  'status': 'Delivered',  'order_date': '2026-03-06'},
+            {'order_id': 'ORD-005', 'product': 'Smart Watch',         'category': 'Electronics', 'quantity': 1,  'unit_price': 18000, 'revenue': 18000, 'status': 'Processing', 'order_date': '2026-03-10'},
+            {'order_id': 'ORD-006', 'product': 'Coffee Maker',        'category': 'Home',        'quantity': 2,  'unit_price': 5200,  'revenue': 10400, 'status': 'Delivered',  'order_date': '2026-03-12'},
+            {'order_id': 'ORD-007', 'product': 'Leather Handbag',     'category': 'Fashion',     'quantity': 1,  'unit_price': 12000, 'revenue': 12000, 'status': 'Returned',   'order_date': '2026-03-14'},
+            {'order_id': 'ORD-008', 'product': 'Protein Powder',      'category': 'Sports',      'quantity': 4,  'unit_price': 3200,  'revenue': 12800, 'status': 'Delivered',  'order_date': '2026-03-15'},
+            {'order_id': 'ORD-009', 'product': 'Laptop Stand',        'category': 'Electronics', 'quantity': 2,  'unit_price': 2800,  'revenue': 5600,  'status': 'Shipped',    'order_date': '2026-03-18'},
+            {'order_id': 'ORD-010', 'product': 'Sunglasses',          'category': 'Fashion',     'quantity': 1,  'unit_price': 3500,  'revenue': 3500,  'status': 'Delivered',  'order_date': '2026-03-20'},
+            {'order_id': 'ORD-011', 'product': 'Air Fryer',           'category': 'Home',        'quantity': 1,  'unit_price': 9500,  'revenue': 9500,  'status': 'Delivered',  'order_date': '2026-03-22'},
+            {'order_id': 'ORD-012', 'product': 'Resistance Bands',    'category': 'Sports',      'quantity': 5,  'unit_price': 800,   'revenue': 4000,  'status': 'Processing', 'order_date': '2026-03-25'},
+            {'order_id': 'ORD-013', 'product': 'Noise-Cancel Headset','category': 'Electronics', 'quantity': 1,  'unit_price': 14500, 'revenue': 14500, 'status': 'Delivered',  'order_date': '2026-03-27'},
+            {'order_id': 'ORD-014', 'product': 'Desk Lamp',           'category': 'Home',        'quantity': 3,  'unit_price': 2100,  'revenue': 6300,  'status': 'Delivered',  'order_date': '2026-03-29'},
+            {'order_id': 'ORD-015', 'product': 'Sneakers Pro',        'category': 'Fashion',     'quantity': 2,  'unit_price': 7800,  'revenue': 15600, 'status': 'Shipped',    'order_date': '2026-03-31'},
+        ],
+    },
+
+    'saas': {
+        'table_name': 'SaaS Metrics',
+        'description': 'Core SaaS KPIs — MRR, churn, CAC, LTV, and cohort growth in one place.',
+        'schema': [
+            {'name': 'month',       'type': 'text',     'required': True},
+            {'name': 'mrr',         'type': 'currency', 'required': True},
+            {'name': 'new_mrr',     'type': 'currency', 'required': True},
+            {'name': 'churned_mrr', 'type': 'currency', 'required': True},
+            {'name': 'customers',   'type': 'number',   'required': True},
+            {'name': 'new_signups', 'type': 'number',   'required': True},
+            {'name': 'churn_rate',  'type': 'percentage','required': True},
+            {'name': 'cac',         'type': 'currency', 'required': False},
+            {'name': 'ltv',         'type': 'currency', 'required': False},
+        ],
+        'records': [
+            {'month': 'Oct 2025', 'mrr': 180000,  'new_mrr': 22000,  'churned_mrr': 8000,  'customers': 72,  'new_signups': 9,  'churn_rate': 4.4, 'cac': 12000, 'ltv': 68000},
+            {'month': 'Nov 2025', 'mrr': 194000,  'new_mrr': 25000,  'churned_mrr': 11000, 'customers': 78,  'new_signups': 11, 'churn_rate': 5.7, 'cac': 11500, 'ltv': 70000},
+            {'month': 'Dec 2025', 'mrr': 208000,  'new_mrr': 28000,  'churned_mrr': 14000, 'customers': 83,  'new_signups': 12, 'churn_rate': 7.2, 'cac': 13000, 'ltv': 72000},
+            {'month': 'Jan 2026', 'mrr': 225000,  'new_mrr': 34000,  'churned_mrr': 17000, 'customers': 90,  'new_signups': 14, 'churn_rate': 8.2, 'cac': 12500, 'ltv': 75000},
+            {'month': 'Feb 2026', 'mrr': 247000,  'new_mrr': 38000,  'churned_mrr': 16000, 'customers': 99,  'new_signups': 16, 'churn_rate': 6.5, 'cac': 11800, 'ltv': 78000},
+            {'month': 'Mar 2026', 'mrr': 268000,  'new_mrr': 41000,  'churned_mrr': 20000, 'customers': 107, 'new_signups': 18, 'churn_rate': 7.5, 'cac': 12200, 'ltv': 80000},
+            {'month': 'Apr 2026', 'mrr': 289000,  'new_mrr': 45000,  'churned_mrr': 24000, 'customers': 116, 'new_signups': 20, 'churn_rate': 8.3, 'cac': 11000, 'ltv': 82000},
+        ],
+    },
+
+    'marketing': {
+        'table_name': 'Marketing Funnel',
+        'description': 'Track leads through every funnel stage — from awareness to closed deal.',
+        'schema': [
+            {'name': 'channel',     'type': 'text',     'required': True},
+            {'name': 'stage',       'type': 'text',     'required': True},
+            {'name': 'leads',       'type': 'number',   'required': True},
+            {'name': 'conversions', 'type': 'number',   'required': True},
+            {'name': 'conv_rate',   'type': 'percentage','required': True},
+            {'name': 'spend',       'type': 'currency', 'required': False},
+            {'name': 'revenue',     'type': 'currency', 'required': False},
+            {'name': 'month',       'type': 'text',     'required': False},
+        ],
+        'records': [
+            {'channel': 'Google Ads',    'stage': 'Awareness',     'leads': 4200, 'conversions': 840,  'conv_rate': 20.0, 'spend': 85000,  'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Google Ads',    'stage': 'Consideration', 'leads': 840,  'conversions': 252,  'conv_rate': 30.0, 'spend': 0,      'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Google Ads',    'stage': 'Decision',      'leads': 252,  'conversions': 63,   'conv_rate': 25.0, 'spend': 0,      'revenue': 189000, 'month': 'Q1 2026'},
+            {'channel': 'LinkedIn',      'stage': 'Awareness',     'leads': 1800, 'conversions': 540,  'conv_rate': 30.0, 'spend': 60000,  'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'LinkedIn',      'stage': 'Consideration', 'leads': 540,  'conversions': 216,  'conv_rate': 40.0, 'spend': 0,      'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'LinkedIn',      'stage': 'Decision',      'leads': 216,  'conversions': 65,   'conv_rate': 30.0, 'spend': 0,      'revenue': 325000, 'month': 'Q1 2026'},
+            {'channel': 'Organic SEO',   'stage': 'Awareness',     'leads': 6500, 'conversions': 1300, 'conv_rate': 20.0, 'spend': 15000,  'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Organic SEO',   'stage': 'Consideration', 'leads': 1300, 'conversions': 390,  'conv_rate': 30.0, 'spend': 0,      'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Organic SEO',   'stage': 'Decision',      'leads': 390,  'conversions': 78,   'conv_rate': 20.0, 'spend': 0,      'revenue': 234000, 'month': 'Q1 2026'},
+            {'channel': 'Email',         'stage': 'Awareness',     'leads': 2200, 'conversions': 660,  'conv_rate': 30.0, 'spend': 8000,   'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Email',         'stage': 'Consideration', 'leads': 660,  'conversions': 264,  'conv_rate': 40.0, 'spend': 0,      'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Email',         'stage': 'Decision',      'leads': 264,  'conversions': 79,   'conv_rate': 30.0, 'spend': 0,      'revenue': 316000, 'month': 'Q1 2026'},
+            {'channel': 'WhatsApp',      'stage': 'Awareness',     'leads': 950,  'conversions': 380,  'conv_rate': 40.0, 'spend': 5000,   'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'WhatsApp',      'stage': 'Decision',      'leads': 380,  'conversions': 114,  'conv_rate': 30.0, 'spend': 0,      'revenue': 228000, 'month': 'Q1 2026'},
+            {'channel': 'Referral',      'stage': 'Awareness',     'leads': 700,  'conversions': 350,  'conv_rate': 50.0, 'spend': 0,      'revenue': 0,      'month': 'Q1 2026'},
+            {'channel': 'Referral',      'stage': 'Decision',      'leads': 350,  'conversions': 140,  'conv_rate': 40.0, 'spend': 0,      'revenue': 560000, 'month': 'Q1 2026'},
+        ],
+    },
 }
 
 INDUSTRY_LABELS = {
@@ -165,7 +255,21 @@ INDUSTRY_LABELS = {
     'finance':    'Finance & Budgeting',
     'hr':         'Human Resources',
     'operations': 'Operations & Projects',
+    'ecommerce':  'E-commerce',
+    'saas':       'SaaS Metrics',
+    'marketing':  'Marketing Funnel',
     'other':      'Other / General',
+}
+
+TEMPLATE_META = {
+    'sales':      {'icon': 'fa-handshake',     'color': 'bg-blue-100 text-blue-600',   'desc': 'Deals, pipeline stages, and revenue forecasting.'},
+    'finance':    {'icon': 'fa-chart-line',    'color': 'bg-green-100 text-green-600', 'desc': 'Budget vs actuals, variance tracking by category.'},
+    'hr':         {'icon': 'fa-users',         'color': 'bg-purple-100 text-purple-600','desc': 'Employee directory, departments, and headcount.'},
+    'operations': {'icon': 'fa-tasks',         'color': 'bg-amber-100 text-amber-600', 'desc': 'Project tracker with status, owners, and deadlines.'},
+    'ecommerce':  {'icon': 'fa-shopping-cart', 'color': 'bg-pink-100 text-pink-600',   'desc': 'Orders, products, categories, and fulfilment status.'},
+    'saas':       {'icon': 'fa-rocket',        'color': 'bg-indigo-100 text-indigo-600','desc': 'MRR, churn, CAC, LTV, and monthly cohort growth.'},
+    'marketing':  {'icon': 'fa-funnel-dollar', 'color': 'bg-orange-100 text-orange-600','desc': 'Leads, conversions, and spend across every channel.'},
+    'other':      {'icon': 'fa-th-large',      'color': 'bg-gray-100 text-gray-600',   'desc': 'General-purpose metrics and KPI tracker.'},
 }
 
 

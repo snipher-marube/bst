@@ -161,6 +161,12 @@ if ('serviceWorker' in navigator) {
         {% endif %}
       </a>
 
+      <a href="{% url 'dashboard:template_gallery' %}"
+         class="nav-link {% if url_name == 'template_gallery' %}active{% endif %}">
+        <i class="fas fa-magic w-5 text-center"></i>
+        <span>Templates</span>
+      </a>
+
       <div class="pt-4 pb-1">
         <p class="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/40">Integrations</p>
       </div>
@@ -336,6 +342,7 @@ function dashboardShell() {
     'g a': () => { window.location.href = '/dashboard/activity/'; },
     'g b': () => { window.location.href = '/dashboard/billing/'; },
     'g i': () => { window.location.href = '/dashboard/integrations/'; },
+    'g m': () => { window.location.href = '/dashboard/templates/'; },
   };
 
   let pending = '';

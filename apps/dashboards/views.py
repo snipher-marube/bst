@@ -1231,6 +1231,68 @@ class ActivityLogView(LoginRequiredMixin, ListView):
         ).select_related('user').order_by('-timestamp')
 
 
+class TemplateGalleryView(LoginRequiredMixin, TemplateView):
+    """
+    Gallery of pre-built dashboard starter templates.
+
+    Shows all 8 templates with icon, description, and an "Apply" button.
+    Applying creates the DataTable + sample Records + auto-generated Dashboard
+    in the current workspace via OnboardingService.seed_workspace().
+
+    URL: ``/dashboard/templates/``
+    """
+    template_name = 'dashboard/template_gallery.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from apps.workspaces.onboarding import INDUSTRY_LABELS, TEMPLATE_META
+        templates = []
+        for key, label in INDUSTRY_LABELS.items():
+            meta = TEMPLATE_META.get(key, {})
+            templates.append({
+                'key':   key,
+                'label': label,
+                'icon':  meta.get('icon', 'fa-table'),
+                'color': meta.get('color', 'bg-gray-100 text-gray-600'),
+                'desc':  meta.get('desc', ''),
+            })
+        context['templates'] = templates
+        return context
+
+
+@login_required
+@require_POST
+def apply_template(request, template_key):
+    """
+    Seed the current workspace with a starter template and redirect to the
+    generated dashboard.
+    """
+    from apps.workspaces.onboarding import INDUSTRY_LABELS, OnboardingService
+
+    workspace = getattr(request.user, 'current_workspace', None)
+    if not workspace:
+        workspace_id = request.session.get('current_workspace_id')
+        if workspace_id:
+            try:
+                workspace = Workspace.objects.get(id=workspace_id, members=request.user)
+            except Workspace.DoesNotExist:
+                pass
+    if not workspace:
+        workspace = Workspace.objects.filter(members=request.user).first()
+
+    if not workspace:
+        messages.error(request, "No active workspace found.")
+        return redirect('dashboard:template_gallery')
+
+    if template_key not in INDUSTRY_LABELS:
+        messages.error(request, "Unknown template.")
+        return redirect('dashboard:template_gallery')
+
+    dashboard = OnboardingService.seed_workspace(workspace, template_key, request.user)
+    messages.success(request, f"Template applied! Your dashboard is ready.")
+    return redirect('dashboard:dashboard_detail', pk=dashboard.id)
+
+
 class BillingView(LoginRequiredMixin, TemplateView):
     """
     Billing and subscription management page for the active workspace.

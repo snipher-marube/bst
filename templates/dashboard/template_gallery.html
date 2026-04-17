@@ -1,0 +1,113 @@
+{% extends "dashboard/base_dashboard.html" %}
+{% block title %}Starter Templates{% endblock %}
+{% block page_heading %}Starter Templates{% endblock %}
+
+{% block main_content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+
+  <div class="mb-8">
+    <p class="text-gray-500 text-sm max-w-2xl">
+      Pick a template to instantly populate your workspace with a sample dataset and a pre-built dashboard.
+      You can apply as many templates as you like — each one creates a new table and dashboard.
+    </p>
+  </div>
+
+  {% if messages %}
+  {% for m in messages %}
+  <div class="mb-5 rounded-xl px-4 py-3 flex items-center gap-3
+    {% if 'success' in m.tags %}bg-green-50 border border-green-200 text-green-800
+    {% else %}bg-red-50 border border-red-200 text-red-800{% endif %}">
+    <i class="fas {% if 'success' in m.tags %}fa-check-circle{% else %}fa-exclamation-circle{% endif %}"></i>
+    <span class="text-sm">{{ m }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    {% for tmpl in templates %}
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden">
+
+      <!-- Icon header -->
+      <div class="px-5 pt-6 pb-4 flex items-start gap-3">
+        <div class="w-11 h-11 rounded-xl {{ tmpl.color }} flex items-center justify-center flex-shrink-0">
+          <i class="fas {{ tmpl.icon }} text-lg"></i>
+        </div>
+        <div class="min-w-0">
+          <h3 class="text-sm font-bold text-gray-900 leading-tight">{{ tmpl.label }}</h3>
+          <p class="text-xs text-gray-400 mt-1 leading-relaxed">{{ tmpl.desc }}</p>
+        </div>
+      </div>
+
+      <!-- Sample fields preview -->
+      <div class="px-5 pb-4 flex-1">
+        <div class="flex flex-wrap gap-1">
+          {% if tmpl.key == 'sales' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Customer</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Amount</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Stage</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Region</span>
+          {% elif tmpl.key == 'finance' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Category</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Budgeted</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Actual</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Variance</span>
+          {% elif tmpl.key == 'hr' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Name</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Department</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Role</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Salary</span>
+          {% elif tmpl.key == 'operations' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Project</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Owner</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Status</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Completion</span>
+          {% elif tmpl.key == 'ecommerce' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Product</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Category</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Revenue</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Status</span>
+          {% elif tmpl.key == 'saas' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">MRR</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Churn</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Signups</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">CAC</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">LTV</span>
+          {% elif tmpl.key == 'marketing' %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Channel</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Stage</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Leads</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Conv%</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Spend</span>
+          {% else %}
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Item</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Category</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Value</span>
+            <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">Status</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Apply button -->
+      <div class="px-5 pb-5">
+        <form method="post" action="{% url 'dashboard:template_apply' tmpl.key %}">
+          {% csrf_token %}
+          <button type="submit"
+            class="w-full py-2 rounded-xl text-white text-xs font-semibold transition hover:opacity-90 flex items-center justify-center gap-1.5"
+            style="background:var(--primary)">
+            <i class="fas fa-magic text-xs"></i> Use this template
+          </button>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-10 text-center">
+    <a href="{% url 'dashboard:home' %}" class="text-sm text-gray-400 hover:text-gray-600 transition">
+      <i class="fas fa-arrow-left mr-1"></i> Back to Dashboard
+    </a>
+  </div>
+
+</div>
+{% endblock %}

@@ -50,6 +50,10 @@ urlpatterns = [
     # Cohort & Funnel Analysis (Gap 15)
     path('tables/<uuid:table_id>/cohort-funnel/', views.CohortFunnelView.as_view(), name='cohort_funnel'),
 
+    # Dashboard template gallery
+    path('templates/', views.TemplateGalleryView.as_view(), name='template_gallery'),
+    path('templates/<str:template_key>/apply/', views.apply_template, name='template_apply'),
+
     # Settings and account
     path('settings/', views.WorkspaceSettingsView.as_view(), name='settings'),
     path('members/', views.TeamMembersView.as_view(), name='members'),
