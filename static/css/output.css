@@ -3512,14 +3512,39 @@
       position: absolute;
     }
   }
+  .focus\:fixed {
+    &:focus {
+      position: fixed;
+    }
+  }
+  .focus\:top-3 {
+    &:focus {
+      top: calc(var(--spacing) * 3);
+    }
+  }
   .focus\:top-4 {
     &:focus {
       top: calc(var(--spacing) * 4);
     }
   }
+  .focus\:left-3 {
+    &:focus {
+      left: calc(var(--spacing) * 3);
+    }
+  }
   .focus\:left-4 {
     &:focus {
       left: calc(var(--spacing) * 4);
+    }
+  }
+  .focus\:z-\[10000\] {
+    &:focus {
+      z-index: 10000;
+    }
+  }
+  .focus\:rounded-lg {
+    &:focus {
+      border-radius: var(--radius-lg);
     }
   }
   .focus\:border-\[\#03466e\] {
@@ -3542,9 +3567,47 @@
       border-color: transparent;
     }
   }
+  .focus\:bg-\[\#03466e\] {
+    &:focus {
+      background-color: #03466e;
+    }
+  }
+  .focus\:px-4 {
+    &:focus {
+      padding-inline: calc(var(--spacing) * 4);
+    }
+  }
+  .focus\:py-2 {
+    &:focus {
+      padding-block: calc(var(--spacing) * 2);
+    }
+  }
+  .focus\:text-sm {
+    &:focus {
+      font-size: var(--text-sm);
+      line-height: var(--tw-leading, var(--text-sm--line-height));
+    }
+  }
+  .focus\:font-semibold {
+    &:focus {
+      --tw-font-weight: var(--font-weight-semibold);
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+  .focus\:text-white {
+    &:focus {
+      color: var(--color-white);
+    }
+  }
   .focus\:underline {
     &:focus {
       text-decoration-line: underline;
+    }
+  }
+  .focus\:shadow-lg {
+    &:focus {
+      --tw-shadow: 0 10px 15px -3px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
+      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
     }
   }
   .focus\:ring-1 {
