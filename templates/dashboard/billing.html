@@ -63,9 +63,25 @@
   {% endif %}
 
   <!-- Plan cards -->
-  <div>
-    <h2 class="text-xl font-bold text-gray-900 mb-2">Choose a Plan</h2>
-    <p class="text-gray-500 text-sm mb-6">Pay securely via M-Pesa. All plans billed monthly in KES.</p>
+  <div x-data="{ yearly: false }">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div>
+        <h2 class="text-xl font-bold text-gray-900">Choose a Plan</h2>
+        <p class="text-gray-500 text-sm">Pay securely via M-Pesa in KES.</p>
+      </div>
+      <!-- Monthly / Annual toggle -->
+      <div class="flex items-center gap-3 bg-gray-100 rounded-xl p-1 w-fit">
+        <button @click="yearly = false"
+          :class="!yearly ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
+          class="px-4 py-1.5 rounded-lg text-sm font-semibold transition">Monthly</button>
+        <button @click="yearly = true"
+          :class="yearly ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
+          class="px-4 py-1.5 rounded-lg text-sm font-semibold transition flex items-center gap-1.5">
+          Annual
+          <span class="bg-green-100 text-green-700 text-xs font-bold px-1.5 py-0.5 rounded-full">Save 20%</span>
+        </button>
+      </div>
+    </div>
 
     {% if debug %}
     <div class="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-800">
@@ -111,9 +127,10 @@
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Starter</h3>
           <div class="flex items-end gap-1 mt-1">
-            <span class="text-3xl font-extrabold text-gray-900">KES 2,500</span>
-            <span class="text-gray-400 text-sm mb-1">/mo</span>
+            <span class="text-3xl font-extrabold text-gray-900" x-text="yearly ? 'KES 24,000' : 'KES 2,500'">KES 2,500</span>
+            <span class="text-gray-400 text-sm mb-1" x-text="yearly ? '/yr' : '/mo'">/mo</span>
           </div>
+          <p class="text-xs text-green-600 font-medium mt-1" x-show="yearly">Save KES 6,000/yr</p>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>20 tables</span></li>
@@ -128,7 +145,7 @@
         <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
         {% else %}
         <button type="button"
-          @click="openModal('starter', 'KES 2,500', '{{ workspace.id }}')"
+          @click="openModal('starter', yearly ? 'KES 24,000' : 'KES 2,500', '{{ workspace.id }}', yearly)"
           class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--primary)">
           <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
@@ -146,9 +163,10 @@
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Professional</h3>
           <div class="flex items-end gap-1 mt-1">
-            <span class="text-3xl font-extrabold text-gray-900">KES 6,500</span>
-            <span class="text-gray-400 text-sm mb-1">/mo</span>
+            <span class="text-3xl font-extrabold text-gray-900" x-text="yearly ? 'KES 62,400' : 'KES 6,500'">KES 6,500</span>
+            <span class="text-gray-400 text-sm mb-1" x-text="yearly ? '/yr' : '/mo'">/mo</span>
           </div>
+          <p class="text-xs text-green-600 font-medium mt-1" x-show="yearly">Save KES 15,600/yr</p>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>100 tables</span></li>
@@ -163,7 +181,7 @@
         <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
         {% else %}
         <button type="button"
-          @click="openModal('professional', 'KES 6,500', '{{ workspace.id }}')"
+          @click="openModal('professional', yearly ? 'KES 62,400' : 'KES 6,500', '{{ workspace.id }}', yearly)"
           class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--accent)">
           <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
@@ -180,9 +198,10 @@
         <div class="mb-4">
           <h3 class="text-lg font-bold text-gray-900">Enterprise</h3>
           <div class="flex items-end gap-1 mt-1">
-            <span class="text-3xl font-extrabold text-gray-900">KES 12,900</span>
-            <span class="text-gray-400 text-sm mb-1">/mo</span>
+            <span class="text-3xl font-extrabold text-gray-900" x-text="yearly ? 'KES 123,840' : 'KES 12,900'">KES 12,900</span>
+            <span class="text-gray-400 text-sm mb-1" x-text="yearly ? '/yr' : '/mo'">/mo</span>
           </div>
+          <p class="text-xs text-green-600 font-medium mt-1" x-show="yearly">Save KES 30,960/yr</p>
         </div>
         <ul class="space-y-2.5 text-sm text-gray-600 flex-1 mb-6">
           <li class="check-item"><i class="fas fa-check text-xs mt-0.5"></i><span>Unlimited tables</span></li>
@@ -198,7 +217,7 @@
         <div class="text-center py-2.5 rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold">Current</div>
         {% else %}
         <button type="button"
-          @click="openModal('enterprise', 'KES 12,900', '{{ workspace.id }}')"
+          @click="openModal('enterprise', yearly ? 'KES 123,840' : 'KES 12,900', '{{ workspace.id }}', yearly)"
           class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition hover:opacity-90 flex items-center justify-center gap-2"
           style="background:var(--primary)">
           <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/M-PESA_LOGO-01.svg" alt="M-Pesa" class="h-4 w-auto brightness-0 invert">
@@ -227,10 +246,11 @@
           <i class="fas {% if txn.status == 'completed' %}fa-check text-green-600{% elif txn.status == 'failed' %}fa-times text-red-600{% else %}fa-clock text-amber-600{% endif %} text-sm"></i>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold text-gray-900">
+          <p class="text-sm font-semibold text-gray-900 flex items-center gap-2">
             M-Pesa – {{ txn.plan.name|default:"Plan Upgrade" }}
+            {% if txn.is_yearly %}<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Annual</span>{% endif %}
             {% if txn.mpesa_receipt_number %}
-            <span class="ml-2 text-xs font-mono text-gray-400">{{ txn.mpesa_receipt_number }}</span>
+            <span class="text-xs font-mono text-gray-400">{{ txn.mpesa_receipt_number }}</span>
             {% endif %}
           </p>
           <p class="text-xs text-gray-500">{{ txn.phone_number }} · {{ txn.created_at|date:"M j, Y H:i" }}</p>
@@ -273,7 +293,7 @@
           </div>
           <div>
             <h3 class="text-lg font-bold text-gray-900">Pay with M-Pesa</h3>
-            <p class="text-sm text-gray-500" x-text="planLabel + ' plan · ' + planPrice + '/mo'"></p>
+            <p class="text-sm text-gray-500" x-text="planLabel + ' plan · ' + planPrice + (isYearly ? '/yr' : '/mo')"></p>
           </div>
         </div>
 
@@ -377,6 +397,7 @@ function mpesaPayment() {
     planLabel: '',
     planPrice: '',
     workspaceId: '',
+    isYearly: false,
     phone: '',
     loading: false,
     errorMsg: '',
@@ -386,11 +407,12 @@ function mpesaPayment() {
     pollTimer: null,
     pollCount: 0,
 
-    openModal(tier, price, wsId) {
+    openModal(tier, price, wsId, yearly = false) {
       this.planTier = tier;
       this.planLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
       this.planPrice = price;
       this.workspaceId = wsId;
+      this.isYearly = yearly;
       this.step = 'input';
       this.phone = '';
       this.errorMsg = '';
@@ -421,6 +443,7 @@ function mpesaPayment() {
             workspace_id: this.workspaceId,
             tier: this.planTier,
             phone: rawPhone,
+            is_yearly: this.isYearly,
           }),
         });
 

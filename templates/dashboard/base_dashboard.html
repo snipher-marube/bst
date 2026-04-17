@@ -303,4 +303,69 @@ function dashboardShell() {
   }
 }
 </script>
+
+<!-- ── Keyboard shortcuts ──────────────────────────────────────────────── -->
+<div id="kb-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"
+  style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:1rem;width:min(480px,90vw);max-height:80vh;overflow-y:auto;padding:1.5rem;box-shadow:0 25px 60px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <h2 style="font-size:1rem;font-weight:700;color:#111">Keyboard Shortcuts</h2>
+      <button onclick="document.getElementById('kb-modal').style.display='none'"
+        style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:1.25rem" aria-label="Close">&#x2715;</button>
+    </div>
+    <div style="display:grid;gap:.5rem">
+      {% include "dashboard/_kb_shortcuts.html" %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function isTyping() {
+    const t = document.activeElement?.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || document.activeElement?.isContentEditable;
+  }
+
+  const SHORTCUTS = {
+    '?': () => {
+      const m = document.getElementById('kb-modal');
+      m.style.display = m.style.display === 'none' ? 'flex' : 'none';
+    },
+    'g h': () => { window.location.href = '/dashboard/'; },
+    'g t': () => { window.location.href = '/dashboard/tables/'; },
+    'g a': () => { window.location.href = '/dashboard/activity/'; },
+    'g b': () => { window.location.href = '/dashboard/billing/'; },
+    'g i': () => { window.location.href = '/dashboard/integrations/'; },
+  };
+
+  let pending = '';
+  let pendingTimer = null;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const m = document.getElementById('kb-modal');
+      if (m.style.display !== 'none') { m.style.display = 'none'; return; }
+    }
+    if (isTyping()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    pending += (pending ? ' ' : '') + e.key;
+    clearTimeout(pendingTimer);
+
+    if (SHORTCUTS[pending]) {
+      e.preventDefault();
+      SHORTCUTS[pending]();
+      pending = '';
+      return;
+    }
+    // If no multi-key sequence can start with pending, reset after timeout
+    const hasPrefix = Object.keys(SHORTCUTS).some(k => k.startsWith(pending) && k !== pending);
+    if (!hasPrefix) {
+      pending = '';
+    } else {
+      pendingTimer = setTimeout(() => { pending = ''; }, 800);
+    }
+  });
+})();
+</script>
 {% endblock %}

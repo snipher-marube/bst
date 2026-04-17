@@ -453,6 +453,13 @@ MPESA_PLAN_PRICES: dict[str, int] = {
     'enterprise':   12900,
 }
 
+# Annual prices = monthly × 12 × 0.80 (20% discount), rounded to nearest 100 KES
+MPESA_PLAN_PRICES_YEARLY: dict[str, int] = {
+    'starter':      24000,   # 2500 × 12 × 0.80
+    'professional': 62400,   # 6500 × 12 × 0.80
+    'enterprise':   123840,  # 12900 × 12 × 0.80
+}
+
 
 # ===========================================================================
 # Shared post-payment helper
@@ -497,11 +504,12 @@ def _apply_plan_upgrade(txn: MpesaTransaction) -> None:
 
     sub, _ = Subscription.objects.get_or_create(
         workspace=txn.workspace,
-        defaults={'plan': txn.plan, 'status': 'active'},
+        defaults={'plan': txn.plan, 'status': 'active', 'is_yearly': txn.is_yearly},
     )
-    sub.plan   = txn.plan
-    sub.status = 'active'
-    sub.save(update_fields=['plan', 'status'])
+    sub.plan      = txn.plan
+    sub.status    = 'active'
+    sub.is_yearly = txn.is_yearly
+    sub.save(update_fields=['plan', 'status', 'is_yearly'])
     sub.apply_plan_limits()
 
     logger.info(
@@ -606,6 +614,7 @@ def mpesa_stk_push(request):
     workspace_id = body.get('workspace_id', '')
     tier         = body.get('tier', '').lower().strip()
     raw_phone    = body.get('phone', '').strip()
+    is_yearly    = bool(body.get('is_yearly', False))
 
     if tier not in MPESA_PLAN_PRICES:
         return JsonResponse({'error': 'Invalid plan tier.'}, status=400)
@@ -634,7 +643,8 @@ def mpesa_stk_push(request):
     ).update(status='cancelled', result_desc='Superseded by a new payment request.')
 
     # KES 1 in sandbox so we don't burn real money during testing.
-    raw_amount = MPESA_PLAN_PRICES[tier]
+    price_map  = MPESA_PLAN_PRICES_YEARLY if is_yearly else MPESA_PLAN_PRICES
+    raw_amount = price_map[tier]
     amount     = 1 if getattr(settings, 'MPESA_SANDBOX', True) else int(raw_amount)
 
     plan, _ = Plan.objects.get_or_create(
@@ -648,8 +658,9 @@ def mpesa_stk_push(request):
         workspace=workspace,
         user=request.user,
         plan=plan,
-        phone_number=normalised_phone,   # always normalised form
+        phone_number=normalised_phone,
         amount=amount,
+        is_yearly=is_yearly,
         status='pending',
     )
 
