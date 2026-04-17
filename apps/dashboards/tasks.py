@@ -220,3 +220,17 @@ def _fire_alert(alert, current_value):
             },
         )
     logger.info('check_data_alerts: fired alert %s (value=%.4f)', alert.id, current_value)
+
+    # Deliver to Slack / Teams if configured
+    try:
+        from apps.dashboards.chat_notifications import send_chat_alert
+        send_chat_alert(alert.workspace, f"Data Alert: {alert.name}", message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('check_data_alerts: chat notification failed for alert %s: %s', alert.id, exc)
+
+    # Deliver via WhatsApp to opted-in workspace members
+    try:
+        from apps.notifications.whatsapp import send_whatsapp_alert_to_workspace
+        send_whatsapp_alert_to_workspace(alert.workspace, f"Data Alert: {alert.name}", message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('check_data_alerts: WhatsApp notification failed for alert %s: %s', alert.id, exc)

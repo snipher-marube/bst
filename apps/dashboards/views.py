@@ -1,5 +1,7 @@
 from django.views.generic import TemplateView, ListView, DetailView, CreateView, UpdateView, DeleteView
+from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.contrib import messages
@@ -599,15 +601,97 @@ class IntegrationsView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        workspace = self.request.user.current_workspace
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
         if workspace:
+            from apps.dashboards.models import ChatIntegration
             context['data_sources'] = DataSource.objects.filter(
                 workspace=workspace, is_active=True
             ).order_by('connector_type', 'name')
+            context['chat_integrations'] = ChatIntegration.objects.filter(workspace=workspace)
         else:
             context['data_sources'] = DataSource.objects.none()
+            context['chat_integrations'] = []
         context['workspace_id'] = str(workspace.id) if workspace else ''
         return context
+
+
+class ChatIntegrationSaveView(LoginRequiredMixin, View):
+    """Create or update a Slack/Teams webhook integration for the current workspace."""
+
+    def post(self, request, *args, **kwargs):
+        from apps.dashboards.models import ChatIntegration
+        workspace = getattr(request.user, 'current_workspace', None) or \
+            Workspace.objects.filter(members=request.user).first()
+        if not workspace:
+            messages.error(request, "No active workspace.")
+            return redirect('dashboard:integrations')
+
+        provider     = request.POST.get('provider', '').strip()
+        name         = request.POST.get('name', '').strip()
+        webhook_url  = request.POST.get('webhook_url', '').strip()
+
+        if provider not in (ChatIntegration.PROVIDER_SLACK, ChatIntegration.PROVIDER_TEAMS):
+            messages.error(request, "Invalid provider.")
+            return redirect('dashboard:integrations')
+        if not webhook_url:
+            messages.error(request, "Webhook URL is required.")
+            return redirect('dashboard:integrations')
+        if not name:
+            name = "Slack alerts" if provider == ChatIntegration.PROVIDER_SLACK else "Teams alerts"
+
+        ci, _ = ChatIntegration.objects.get_or_create(
+            workspace=workspace,
+            provider=provider,
+            defaults={'name': name},
+        )
+        ci.name = name
+        ci.is_enabled = True
+        ci.set_webhook_url(webhook_url)
+        ci.save()
+        messages.success(request, f"{ci.get_provider_display()} integration saved.")
+        return redirect('dashboard:integrations')
+
+
+class ChatIntegrationDeleteView(LoginRequiredMixin, View):
+    """Delete a ChatIntegration owned by the current workspace."""
+
+    def post(self, request, pk, *args, **kwargs):
+        from apps.dashboards.models import ChatIntegration
+        workspace = getattr(request.user, 'current_workspace', None) or \
+            Workspace.objects.filter(members=request.user).first()
+        ci = get_object_or_404(ChatIntegration, pk=pk, workspace=workspace)
+        ci.delete()
+        messages.success(request, "Integration removed.")
+        return redirect('dashboard:integrations')
+
+
+@login_required
+@require_POST
+def chat_integration_test(request):
+    """Send a test message to a webhook URL without saving it."""
+    from apps.dashboards.chat_notifications import test_webhook
+    try:
+        body   = json.loads(request.body)
+        url    = body.get('webhook_url', '').strip()
+        provider = body.get('provider', 'slack').strip()
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+
+    if not url:
+        return JsonResponse({'error': 'webhook_url is required.'}, status=400)
+
+    ok = test_webhook(url, provider)
+    if ok:
+        return JsonResponse({'success': True, 'message': 'Test message sent successfully.'})
+    return JsonResponse({'success': False, 'message': 'Webhook did not respond successfully. Check the URL and try again.'}, status=400)
 
 
 class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
@@ -1259,6 +1343,8 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             prefs.email_imports  = 'email_imports'  in request.POST
             prefs.email_insights = 'email_insights' in request.POST
             prefs.email_system   = 'email_system'   in request.POST
+            prefs.whatsapp_number = request.POST.get('whatsapp_number', '').strip()
+            prefs.whatsapp_alerts = 'whatsapp_alerts' in request.POST
             prefs.save()
             messages.success(request, 'Notification preferences saved.')
             return redirect('dashboard:profile')
