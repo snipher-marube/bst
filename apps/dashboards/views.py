@@ -214,13 +214,22 @@ class TableDetailView(LoginRequiredMixin, DetailView):
     model = DataTable
     template_name = 'dashboard/table_detail.html'
     context_object_name = 'table'
-    
+
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
-        return DataTable.objects.filter(
-            workspace=workspace,
-            is_active=True
-        )
+        workspace = getattr(self.request.user, 'current_workspace', None)
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
+        if not workspace:
+            return DataTable.objects.none()
+        return DataTable.objects.filter(workspace=workspace, is_active=True)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1199,20 +1208,19 @@ class TeamMembersView(LoginRequiredMixin, ListView):
 
 
 class ActivityLogView(LoginRequiredMixin, ListView):
-    """Paginated view of the workspace's ``AuditLog`` entries.
+    """Paginated activity feed combining Notifications + AuditLog entries.
 
-    Shows the 50 most recent entries per page, ordered newest-first.
-    Each entry records who performed an action (create, update, delete,
-    export, invite, etc.), on which object, and with what changes.
+    Notifications (the source of the sidebar badge) are shown first and
+    marked as read on page load.  AuditLog entries (widget/export ops) are
+    also included so the full audit trail is visible in one place.
 
     URL: ``/dashboard/activity/``
     """
-    model = AuditLog
     template_name = 'dashboard/activity.html'
     context_object_name = 'logs'
     paginate_by = 50
-    
-    def get_queryset(self):
+
+    def _resolve_workspace(self):
         workspace = getattr(self.request.user, 'current_workspace', None)
         if not workspace:
             workspace_id = self.request.session.get('current_workspace_id')
@@ -1224,11 +1232,44 @@ class ActivityLogView(LoginRequiredMixin, ListView):
                     pass
         if not workspace:
             workspace = Workspace.objects.filter(members=self.request.user).first()
+        return workspace
+
+    def get_queryset(self):
+        from apps.notifications.models import Notification
+        workspace = self._resolve_workspace()
         if not workspace:
-            return AuditLog.objects.none()
-        return AuditLog.objects.filter(
-            workspace=workspace
-        ).select_related('user').order_by('-timestamp')
+            return Notification.objects.none()
+
+        # Notifications for this user in this workspace (or workspace-agnostic)
+        return Notification.objects.filter(
+            user=self.request.user,
+        ).filter(
+            Q(workspace=workspace) | Q(workspace__isnull=True)
+        ).order_by('-created_at')
+
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        # Mark all unread notifications as read now that user has visited the page
+        from apps.notifications.models import Notification
+        workspace = self._resolve_workspace()
+        if workspace:
+            Notification.objects.filter(
+                user=request.user,
+                is_read=False,
+            ).filter(
+                Q(workspace=workspace) | Q(workspace__isnull=True)
+            ).update(is_read=True)
+        return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Also pass recent AuditLog entries for the workspace (widget/export ops)
+        workspace = self._resolve_workspace()
+        if workspace:
+            context['audit_logs'] = AuditLog.objects.filter(
+                workspace=workspace
+            ).select_related('user').order_by('-timestamp')[:20]
+        return context
 
 
 class DashboardCommentsView(LoginRequiredMixin, View):
@@ -1606,12 +1647,19 @@ class CohortFunnelView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         table_id = self.kwargs['table_id']
-        table = get_object_or_404(DataTable, pk=table_id, is_active=True)
 
         workspace = getattr(self.request.user, 'current_workspace', None)
-        if workspace and table.workspace_id != workspace.id:
-            from django.core.exceptions import PermissionDenied
-            raise PermissionDenied()
+        if not workspace:
+            workspace_id = self.request.session.get('current_workspace_id')
+            if workspace_id:
+                try:
+                    workspace = Workspace.objects.get(id=workspace_id, members=self.request.user)
+                    self.request.user.current_workspace = workspace
+                except Workspace.DoesNotExist:
+                    pass
+        if not workspace:
+            workspace = Workspace.objects.filter(members=self.request.user).first()
 
+        table = get_object_or_404(DataTable, pk=table_id, workspace=workspace, is_active=True)
         context['table'] = table
         return context

@@ -115,10 +115,7 @@
     </nav>
   </div>
 
-  {# ══════════════════════════════════════════════════════════
-     TAB 1 — RECORDS
-     ══════════════════════════════════════════════════════════ #}
-  <div x-show="activeTab === 'records'" class="p-6">
+  <div x-show="activeTab === 'records'" x-cloak class="p-6">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
 
       {# Card header #}
@@ -224,9 +221,6 @@
     </div>
   </div>
 
-  {# ══════════════════════════════════════════════════════════
-     TAB 2 — CALCULATED FIELDS
-     ══════════════════════════════════════════════════════════ #}
   <div x-show="activeTab === 'calcfields'" x-cloak class="p-6 space-y-4">
 
     {# How-it-works callout #}
@@ -355,9 +349,6 @@
   </div>{# /calcfields tab #}
 
 
-  {# ══════════════════════════════════════════════════════════
-     CREATE / EDIT MODAL
-     ══════════════════════════════════════════════════════════ #}
   <div x-show="cf.modal.open" x-cloak
        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
        @keydown.escape.window="cf.modal.open = false">
@@ -499,7 +490,7 @@
 </div>{# /x-data #}
 {% endblock %}
 
-{% block extra_js %}
+{% block extra_scripts %}
 <script>
 function tableManager() {
   return {
