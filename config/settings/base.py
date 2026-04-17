@@ -35,7 +35,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'channels',
     'daphne',
+    'cloudinary_storage',
     'django.contrib.staticfiles',
+    'cloudinary',
     'django.contrib.sites',
     'django.contrib.humanize',
 

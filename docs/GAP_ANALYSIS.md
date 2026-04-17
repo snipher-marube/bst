@@ -354,12 +354,19 @@ tasks are properly registered. No action required.
 
 ---
 
-### 26. CDN for Static Files
+### 26. ~~CDN for Static Files~~ ✅ CLOSED 2026-04-17
 
-**Problem:** Static files served via WhiteNoise through Nginx. Globally distributed teams see high latency.
-**Fix:** Push `collectstatic` output to S3 or Cloudflare R2. Set `STATICFILES_STORAGE` to S3Boto3Storage. Configure cache headers.
-**Effort:** Low (1 day) | **Impact:** Low — performance at scale
-**Status:** ⏳ OPEN
+**Fix applied:**
+- Added `cloudinary>=1.36.0` and `django-cloudinary-storage>=0.3.0` to `requirements.txt`.
+- `cloudinary_storage` registered in `INSTALLED_APPS` (before `django.contrib.staticfiles`), `cloudinary` registered after.
+- Production settings (`config/settings/production.py`) now set:
+  - `STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticHashedCloudinaryStorage'`
+  - `DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'`
+  - `STATIC_URL` / `MEDIA_URL` point to `res.cloudinary.com/<cloud>/raw/upload/` CDN.
+  - `CLOUDINARY_STORAGE` dict reads `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` from env.
+- `.env` and `.env.example` updated with the three Cloudinary variables.
+- Development still uses `STATICFILES_DIRS` + WhiteNoise middleware (no change).
+- Deploy step: `python manage.py collectstatic --noinput` pushes all static files to Cloudinary automatically.
 
 ---
 
@@ -387,19 +394,18 @@ tasks are properly registered. No action required.
 | Data Pipeline | 9/10 | CSV, DB connectors, Google Sheets, delta sync | — |
 | Analytics | 9/10 | 9 chart types, AI insights, cohort/funnel, alerts | — |
 | Billing | 8/10 | M-Pesa full, annual billing, dunning | Stripe not yet live |
-| DevOps | 8/10 | Docker, Prometheus, Sentry, backups | CDN for static files |
+| DevOps | 9/10 | Docker, Prometheus, Sentry, backups, Cloudinary CDN | — |
 | Multi-tenancy | 9/10 | Strong isolation, RBAC, limits, SSO/SAML | — |
 | Notifications | 9/10 | Email, WhatsApp, Slack, Teams | — |
 
-**Overall: 9.0 / 10**
+**Overall: 9.2 / 10**
 
-### Remaining open gaps (3)
+### Remaining open gaps (2)
 
 | # | Gap | Priority | Effort |
 |---|-----|----------|--------|
 | 20 | Accessibility audit WCAG 2.1 AA | P1 | 3 days |
 | 25 | In-dashboard collaboration (comments) | P2 | 3 days |
-| 26 | CDN for static files | P2 | 1 day |
 
 ---
 
