@@ -33,6 +33,8 @@ urlpatterns = [
     path('dashboards/<uuid:pk>/', views.DashboardDetailView.as_view(), name='dashboard_detail'),
     path('dashboards/<uuid:pk>/edit/', views.DashboardEditView.as_view(), name='dashboard_edit'),
     path('dashboards/<uuid:pk>/delete/', views.DashboardDeleteView.as_view(), name='dashboard_delete'),
+    path('dashboards/<uuid:pk>/comments/', views.DashboardCommentsView.as_view(), name='dashboard_comments'),
+    path('dashboards/<uuid:pk>/comments/<uuid:comment_id>/delete/', views.delete_dashboard_comment, name='dashboard_comment_delete'),
     
     # SSO / SAML
     path('sso/', views.SSOSettingsView.as_view(), name='sso_settings'),

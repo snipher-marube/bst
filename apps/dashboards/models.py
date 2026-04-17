@@ -1147,3 +1147,29 @@ class ChatIntegration(models.Model):
     def get_webhook_url(self) -> str:
         from apps.dashboards.webhook_crypto import decrypt_secret
         return decrypt_secret(self.webhook_url_enc)
+
+
+class DashboardComment(models.Model):
+    """
+    Threaded comment on a dashboard, optionally scoped to a specific widget.
+
+    Supports @mention detection in ``body`` — the save signal (or the view)
+    is responsible for parsing mentions and creating Notification records.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dashboard  = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name='comments')
+    widget     = models.ForeignKey(Widget, on_delete=models.CASCADE, null=True, blank=True, related_name='comments')
+    user       = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='dashboard_comments')
+    body       = models.TextField(max_length=2000)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['dashboard', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} on {self.dashboard_id}: {self.body[:60]}"

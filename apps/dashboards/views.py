@@ -1231,6 +1231,129 @@ class ActivityLogView(LoginRequiredMixin, ListView):
         ).select_related('user').order_by('-timestamp')
 
 
+class DashboardCommentsView(LoginRequiredMixin, View):
+    """
+    GET  — return JSON list of comments for a dashboard.
+    POST — create a new comment; parse @mentions and notify.
+
+    URL: ``/dashboard/dashboards/<uuid>/comments/``
+    """
+
+    def _get_dashboard(self, request, pk):
+        workspace = getattr(request.user, 'current_workspace', None)
+        if not workspace:
+            wid = request.session.get('current_workspace_id')
+            if wid:
+                try:
+                    workspace = Workspace.objects.get(id=wid, members=request.user)
+                except Workspace.DoesNotExist:
+                    pass
+        return get_object_or_404(Dashboard, pk=pk, workspace=workspace, is_active=True)
+
+    def get(self, request, pk):
+        from apps.dashboards.models import DashboardComment
+        dashboard = self._get_dashboard(request, pk)
+        qs = DashboardComment.objects.filter(
+            dashboard=dashboard, is_deleted=False
+        ).select_related('user').order_by('created_at')
+        data = [
+            {
+                'id':         str(c.id),
+                'user_name':  c.user.get_full_name() or c.user.email if c.user else 'Unknown',
+                'user_email': c.user.email if c.user else '',
+                'body':       c.body,
+                'widget_id':  str(c.widget_id) if c.widget_id else None,
+                'created_at': c.created_at.isoformat(),
+                'is_mine':    c.user_id == request.user.id,
+            }
+            for c in qs
+        ]
+        return JsonResponse({'comments': data})
+
+    def post(self, request, pk):
+        from apps.dashboards.models import DashboardComment
+        dashboard = self._get_dashboard(request, pk)
+        try:
+            body = json.loads(request.body).get('body', '').strip()
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+        if not body:
+            return JsonResponse({'error': 'Comment body is required.'}, status=400)
+        if len(body) > 2000:
+            return JsonResponse({'error': 'Comment too long (max 2000 chars).'}, status=400)
+
+        comment = DashboardComment.objects.create(
+            dashboard=dashboard,
+            user=request.user,
+            body=body,
+        )
+
+        # Parse @mentions — match @word or @email patterns
+        import re
+        from apps.notifications.models import Notification
+        from apps.workspaces.models import WorkspaceMembership
+        from django.contrib.auth import get_user_model
+        AuthUser = get_user_model()
+
+        mentions = re.findall(r'@([\w.+-]+)', body)
+        if mentions:
+            members = WorkspaceMembership.objects.filter(
+                workspace=dashboard.workspace
+            ).select_related('user')
+            member_map = {}
+            for m in members:
+                member_map[m.user.email.split('@')[0].lower()] = m.user
+                member_map[m.user.email.lower()] = m.user
+                if m.user.get_full_name():
+                    member_map[m.user.get_full_name().replace(' ', '').lower()] = m.user
+
+            notified = set()
+            for handle in mentions:
+                target = member_map.get(handle.lower())
+                if target and target.id != request.user.id and target.id not in notified:
+                    notified.add(target.id)
+                    Notification.notify(
+                        user=target,
+                        title=f"{request.user.get_full_name() or request.user.email} mentioned you",
+                        message=f'In "{dashboard.name}": {body[:200]}',
+                        notif_type='info',
+                        workspace=dashboard.workspace,
+                        action_url=f"/dashboard/dashboards/{dashboard.id}/",
+                    )
+
+        return JsonResponse({
+            'id':         str(comment.id),
+            'user_name':  request.user.get_full_name() or request.user.email,
+            'user_email': request.user.email,
+            'body':       comment.body,
+            'widget_id':  None,
+            'created_at': comment.created_at.isoformat(),
+            'is_mine':    True,
+        }, status=201)
+
+
+@login_required
+@require_POST
+def delete_dashboard_comment(request, pk, comment_id):
+    """Soft-delete a comment owned by the requesting user."""
+    from apps.dashboards.models import DashboardComment
+    workspace = getattr(request.user, 'current_workspace', None)
+    if not workspace:
+        wid = request.session.get('current_workspace_id')
+        if wid:
+            try:
+                workspace = Workspace.objects.get(id=wid, members=request.user)
+            except Workspace.DoesNotExist:
+                pass
+    get_object_or_404(Dashboard, pk=pk, workspace=workspace, is_active=True)
+    comment = get_object_or_404(
+        DashboardComment, pk=comment_id, dashboard_id=pk, user=request.user
+    )
+    comment.is_deleted = True
+    comment.save(update_fields=['is_deleted'])
+    return JsonResponse({'deleted': True})
+
+
 class TemplateGalleryView(LoginRequiredMixin, TemplateView):
     """
     Gallery of pre-built dashboard starter templates.

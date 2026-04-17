@@ -363,6 +363,12 @@
   .-top-0\.5 {
     top: calc(var(--spacing) * -0.5);
   }
+  .-top-1 {
+    top: calc(var(--spacing) * -1);
+  }
+  .-top-1\.5 {
+    top: calc(var(--spacing) * -1.5);
+  }
   .-top-3 {
     top: calc(var(--spacing) * -3);
   }
@@ -404,6 +410,12 @@
   }
   .-right-0\.5 {
     right: calc(var(--spacing) * -0.5);
+  }
+  .-right-1 {
+    right: calc(var(--spacing) * -1);
+  }
+  .-right-1\.5 {
+    right: calc(var(--spacing) * -1.5);
   }
   .-right-8 {
     right: calc(var(--spacing) * -8);
@@ -482,6 +494,12 @@
   }
   .z-50 {
     z-index: 50;
+  }
+  .z-\[899\] {
+    z-index: 899;
+  }
+  .z-\[900\] {
+    z-index: 900;
   }
   .z-\[9999\] {
     z-index: 9999;
@@ -909,6 +927,9 @@
   .w-64 {
     width: calc(var(--spacing) * 64);
   }
+  .w-80 {
+    width: calc(var(--spacing) * 80);
+  }
   .w-auto {
     width: auto;
   }
@@ -1119,6 +1140,9 @@
   }
   .flex-wrap {
     flex-wrap: wrap;
+  }
+  .items-baseline {
+    align-items: baseline;
   }
   .items-center {
     align-items: center;
@@ -1416,6 +1440,10 @@
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 2px;
   }
+  .border-l {
+    border-left-style: var(--tw-border-style);
+    border-left-width: 1px;
+  }
   .border-l-4 {
     border-left-style: var(--tw-border-style);
     border-left-width: 4px;
@@ -1609,6 +1637,12 @@
   }
   .bg-black {
     background-color: var(--color-black);
+  }
+  .bg-black\/20 {
+    background-color: color-mix(in srgb, #000 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-black) 20%, transparent);
+    }
   }
   .bg-black\/40 {
     background-color: color-mix(in srgb, #000 40%, transparent);
@@ -2504,6 +2538,9 @@
   }
   .opacity-30 {
     opacity: 30%;
+  }
+  .opacity-40 {
+    opacity: 40%;
   }
   .opacity-50 {
     opacity: 50%;
@@ -3542,6 +3579,11 @@
       --tw-ring-color: #f68712;
     }
   }
+  .focus\:ring-\[\#f68712\]\/20 {
+    &:focus {
+      --tw-ring-color: color-mix(in oklab, #f68712 20%, transparent);
+    }
+  }
   .focus\:ring-\[\#f68712\]\/30 {
     &:focus {
       --tw-ring-color: color-mix(in oklab, #f68712 30%, transparent);
@@ -3630,6 +3672,11 @@
   .sm\:flex {
     @media (width >= 40rem) {
       display: flex;
+    }
+  }
+  .sm\:hidden {
+    @media (width >= 40rem) {
+      display: none;
     }
   }
   .sm\:inline {
