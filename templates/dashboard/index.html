@@ -6,9 +6,13 @@
 
 {% block topbar_actions %}
 {% if workspace %}
-<a href="{% url 'dashboard:table_create' %}"
+<a href="{% url 'dashboard:table_create_import' %}"
    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
    style="background:#f68712">
+  <i class="fas fa-upload text-xs"></i> Import Data
+</a>
+<a href="{% url 'dashboard:table_create' %}"
+   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition ml-2">
   <i class="fas fa-plus text-xs"></i> New Table
 </a>
 {% endif %}
@@ -37,11 +41,28 @@
 
   {% else %}
 
-  {# ── Get Started checklist (hidden once onboarding is complete) ────── #}
+  {# ── Greeting bar ───────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">
+        Good {% now "G" as hour %}{% if hour < 12 %}morning{% elif hour < 17 %}afternoon{% else %}evening{% endif %},
+        {{ request.user.first_name|default:request.user.email|truncatechars:20 }} 👋
+      </h1>
+      <p class="text-sm text-gray-400 mt-0.5">{{ workspace.name }} &middot; {% now "l, j N Y" %}</p>
+    </div>
+    {% if not workspace.onboarding_completed %}
+    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+      <i class="fas fa-rocket text-[10px]"></i>
+      {% if stats.tables > 0 and stats.records > 0 and stats.dashboards > 0 %}3{% elif stats.tables > 0 and stats.records > 0 %}2{% elif stats.tables > 0 %}1{% else %}0{% endif %}/4 setup steps done
+    </span>
+    {% endif %}
+  </div>
+
+  {# ── Onboarding checklist ───────────────────────────────────────────── #}
   {% if not workspace.onboarding_completed %}
   <div class="bg-white rounded-2xl border border-[#03466e]/20 shadow-sm overflow-hidden"
        x-data="{ open: true }">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50 cursor-pointer"
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50 cursor-pointer select-none"
          @click="open = !open">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-[#f68712]/10 flex items-center justify-center">
@@ -49,124 +70,104 @@
         </div>
         <div>
           <p class="text-sm font-semibold text-gray-800">Get started with AnalyticsMeta</p>
-          <p class="text-xs text-gray-400">
-            {% with done=stats.tables|add:0 %}
-              {% if stats.tables > 0 and stats.records > 0 %}Complete the steps below to unlock the full platform{% else %}4 quick steps to get value from your data{% endif %}
-            {% endwith %}
-          </p>
+          <p class="text-xs text-gray-400">4 quick steps to get value from your data</p>
         </div>
       </div>
       <div class="flex items-center gap-3">
-        {# progress pill #}
-        {% with total=4 %}
-        {% with done=0 %}
-        {% if stats.tables > 0 %}{% with done=1 %}{% endwith %}{% endif %}
-        <span class="text-xs font-semibold px-2.5 py-1 rounded-full
-          {% if stats.tables > 0 and stats.records > 0 %}bg-green-100 text-green-700{% else %}bg-[#03466e]/10 text-[#03466e]{% endif %}">
-          {% if stats.tables > 0 and stats.records > 0 and stats.dashboards > 0 %}3{% elif stats.tables > 0 and stats.records > 0 %}2{% elif stats.tables > 0 %}1{% else %}0{% endif %}/4 done
-        </span>
-        {% endwith %}{% endwith %}
+        <div class="flex gap-1">
+          {% for step in "1234" %}
+          <div class="w-2 h-2 rounded-full
+            {% if forloop.counter == 1 %}bg-green-400
+            {% elif forloop.counter == 2 and stats.records > 0 %}bg-green-400
+            {% elif forloop.counter == 3 and stats.dashboards > 0 %}bg-green-400
+            {% elif forloop.counter == 4 and stats.members > 1 %}bg-green-400
+            {% else %}bg-gray-200{% endif %}"></div>
+          {% endfor %}
+        </div>
         <i class="fas text-gray-400 text-sm transition-transform duration-200"
            :class="open ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
       </div>
     </div>
-
     <div x-show="open" x-collapse>
-      <div class="divide-y divide-gray-50 px-5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-50">
 
-        {# Step 1: Sample data (always done if we got here via wizard) #}
-        <div class="flex items-start gap-4 py-4">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-green-100">
+        <div class="flex items-start gap-3 p-5">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-green-100 mt-0.5">
             <i class="fas fa-check text-green-600 text-xs"></i>
           </div>
-          <div class="flex-1">
-            <p class="text-sm font-semibold text-gray-700 line-through">Create your workspace</p>
-            <p class="text-xs text-gray-400">Your workspace "{{ workspace.name }}" is set up and ready.</p>
+          <div>
+            <p class="text-sm font-semibold text-gray-500 line-through">Create workspace</p>
+            <p class="text-xs text-gray-400 mt-0.5">"{{ workspace.name }}" is ready.</p>
           </div>
         </div>
 
-        {# Step 2: Import or create data #}
-        <div class="flex items-start gap-4 py-4">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+        <div class="flex items-start gap-3 p-5">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
             {% if stats.records > 0 %}bg-green-100{% else %}bg-gray-100{% endif %}">
-            <i class="fas {% if stats.records > 0 %}fa-check text-green-600{% else %}fa-upload text-gray-400{% endif %} text-xs"></i>
+            <i class="fas {% if stats.records > 0 %}fa-check text-green-600{% else %}fa-upload text-gray-300{% endif %} text-xs"></i>
           </div>
-          <div class="flex-1">
-            <p class="text-sm font-semibold {% if stats.records > 0 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
-              Import or add your data
+          <div>
+            <p class="text-sm font-semibold {% if stats.records > 0 %}text-gray-500 line-through{% else %}text-gray-800{% endif %}">Import your data</p>
+            <p class="text-xs text-gray-400 mt-0.5">
+              {% if stats.records > 0 %}{{ stats.records|intcomma }} record{{ stats.records|pluralize }} loaded.
+              {% else %}Upload CSV/Excel to get started.{% endif %}
             </p>
-            <p class="text-xs text-gray-400 mb-2">
-              {% if stats.records > 0 %}{{ stats.records }} record{{ stats.records|pluralize }} loaded.{% else %}Upload a CSV/Excel file or add records manually.{% endif %}
-            </p>
-            {% if stats.records == 0 and stats.tables > 0 %}
-            <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+            {% if stats.records == 0 %}
+            <a href="{% url 'dashboard:table_create_import' %}"
+               class="inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold text-white"
                style="background:#03466e">
-              <i class="fas fa-upload text-xs"></i> Import CSV
-            </a>
-            {% elif stats.records == 0 %}
-            <a href="{% url 'dashboard:table_create' %}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-               style="background:#03466e">
-              <i class="fas fa-plus text-xs"></i> Create Table
+              <i class="fas fa-upload text-[10px]"></i> Import
             </a>
             {% endif %}
           </div>
         </div>
 
-        {# Step 3: View a dashboard #}
-        <div class="flex items-start gap-4 py-4">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+        <div class="flex items-start gap-3 p-5">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
             {% if stats.dashboards > 0 %}bg-green-100{% else %}bg-gray-100{% endif %}">
-            <i class="fas {% if stats.dashboards > 0 %}fa-check text-green-600{% else %}fa-chart-pie text-gray-400{% endif %} text-xs"></i>
+            <i class="fas {% if stats.dashboards > 0 %}fa-check text-green-600{% else %}fa-chart-pie text-gray-300{% endif %} text-xs"></i>
           </div>
-          <div class="flex-1">
-            <p class="text-sm font-semibold {% if stats.dashboards > 0 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
-              Explore your dashboard
-            </p>
-            <p class="text-xs text-gray-400 mb-2">
-              {% if stats.dashboards > 0 %}You have {{ stats.dashboards }} dashboard{{ stats.dashboards|pluralize }} ready.{% else %}Dashboards are auto-generated when you create a table.{% endif %}
+          <div>
+            <p class="text-sm font-semibold {% if stats.dashboards > 0 %}text-gray-500 line-through{% else %}text-gray-800{% endif %}">Explore dashboard</p>
+            <p class="text-xs text-gray-400 mt-0.5">
+              {% if stats.dashboards > 0 %}{{ stats.dashboards }} dashboard{{ stats.dashboards|pluralize }} ready.
+              {% else %}Auto-generated when you import data.{% endif %}
             </p>
             {% if stats.dashboards > 0 and recent_dashboards %}
             <a href="{% url 'dashboard:dashboard_detail' pk=recent_dashboards.0.id %}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+               class="inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold text-white"
                style="background:#f68712">
-              <i class="fas fa-eye text-xs"></i> View Dashboard
+              <i class="fas fa-eye text-[10px]"></i> View
             </a>
             {% endif %}
           </div>
         </div>
 
-        {# Step 4: Invite a teammate #}
-        <div class="flex items-start gap-4 py-4">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+        <div class="flex items-start gap-3 p-5">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
             {% if stats.members > 1 %}bg-green-100{% else %}bg-gray-100{% endif %}">
-            <i class="fas {% if stats.members > 1 %}fa-check text-green-600{% else %}fa-user-plus text-gray-400{% endif %} text-xs"></i>
+            <i class="fas {% if stats.members > 1 %}fa-check text-green-600{% else %}fa-user-plus text-gray-300{% endif %} text-xs"></i>
           </div>
-          <div class="flex-1">
-            <p class="text-sm font-semibold {% if stats.members > 1 %}text-gray-700 line-through{% else %}text-gray-900{% endif %}">
-              Invite a teammate
-            </p>
-            <p class="text-xs text-gray-400 mb-2">
-              {% if stats.members > 1 %}{{ stats.members }} members collaborating.{% else %}Share your workspace — collaboration unlocks more insights.{% endif %}
+          <div>
+            <p class="text-sm font-semibold {% if stats.members > 1 %}text-gray-500 line-through{% else %}text-gray-800{% endif %}">Invite a teammate</p>
+            <p class="text-xs text-gray-400 mt-0.5">
+              {% if stats.members > 1 %}{{ stats.members }} members collaborating.
+              {% else %}Collaboration unlocks more insights.{% endif %}
             </p>
             {% if stats.members <= 1 %}
             <a href="{% url 'dashboard:members' %}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
-              <i class="fas fa-user-plus text-xs"></i> Invite Team
+               class="inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
+              <i class="fas fa-user-plus text-[10px]"></i> Invite
             </a>
             {% endif %}
           </div>
         </div>
 
       </div>
-
-      {# dismiss button #}
-      <div class="px-5 py-4 bg-gray-50 flex items-center justify-between">
-        <p class="text-xs text-gray-400">This checklist will disappear once you're all set up.</p>
+      <div class="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-end">
         <form method="post" action="{% url 'workspaces:onboarding_complete' workspace.id %}">
           {% csrf_token %}
-          <button type="submit" class="text-xs font-medium text-gray-500 hover:text-gray-700 underline transition">
+          <button type="submit" class="text-xs text-gray-400 hover:text-gray-600 transition">
             Dismiss checklist
           </button>
         </form>
@@ -175,18 +176,27 @@
   </div>
   {% endif %}
 
-  {# ── Stats row ─────────────────────────────────────────────────────── #}
+  {# ── KPI stat cards ─────────────────────────────────────────────────── #}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+
+    <a href="{% url 'dashboard:tables' %}"
+       class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md hover:border-blue-100 transition group">
       <div class="flex items-center justify-between mb-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Tables</span>
-        <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+        <div class="w-9 h-9 rounded-xl bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center transition">
           <i class="fas fa-table text-blue-500 text-sm"></i>
         </div>
       </div>
       <p class="text-3xl font-bold text-gray-900">{{ stats.tables }}</p>
-      <p class="text-xs text-gray-400 mt-1">of {{ stats.tables_limit }} limit</p>
-    </div>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-gray-400">of {{ stats.tables_limit }} limit</p>
+        {% if stats.tables > 0 %}
+        <div class="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full rounded-full bg-blue-400" style="width:{% widthratio stats.tables stats.tables_limit 100 %}%"></div>
+        </div>
+        {% endif %}
+      </div>
+    </a>
 
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
       <div class="flex items-center justify-between mb-3">
@@ -196,76 +206,123 @@
         </div>
       </div>
       <p class="text-3xl font-bold text-gray-900">{{ stats.records|intcomma }}</p>
-      <p class="text-xs text-gray-400 mt-1">of {{ stats.records_limit|intcomma }} limit</p>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-gray-400">of {{ stats.records_limit|intcomma }} limit</p>
+        {% if stats.records > 0 %}
+        <div class="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full rounded-full bg-green-400" style="width:{% widthratio stats.records stats.records_limit 100 %}%"></div>
+        </div>
+        {% endif %}
+      </div>
     </div>
 
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+    <a href="{% url 'dashboard:tables' %}"
+       class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md hover:border-purple-100 transition group">
       <div class="flex items-center justify-between mb-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Dashboards</span>
-        <div class="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+        <div class="w-9 h-9 rounded-xl bg-purple-50 group-hover:bg-purple-100 flex items-center justify-center transition">
           <i class="fas fa-chart-pie text-purple-500 text-sm"></i>
         </div>
       </div>
       <p class="text-3xl font-bold text-gray-900">{{ stats.dashboards|default:0 }}</p>
-      <p class="text-xs text-gray-400 mt-1">active dashboards</p>
-    </div>
+      <p class="text-xs text-gray-400 mt-2">active dashboards</p>
+    </a>
 
-    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+    <a href="{% url 'dashboard:members' %}"
+       class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md hover:border-orange-100 transition group">
       <div class="flex items-center justify-between mb-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Members</span>
-        <div class="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
+        <div class="w-9 h-9 rounded-xl bg-orange-50 group-hover:bg-orange-100 flex items-center justify-center transition">
           <i class="fas fa-users text-orange-500 text-sm"></i>
         </div>
       </div>
       <p class="text-3xl font-bold text-gray-900">{{ stats.members }}</p>
-      <p class="text-xs text-gray-400 mt-1">of {{ stats.members_limit }} limit</p>
+      <p class="text-xs text-gray-400 mt-2">of {{ stats.members_limit }} limit</p>
+    </a>
+
+  </div>
+
+  {# ── AI Insights hero banner ─────────────────────────────────────────── #}
+  <div class="relative rounded-2xl overflow-hidden text-white p-6" style="background:linear-gradient(135deg,#03466e 0%,#055a8c 60%,#0a6fa8 100%)">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -right-10 -top-10 w-56 h-56 bg-white/5 rounded-full"></div>
+      <div class="absolute right-32 bottom-0 w-32 h-32 bg-white/5 rounded-full"></div>
+      <div class="absolute left-1/2 top-0 w-px h-full bg-white/5"></div>
+    </div>
+    <div class="relative flex flex-col sm:flex-row sm:items-center gap-6">
+      <div class="flex-1">
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f68712]/25 text-[#ffb347] mb-3">
+          <i class="fas fa-magic text-[10px]"></i> AI-Powered Insights
+        </div>
+        <h2 class="text-xl font-bold mb-1">
+          {% if insights_dashboard %}Refresh Workspace Insights{% else %}Generate Workspace Insights{% endif %}
+        </h2>
+        <p class="text-sm text-white/70 max-w-lg">
+          {% if insights_dashboard %}
+            Your automated dashboard was last updated {{ insights_dashboard.updated_at|timesince }} ago.
+            Regenerate to include the latest data.
+          {% else %}
+            Let AI scan all your tables, detect trends and anomalies, and build a complete dashboard automatically.
+          {% endif %}
+        </p>
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        {% if insights_dashboard %}
+        <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
+           class="px-4 py-2.5 rounded-xl border border-white/30 text-sm font-medium text-white hover:bg-white/10 transition">
+          <i class="fas fa-eye mr-1.5"></i> View
+        </a>
+        {% endif %}
+        <form method="post" action="{% url 'dashboard:generate_insights' %}" @submit="generating = true">
+          {% csrf_token %}
+          <button type="submit" :disabled="generating"
+                  class="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition disabled:opacity-60 flex items-center gap-2"
+                  style="background:#f68712">
+            <template x-if="!generating">
+              <span><i class="fas fa-magic mr-1.5"></i>{% if insights_dashboard %}Refresh{% else %}Generate{% endif %}</span>
+            </template>
+            <template x-if="generating">
+              <span><i class="fas fa-circle-notch fa-spin mr-1.5"></i>Analyzing…</span>
+            </template>
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 
-  {# ── Main 2-column grid ────────────────────────────────────────────── #}
+  {# ── Main 2-column grid ─────────────────────────────────────────────── #}
   <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-    {# ── Left column (2/3) ─────────────────────────────────────────── #}
+    {# ── Left (2/3) ─────────────────────────────────────────────────── #}
     <div class="xl:col-span-2 space-y-6">
 
-      {# Insights banner #}
-      <div class="relative rounded-2xl overflow-hidden bg-[#03466e] text-white p-6">
-        <div class="absolute -right-8 -bottom-8 w-48 h-48 bg-white/5 rounded-full pointer-events-none"></div>
-        <div class="absolute right-16 top-0 w-24 h-24 bg-white/5 rounded-full pointer-events-none"></div>
-        <div class="relative flex flex-col sm:flex-row sm:items-center gap-5">
-          <div class="flex-1">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f68712]/20 text-[#f68712] mb-2">
-              <i class="fas fa-magic text-[10px]"></i> AI Insights
+      {# Recent dashboards #}
+      {% if recent_dashboards %}
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+          <h2 class="text-sm font-semibold text-gray-800">Recent Dashboards</h2>
+          <a href="{% url 'dashboard:tables' %}" class="text-xs font-medium text-[#f68712] hover:underline">View all →</a>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-50">
+          {% for dash in recent_dashboards|slice:":4" %}
+          {% with colors="purple,blue,green,orange" %}
+          {% with color=forloop.counter0|divisibleby:4|yesno:"purple,blue,green,orange" %}
+          <a href="{% url 'dashboard:dashboard_detail' pk=dash.id %}"
+             class="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition group">
+            <div class="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
+              <i class="fas fa-chart-pie text-sm text-purple-500"></i>
             </div>
-            <h3 class="text-lg font-bold mb-1">
-              {% if insights_dashboard %}Refresh Workspace Insights{% else %}Generate Workspace Insights{% endif %}
-            </h3>
-            <p class="text-sm text-white/70">
-              {% if insights_dashboard %}Update your automated dashboard with fresh data.{% else %}Let AI analyze all your tables and surface key trends.{% endif %}
-            </p>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            {% if insights_dashboard %}
-            <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
-               class="px-4 py-2 rounded-xl border border-white/30 text-sm font-medium text-white hover:bg-white/10 transition">
-              <i class="fas fa-eye mr-1.5"></i>View
-            </a>
-            {% endif %}
-            <form method="post" action="{% url 'dashboard:generate_insights' %}" @submit="generating = true">
-              {% csrf_token %}
-              <button type="submit" :disabled="generating"
-                      class="px-4 py-2 rounded-xl bg-[#f68712] text-sm font-bold text-white hover:bg-[#e07810] transition disabled:opacity-60 flex items-center gap-2">
-                <template x-if="!generating">
-                  <span><i class="fas fa-magic mr-1.5"></i>{% if insights_dashboard %}Refresh{% else %}Generate{% endif %}</span>
-                </template>
-                <template x-if="generating">
-                  <span><i class="fas fa-circle-notch fa-spin mr-1.5"></i>Analyzing…</span>
-                </template>
-              </button>
-            </form>
-          </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold text-gray-800 group-hover:text-[#f68712] truncate transition">{{ dash.name }}</p>
+              <p class="text-xs text-gray-400">{{ dash.updated_at|timesince }} ago</p>
+            </div>
+            <i class="fas fa-arrow-right text-[10px] text-gray-300 group-hover:text-[#f68712] transition opacity-0 group-hover:opacity-100"></i>
+          </a>
+          {% endwith %}{% endwith %}
+          {% endfor %}
         </div>
       </div>
+      {% endif %}
 
       {# Recent tables #}
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -273,6 +330,7 @@
           <h2 class="text-sm font-semibold text-gray-800">Recent Tables</h2>
           <a href="{% url 'dashboard:tables' %}" class="text-xs font-medium text-[#f68712] hover:underline">View all →</a>
         </div>
+        {% if recent_tables %}
         <div class="divide-y divide-gray-50">
           {% for table in recent_tables %}
           <div class="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition group">
@@ -281,8 +339,21 @@
             </div>
             <div class="flex-1 min-w-0">
               <a href="{% url 'dashboard:table_detail' pk=table.id %}"
-                 class="text-sm font-medium text-gray-900 hover:text-[#f68712] truncate block">{{ table.name }}</a>
-              <p class="text-xs text-gray-400">{{ table.record_count }} record{{ table.record_count|pluralize }} · {{ table.updated_at|timesince }} ago</p>
+                 class="text-sm font-semibold text-gray-800 hover:text-[#f68712] truncate block transition">{{ table.name }}</a>
+              <p class="text-xs text-gray-400">
+                {{ table.record_count|intcomma }} record{{ table.record_count|pluralize }}
+                &middot; updated {{ table.updated_at|timesince }} ago
+              </p>
+            </div>
+            {# usage bar #}
+            <div class="hidden sm:block w-20 shrink-0">
+              <div class="flex items-center justify-between mb-0.5">
+                <span class="text-[10px] text-gray-400">{{ table.record_count|intcomma }}</span>
+              </div>
+              <div class="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                <div class="h-full rounded-full bg-blue-300"
+                     style="width:{% if stats.records_limit > 0 %}{% widthratio table.record_count stats.records_limit 100 %}{% else %}0{% endif %}%"></div>
+              </div>
             </div>
             <div class="hidden group-hover:flex items-center gap-1 shrink-0">
               <a href="{% url 'dashboard:record_create' table_id=table.id %}"
@@ -299,37 +370,41 @@
               </a>
             </div>
           </div>
-          {% empty %}
-          <div class="flex flex-col items-center py-12 text-center">
-            <i class="fas fa-table text-4xl text-gray-200 mb-3"></i>
-            <p class="text-sm text-gray-500 mb-3">No tables yet</p>
-            <a href="{% url 'dashboard:table_create' %}"
-               class="text-xs font-semibold text-[#f68712] hover:underline">Create your first table →</a>
-          </div>
           {% endfor %}
         </div>
+        {% else %}
+        <div class="flex flex-col items-center py-14 text-center">
+          <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+            <i class="fas fa-table text-2xl text-blue-300"></i>
+          </div>
+          <p class="text-sm font-medium text-gray-500 mb-1">No tables yet</p>
+          <p class="text-xs text-gray-400 mb-4">Import a CSV or create a table manually.</p>
+          <div class="flex gap-2">
+            <a href="{% url 'dashboard:table_create_import' %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+               style="background:#f68712">
+              <i class="fas fa-upload text-[10px]"></i> Import CSV
+            </a>
+            <a href="{% url 'dashboard:table_create' %}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
+              <i class="fas fa-plus text-[10px]"></i> Create Table
+            </a>
+          </div>
+        </div>
+        {% endif %}
       </div>
+
     </div>
 
-    {# ── Right column (1/3) ────────────────────────────────────────── #}
+    {# ── Right (1/3) ────────────────────────────────────────────────── #}
     <div class="space-y-6">
 
       {# Quick actions #}
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h2 class="text-sm font-semibold text-gray-800 mb-4">Quick Actions</h2>
-        <div class="space-y-2">
-          <a href="{% url 'dashboard:table_create' %}"
-             class="flex items-center gap-3 p-3 rounded-xl hover:bg-[#03466e]/5 group transition">
-            <div class="w-9 h-9 rounded-xl bg-[#03466e]/10 flex items-center justify-center group-hover:bg-[#03466e] transition">
-              <i class="fas fa-plus text-[#03466e] group-hover:text-white text-sm transition"></i>
-            </div>
-            <div>
-              <p class="text-sm font-medium text-gray-800">Create Table</p>
-              <p class="text-xs text-gray-400">Define your data schema</p>
-            </div>
-          </a>
-          {% if recent_tables %}
-          <a href="{% url 'dashboard:table_import' pk=recent_tables.0.id %}"
+        <div class="space-y-1.5">
+
+          <a href="{% url 'dashboard:table_create_import' %}"
              class="flex items-center gap-3 p-3 rounded-xl hover:bg-[#f68712]/5 group transition">
             <div class="w-9 h-9 rounded-xl bg-[#f68712]/10 flex items-center justify-center group-hover:bg-[#f68712] transition">
               <i class="fas fa-upload text-[#f68712] group-hover:text-white text-sm transition"></i>
@@ -339,17 +414,51 @@
               <p class="text-xs text-gray-400">Upload CSV or Excel</p>
             </div>
           </a>
-          {% endif %}
-          <a href="{% url 'dashboard:members' %}"
+
+          <a href="{% url 'dashboard:table_create' %}"
+             class="flex items-center gap-3 p-3 rounded-xl hover:bg-[#03466e]/5 group transition">
+            <div class="w-9 h-9 rounded-xl bg-[#03466e]/10 flex items-center justify-center group-hover:bg-[#03466e] transition">
+              <i class="fas fa-plus text-[#03466e] group-hover:text-white text-sm transition"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">Create Table</p>
+              <p class="text-xs text-gray-400">Define schema manually</p>
+            </div>
+          </a>
+
+          <a href="{% url 'dashboard:tables' %}"
              class="flex items-center gap-3 p-3 rounded-xl hover:bg-purple-50 group transition">
             <div class="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center group-hover:bg-purple-500 transition">
-              <i class="fas fa-user-plus text-purple-500 group-hover:text-white text-sm transition"></i>
+              <i class="fas fa-chart-pie text-purple-500 group-hover:text-white text-sm transition"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">All Dashboards</p>
+              <p class="text-xs text-gray-400">Browse your dashboards</p>
+            </div>
+          </a>
+
+          <a href="{% url 'dashboard:members' %}"
+             class="flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 group transition">
+            <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center group-hover:bg-green-500 transition">
+              <i class="fas fa-user-plus text-green-500 group-hover:text-white text-sm transition"></i>
             </div>
             <div>
               <p class="text-sm font-medium text-gray-800">Invite Team</p>
               <p class="text-xs text-gray-400">Add collaborators</p>
             </div>
           </a>
+
+          <a href="{% url 'dashboard:integrations' %}"
+             class="flex items-center gap-3 p-3 rounded-xl hover:bg-amber-50 group transition">
+            <div class="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center group-hover:bg-amber-500 transition">
+              <i class="fas fa-plug text-amber-500 group-hover:text-white text-sm transition"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">Integrations</p>
+              <p class="text-xs text-gray-400">Connect Slack, WhatsApp</p>
+            </div>
+          </a>
+
         </div>
       </div>
 
@@ -363,9 +472,15 @@
           {% for log in recent_activity %}
           <div class="flex items-start gap-3 px-5 py-3">
             <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
-              {% if log.action == 'create' %}bg-green-100{% elif log.action == 'update' %}bg-blue-100{% elif log.action == 'delete' %}bg-red-100{% else %}bg-gray-100{% endif %}">
+              {% if log.action == 'create' %}bg-green-100
+              {% elif log.action == 'update' %}bg-blue-100
+              {% elif log.action == 'delete' %}bg-red-100
+              {% else %}bg-gray-100{% endif %}">
               <i class="text-[10px]
-                {% if log.action == 'create' %}fas fa-plus text-green-600{% elif log.action == 'update' %}fas fa-pen text-blue-600{% elif log.action == 'delete' %}fas fa-trash text-red-600{% else %}fas fa-eye text-gray-500{% endif %}"></i>
+                {% if log.action == 'create' %}fas fa-plus text-green-600
+                {% elif log.action == 'update' %}fas fa-pen text-blue-600
+                {% elif log.action == 'delete' %}fas fa-trash text-red-500
+                {% else %}fas fa-eye text-gray-500{% endif %}"></i>
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-xs text-gray-700 leading-snug">
@@ -376,12 +491,58 @@
             </div>
           </div>
           {% empty %}
-          <div class="py-8 text-center">
-            <i class="fas fa-history text-2xl text-gray-200 mb-2"></i>
+          <div class="py-10 text-center">
+            <i class="fas fa-history text-2xl text-gray-200 mb-2 block"></i>
             <p class="text-xs text-gray-400">No activity yet</p>
           </div>
           {% endfor %}
         </div>
+      </div>
+
+      {# Storage / limits overview #}
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-gray-800 mb-4">Plan Usage</h2>
+        <div class="space-y-4">
+
+          <div>
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-gray-500 font-medium">Tables</span>
+              <span class="text-gray-700 font-semibold">{{ stats.tables }} / {{ stats.tables_limit }}</span>
+            </div>
+            <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all
+                {% if stats.tables_limit > 0 and stats.tables|add:0 >= stats.tables_limit|add:0|floatformat:0|add:0 %}bg-red-400{% elif stats.tables_limit > 0 %}bg-blue-400{% else %}bg-blue-400{% endif %}"
+                   style="width:{% if stats.tables_limit > 0 %}{% widthratio stats.tables stats.tables_limit 100 %}{% else %}0{% endif %}%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-gray-500 font-medium">Records</span>
+              <span class="text-gray-700 font-semibold">{{ stats.records|intcomma }} / {{ stats.records_limit|intcomma }}</span>
+            </div>
+            <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full bg-green-400 transition-all"
+                   style="width:{% if stats.records_limit > 0 %}{% widthratio stats.records stats.records_limit 100 %}{% else %}0{% endif %}%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="text-gray-500 font-medium">Members</span>
+              <span class="text-gray-700 font-semibold">{{ stats.members }} / {{ stats.members_limit }}</span>
+            </div>
+            <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full bg-orange-400 transition-all"
+                   style="width:{% if stats.members_limit > 0 %}{% widthratio stats.members stats.members_limit 100 %}{% else %}0{% endif %}%"></div>
+            </div>
+          </div>
+
+        </div>
+        <a href="{% url 'dashboard:billing' %}"
+           class="mt-4 flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition">
+          <i class="fas fa-arrow-up text-[10px]"></i> Upgrade Plan
+        </a>
       </div>
 
     </div>
