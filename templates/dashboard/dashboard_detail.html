@@ -106,6 +106,8 @@
   .state-center p { font-size: .8125rem; color: #6b7280; margin: 0; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .widget-skeleton-pulse { display:block; width:60%; height:.75rem; border-radius:.5rem; background:linear-gradient(90deg,#e5e7eb 25%,#f3f4f6 50%,#e5e7eb 75%); background-size:200% 100%; animation:skpulse 1.4s ease infinite; }
+  @keyframes skpulse { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
   /* ── data table inside widget ── */
   .data-table { width: 100%; border-collapse: collapse; font-size: .75rem; }
@@ -310,6 +312,7 @@
   window.WS_PROTOCOL         = location.protocol === 'https:' ? 'wss:' : 'ws:';
   window.WS_HOST             = location.host;
   window._currentUserEmail   = '{{ request.user.email|escapejs }}';
+  window._dashboardId        = '{{ dashboard.id }}';
 </script>
 
 {# Add Widget Modal #}
@@ -509,6 +512,7 @@ const KPI_PALETTE = {
 // ───────────────────────────────────────────────────────────────
 let grid          = null;
 let widgetMap     = new Map();
+let _gridInitializing = false;
 let dashboardData = null;
 
 // ── WebSocket engine state ──────────────────────────────────────
@@ -557,7 +561,7 @@ function initGrid() {
     draggable: { handle: '.widget-header' },
     resizable: { handles: 'e,se,s,sw,w' },
   });
-  grid.on('change', () => saveLayout());
+  grid.on('change', () => { if (!_gridInitializing) saveLayout(); });
 
   // When the user resizes a widget, Plotly must be told about the new size.
   grid.on('resizestop', (_e, el) => {
@@ -580,6 +584,7 @@ function renderWidgets() {
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('dashboard-grid').style.display = '';
 
+  _gridInitializing = true;
   grid.removeAll();
   widgetMap.clear();
 
@@ -589,6 +594,7 @@ function renderWidgets() {
   });
 
   sorted.forEach(w => addWidgetToGrid(w));
+  _gridInitializing = false;
 }
 
 // Track Plotly chart divs so we can resize them when the grid cell resizes
@@ -653,8 +659,15 @@ function renderWidgetContent(widget) {
 
   const data = widget.widget_data;
 
-  if (!data || data.error) {
-    el.innerHTML = `<div class="state-center"><i class="fas fa-exclamation-circle" style="color:#ef4444"></i><p>${esc(data?.error || 'No data available')}</p></div>`;
+  // null means not yet fetched — show skeleton and kick off lazy load
+  if (data === null || data === undefined) {
+    el.innerHTML = `<div class="state-center"><span class="widget-skeleton-pulse"></span></div>`;
+    fetchWidgetData(widget, el);
+    return;
+  }
+
+  if (data.error) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-exclamation-circle" style="color:#ef4444"></i><p>${esc(data.error)}</p></div>`;
     return;
   }
   if (isEmptyData(data)) {
@@ -676,6 +689,35 @@ function renderWidgetContent(widget) {
     case 'data_quality':        renderDataQuality(el, widget, data);      break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
+  }
+}
+
+// ── Lazy widget data fetch ───────────────────────────────────────
+// Concurrency cap: at most 6 fetches in-flight at once so we don't
+// flood the server when a dashboard has many widgets.
+const _fetchQueue   = [];
+let   _fetchActive  = 0;
+const _FETCH_CONCURRENCY = 6;
+
+function fetchWidgetData(widget, el) {
+  _fetchQueue.push({ widget, el });
+  _drainFetchQueue();
+}
+
+function _drainFetchQueue() {
+  while (_fetchActive < _FETCH_CONCURRENCY && _fetchQueue.length) {
+    const { widget, el } = _fetchQueue.shift();
+    _fetchActive++;
+    fetch(`/api/widgets/${widget.id}/data/`, { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(json => {
+        widget.widget_data = Object.prototype.hasOwnProperty.call(json, 'data') ? json.data : json;
+        waitForHeight(`widget-${widget.id}`, () => renderWidgetContent(widget));
+      })
+      .catch(err => {
+        if (el) el.innerHTML = `<div class="state-center"><i class="fas fa-exclamation-circle" style="color:#ef4444"></i><p>Load failed (${err})</p></div>`;
+      })
+      .finally(() => { _fetchActive--; _drainFetchQueue(); });
   }
 }
 
@@ -880,12 +922,16 @@ function _dsFooter(el, widget) {
 }
 
 // Shared helper: register Plotly div for resize events
-function _dsPlot(el, widget, traces, layout) {
-  const desc      = (widget?.viz_config || {}).description;
-  const descH     = desc ? 36 : 0;
-  const div       = document.createElement('div');
-  div.style.cssText = `width:100%;height:calc(100% - ${descH}px)`;
-  el.innerHTML = '';
+// topEl  — optional DOM element already inserted above the chart (e.g. a stats pill).
+//          Its height is subtracted from the Plotly div so nothing is clipped.
+// Callers are responsible for clearing el.innerHTML BEFORE calling _dsPlot.
+function _dsPlot(el, widget, traces, layout, topEl) {
+  const desc  = (widget?.viz_config || {}).description;
+  const descH = desc ? 36 : 0;
+  const topH  = topEl ? (topEl.offsetHeight || 24) : 0;
+  if (topEl) el.appendChild(topEl);
+  const div = document.createElement('div');
+  div.style.cssText = `width:100%;height:calc(100% - ${descH + topH}px)`;
   el.appendChild(div);
   Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
   if (widget?.id) plotlyDivs.set(widget.id, div);
@@ -938,10 +984,11 @@ function renderHistogram(el, widget, data) {
 
   // Stats pill overlay (skewness + kurtosis)
   el.innerHTML = '';
+  let pill = null;
   if (s.skewness !== undefined) {
     const skewLabel = Math.abs(s.skewness) < 0.5 ? 'symmetric'
                     : s.skewness > 0 ? 'right-skewed' : 'left-skewed';
-    const pill = document.createElement('div');
+    pill = document.createElement('div');
     pill.style.cssText = 'font-size:.65rem;color:#6b7280;padding:.2rem .75rem 0;display:flex;gap:.75rem;flex-wrap:wrap';
     pill.innerHTML = [
       `<span>n=<b>${s.count}</b></span>`,
@@ -949,9 +996,8 @@ function renderHistogram(el, widget, data) {
       `<span>Skew=<b>${s.skewness?.toFixed(2)}</b> <em>(${skewLabel})</em></span>`,
       `<span>Kurt=<b>${s.kurtosis?.toFixed(2)}</b></span>`,
     ].join('');
-    el.appendChild(pill);
   }
-  _dsPlot(el, widget, [trace], layout);
+  _dsPlot(el, widget, [trace], layout, pill);
 }
 
 function round2(v) { return Math.round(v * 100) / 100; }
@@ -990,6 +1036,7 @@ function renderBoxPlot(el, widget, data) {
     yaxis: { gridcolor: BRAND.gridColor, title: { text: field, font: { size: 10 } } },
     xaxis: { gridcolor: BRAND.gridColor },
   };
+  el.innerHTML = '';
   _dsPlot(el, widget, traces, layout);
 }
 
@@ -1039,6 +1086,7 @@ function renderScatterPlot(el, widget, data) {
       bgcolor: 'rgba(255,255,255,.8)', borderpad: 3,
     }] : [],
   };
+  el.innerHTML = '';
   _dsPlot(el, widget, traces, layout);
 }
 
@@ -1120,6 +1168,7 @@ function renderCorrelationHeatmap(el, widget, data) {
     xaxis: { tickangle: -30, automargin: true },
     yaxis: { automargin: true },
   };
+  el.innerHTML = '';
   _dsPlot(el, widget, [trace], layout);
 }
 
@@ -1334,7 +1383,16 @@ function _wsDispatch(msg) {
       break;
 
     case 'insights_generation_progress':
-      _ws_onInsightsProgress(msg);
+    case 'generation_progress':
+      _ws_onGenerationProgress(msg);
+      break;
+
+    case 'generation_complete':
+      _ws_onGenerationComplete(msg);
+      break;
+
+    case 'generation_error':
+      _ws_onGenerationError(msg);
       break;
 
     case 'table_update':
@@ -1416,31 +1474,71 @@ function _ws_onPresence(action, email) {
   // the hook in place for a future online-users indicator component.
 }
 
-let _insightsProgressToast = null;
-function _ws_onInsightsProgress(msg) {
-  const pct = (msg.progress != null) ? Math.round(msg.progress) : null;
-  const txt  = pct != null ? `Insights: ${pct}%` : (msg.message || 'Generating insights…');
+// ── Generation progress overlay (shown on the detail page while task runs) ─
 
-  if (!_insightsProgressToast) {
-    _insightsProgressToast = document.createElement('div');
-    _insightsProgressToast.style.cssText = [
-      'position:fixed', 'bottom:4rem', 'right:1.25rem', 'z-index:9999',
-      'display:flex', 'align-items:center', 'gap:.5rem',
-      'padding:.625rem 1rem', 'border-radius:.625rem',
-      'background:#03466e', 'color:#fff',
-      'font-size:.8125rem', 'font-weight:500',
-      'box-shadow:0 4px 16px rgba(0,0,0,.18)',
-    ].join(';');
-    document.body.appendChild(_insightsProgressToast);
-  }
-  _insightsProgressToast.innerHTML =
-    `<i class="fas fa-brain"></i><span>${esc(txt)}</span>`;
+let _genBanner = null;
+
+function _ensureGenBanner() {
+  if (_genBanner) return _genBanner;
+  _genBanner = document.createElement('div');
+  _genBanner.id = 'genProgressBanner';
+  _genBanner.style.cssText = [
+    'position:fixed', 'bottom:4.5rem', 'right:1.25rem', 'z-index:9999',
+    'min-width:260px', 'max-width:340px',
+    'background:#03466e', 'color:#fff',
+    'border-radius:.875rem', 'overflow:hidden',
+    'box-shadow:0 8px 24px rgba(0,0,0,.22)',
+    'font-size:.8rem',
+  ].join(';');
+  document.body.appendChild(_genBanner);
+  return _genBanner;
+}
+
+function _ws_onGenerationProgress(msg) {
+  const pct  = (msg.progress != null) ? Math.round(msg.progress) : 0;
+  const text = msg.message || 'Generating…';
+  const widgets = msg.widgets_created > 0 ? ` · ${msg.widgets_created} widgets` : '';
+  const tables  = (msg.tables_total > 0)
+    ? ` · ${msg.tables_done||0}/${msg.tables_total} tables` : '';
+
+  const banner = _ensureGenBanner();
+  banner.innerHTML = `
+    <div style="height:3px;background:rgba(255,255,255,.2)">
+      <div style="height:100%;width:${pct}%;background:#f68712;transition:width .4s ease"></div>
+    </div>
+    <div style="padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem">
+      <i class="fas fa-circle-notch fa-spin" style="opacity:.8"></i>
+      <div style="min-width:0">
+        <div style="font-weight:600;line-height:1.3">${esc(text)}</div>
+        <div style="font-size:.7rem;opacity:.7;margin-top:.1rem">${pct}%${widgets}${tables}</div>
+      </div>
+    </div>`;
 
   if (msg.done) {
     showToast('Insights ready!', 'success');
-    _insightsProgressToast.remove();
-    _insightsProgressToast = null;
+    _genBanner.remove();
+    _genBanner = null;
   }
+}
+
+function _ws_onGenerationComplete(msg) {
+  /* Hide progress banner */
+  if (_genBanner) { _genBanner.remove(); _genBanner = null; }
+
+  const wc = msg.widget_count || 0;
+  const ic = msg.insight_count || 0;
+  showToast(`Dashboard updated — ${wc} widget${wc !== 1 ? 's' : ''}, ${ic} insight${ic !== 1 ? 's' : ''}`, 'success');
+
+  /* If this is the dashboard that was just regenerated, soft-reload
+     (fetch fresh widget list without a hard page refresh) after a short pause. */
+  if (msg.dashboard_id && msg.dashboard_id === window._dashboardId) {
+    setTimeout(() => location.reload(), 2000);
+  }
+}
+
+function _ws_onGenerationError(msg) {
+  if (_genBanner) { _genBanner.remove(); _genBanner = null; }
+  showToast('Generation error: ' + (msg.message || 'Unknown error'), 'error');
 }
 
 // ── Status badge ────────────────────────────────────────────────

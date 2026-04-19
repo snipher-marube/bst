@@ -746,7 +746,7 @@ class QueryEngine:
         fields = [f['name'] for f in schema]
         if not fields:
             return {'error': 'No schema defined'}
-        _EMPTY = {'', 'None', 'nan', 'null', 'n/a', 'na', 'undefined'}
+        _EMPTY = {'', 'none', 'nan', 'null', 'n/a', 'na', 'undefined'}
         field_stats, completeness_scores = [], []
         for field in fields:
             null_n, seen = 0, set()
@@ -1764,7 +1764,16 @@ class WorkspaceInsightService:
     # ------------------------------------------------------------------ #
     #  Public entry point
     # ------------------------------------------------------------------ #
-    def generate_workspace_overview(self, workspace, user):
+    def generate_workspace_overview(self, workspace, user, on_widget_created=None):
+        """Build / update the workspace overview dashboard.
+
+        Args:
+            workspace: Workspace instance.
+            user: User triggering generation (used as created_by).
+            on_widget_created: Optional callable(widget, source_name) invoked
+                after each widget is persisted. Used by the Celery task to
+                stream fine-grained progress events via WebSocket.
+        """
         from .models import Dashboard, Widget
 
         logger.info(f"Generating workspace insights for workspace {workspace.id}")
@@ -1855,7 +1864,7 @@ class WorkspaceInsightService:
                 if kpi_x + w > 12:
                     kpi_x  = 0
                     kpi_y += kpi_row_h
-                Widget.objects.create(
+                _w = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type=spec['type'],
                     title=f"[Auto] {spec['title']}",
@@ -1864,6 +1873,8 @@ class WorkspaceInsightService:
                     viz_config=spec.get('viz_config', {}),
                     position={'x': kpi_x, 'y': kpi_y, 'w': w, 'h': kpi_row_h},
                 )
+                if on_widget_created:
+                    on_widget_created(_w, table.name)
                 kpi_x    += w
                 total_count += 1
 
@@ -1876,7 +1887,7 @@ class WorkspaceInsightService:
                 if chart_x + w > 12:
                     chart_x  = 0
                     chart_y += h
-                Widget.objects.create(
+                _w = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type=spec['type'],
                     title=f"[Auto] {spec['title']}",
@@ -1885,13 +1896,15 @@ class WorkspaceInsightService:
                     viz_config=spec.get('viz_config', {}),
                     position={'x': chart_x, 'y': chart_y, 'w': w, 'h': h},
                 )
+                if on_widget_created:
+                    on_widget_created(_w, table.name)
                 chart_x     += w
                 total_count += 1
 
             # ── Data table preview at full width ───────────────────────
             last_chart_h = charts[-1]['height'] if charts else 0
             table_y = (chart_y + last_chart_h) if charts else chart_start_y
-            Widget.objects.create(
+            _w = Widget.objects.create(
                 dashboard=dashboard,
                 widget_type='table',
                 title=f"[Auto] {table.name} Records",
@@ -1900,6 +1913,8 @@ class WorkspaceInsightService:
                 viz_config={},
                 position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
             )
+            if on_widget_created:
+                on_widget_created(_w, table.name)
             total_count += 1
             dashboard._new_tables_added = getattr(dashboard, '_new_tables_added', 0) + 1
 
@@ -3295,7 +3310,15 @@ class GoogleSheetsQueryEngine:
             'https://www.googleapis.com/auth/drive.readonly',
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        return gspread.authorize(creds)
+        client = gspread.authorize(creds)
+        try:
+            from requests.adapters import HTTPAdapter
+            # No retries — DNS failures fail fast instead of spamming 3 retries per widget.
+            client.session.mount('https://', HTTPAdapter(max_retries=0))
+            client.session.timeout = 10
+        except AttributeError:
+            pass
+        return client
 
     def _open_spreadsheet(self):
         client = self._get_client()
@@ -3334,6 +3357,27 @@ class GoogleSheetsQueryEngine:
             return []
         return [{'name': col, 'type': self._infer_column_type(df[col])} for col in df.columns]
 
+    # ── circuit breaker (DNS / network failures) ────────────────────────────
+    # Key: spreadsheet_id → (error_message, expiry_timestamp)
+    _circuit: dict = {}
+    _CIRCUIT_TTL = 30  # seconds before retrying after a network failure
+
+    def _check_circuit(self):
+        """Raise RuntimeError immediately if we recently failed on this spreadsheet."""
+        import time
+        entry = self.__class__._circuit.get(self.data_source.google_spreadsheet_id)
+        if entry:
+            msg, expiry = entry
+            if time.monotonic() < expiry:
+                raise RuntimeError(f"Google Sheets unavailable (circuit open): {msg}")
+            del self.__class__._circuit[self.data_source.google_spreadsheet_id]
+
+    def _trip_circuit(self, exc):
+        import time
+        self.__class__._circuit[self.data_source.google_spreadsheet_id] = (
+            str(exc), time.monotonic() + self._CIRCUIT_TTL
+        )
+
     # ── widget query ────────────────────────────────────────────────────────
 
     def execute_widget_query(self, widget, limit=1000, extra_filters=None):
@@ -3348,9 +3392,15 @@ class GoogleSheetsQueryEngine:
             return {'error': 'No sheet name configured on this widget.'}
 
         try:
+            self._check_circuit()
             df = self._sheet_to_df(sheet_name)
         except Exception as exc:
-            logger.error("GoogleSheetsQueryEngine sheet read error: %s", exc)
+            is_network = 'NameResolution' in type(exc).__name__ or 'NameResolution' in str(exc)
+            if is_network:
+                self._trip_circuit(exc)
+                logger.error("GoogleSheetsQueryEngine network unreachable (circuit tripped 30s): %s", exc)
+            else:
+                logger.error("GoogleSheetsQueryEngine sheet read error: %s", exc)
             return {'error': str(exc)}
 
         if df.empty:
@@ -3431,17 +3481,28 @@ class GoogleSheetsQueryEngine:
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
+    _SHEET_TIMEOUT = 20  # seconds; prevents hanging the Django worker
+
     def _sheet_to_df(self, sheet_name: str, max_rows: int | None = None):
         """Read a worksheet into a pandas DataFrame (first row = headers)."""
         import pandas as pd
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _Timeout
 
-        ss = self._open_spreadsheet()
-        ws = ss.worksheet(sheet_name)
-        # get_all_records() returns a list of dicts using the first row as keys.
-        cap     = max_rows or self.MAX_ROWS
-        records = ws.get_all_records(numericise_ignore=['all'])   # keep raw strings
-        if len(records) > cap:
-            records = records[:cap]
+        def _fetch():
+            ss = self._open_spreadsheet()
+            ws = ss.worksheet(sheet_name)
+            cap     = max_rows or self.MAX_ROWS
+            records = ws.get_all_records(numericise_ignore=['all'])
+            return records[:cap] if len(records) > cap else records
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                records = pool.submit(_fetch).result(timeout=self._SHEET_TIMEOUT)
+        except _Timeout:
+            raise RuntimeError(
+                f"Google Sheets read timed out after {self._SHEET_TIMEOUT}s "
+                f"(sheet={sheet_name!r})"
+            )
         return pd.DataFrame(records) if records else pd.DataFrame()
 
     @staticmethod

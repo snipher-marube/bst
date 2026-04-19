@@ -319,12 +319,15 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
         finally:
             _skip_dashboard_cleanup.active = False
 
-        # For each affected dashboard, hard-delete it if it now has no remaining widgets.
+        # Soft-delete each now-empty dashboard (consistent with DashboardDeleteView).
+        # Only auto-generated dashboards are touched; manually-created ones are preserved.
         deleted_dash_count = 0
         for dash_id in affected_dashboard_ids:
             if not Widget.objects.filter(dashboard_id=dash_id).exists():
-                Dashboard.objects.filter(pk=dash_id).delete()
-                deleted_dash_count += 1
+                updated = Dashboard.objects.filter(
+                    pk=dash_id, is_active=True,
+                ).update(is_active=False, deleted_at=now)
+                deleted_dash_count += updated
 
         # Soft-delete the table itself
         table.is_active = False
@@ -532,36 +535,69 @@ class DashboardListView(LoginRequiredMixin, ListView):
         return ctx
 
 
-class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
-    """Generate or update the workspace insights dashboard."""
+class GenerateWorkspaceInsightsView(LoginRequiredMixin, View):
+    """Async-first insight generation.
+
+    POST: Dispatches the Celery task and returns JSON ``{status, workspace_id}``.
+    The client subscribes to the workspace WebSocket channel to receive
+    ``generation_progress`` / ``generation_complete`` events in real time.
+    Falls back to a traditional redirect for non-AJAX callers.
+    """
 
     def post(self, request, *args, **kwargs):
+        from apps.insights.tasks import analyze_workspace_tables, _get_gen_state, _set_gen_state
+        is_ajax = (
+            request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or 'application/json' in request.headers.get('Accept', '')
+        )
         workspace = request.user.current_workspace
         if not workspace:
+            if is_ajax:
+                return JsonResponse({'error': 'No active workspace'}, status=400)
             messages.error(request, 'No active workspace found.')
             return redirect('dashboard:home')
 
-        service = WorkspaceInsightService()
-        dashboard = service.generate_workspace_overview(workspace, request.user)
+        ws_id = str(workspace.id)
+        current = _get_gen_state(ws_id)
+        if current.get('status') == 'running':
+            if is_ajax:
+                return JsonResponse({'status': 'already_running', **current})
+            messages.info(request, 'Insight generation is already running — check the progress banner.')
+            return redirect('dashboard:dashboards')
 
-        import logging as _log
-        _logger = _log.getLogger(__name__)
+        task_id = f'gen:{ws_id}'
+        _set_gen_state(ws_id, status='queued', task_id=task_id, progress=1, message='Queued…')
         try:
-            from apps.insights.tasks import analyze_workspace_tables
-            _task_id = f'analyze_workspace:{workspace.id}'
-            task = analyze_workspace_tables.apply_async(
-                args=[str(workspace.id)], task_id=_task_id
-            )
-            _logger.info('analyze_workspace_tables dispatched task_id=%s workspace=%s', task.id, workspace.id)
+            analyze_workspace_tables.apply_async(args=[ws_id], task_id=task_id)
+            logger.info('analyze_workspace_tables dispatched task_id=%s workspace=%s', task_id, ws_id)
         except Exception as exc:
-            _logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
+            _set_gen_state(ws_id, status='failed', error=str(exc))
+            logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
+            if is_ajax:
+                return JsonResponse({'error': str(exc)}, status=500)
+            messages.error(request, 'Could not start generation. Please try again.')
+            return redirect('dashboard:dashboards')
 
-        new_tables = getattr(dashboard, '_new_tables_added', 0)
-        if new_tables:
-            messages.success(request, f'Added widgets for {new_tables} new table(s) in "{dashboard.name}".')
-        else:
-            messages.info(request, f'Dashboard "{dashboard.name}" is up to date — no new tables to add.')
-        return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
+        if is_ajax:
+            return JsonResponse({'status': 'queued', 'workspace_id': ws_id, 'task_id': task_id})
+        messages.info(request, 'Generating insights… watch the progress banner for updates.')
+        return redirect('dashboard:dashboards')
+
+
+class GenerationStatusView(LoginRequiredMixin, View):
+    """GET the current generation state for the user's active workspace.
+
+    Used by the dashboards list page to show / restore the progress banner
+    on page load (in case the user navigated away during generation).
+    """
+
+    def get(self, request, *args, **kwargs):
+        from apps.insights.tasks import _get_gen_state
+        workspace = request.user.current_workspace
+        if not workspace:
+            return JsonResponse({'status': 'idle', 'error': 'No active workspace'})
+        state = _get_gen_state(str(workspace.id))
+        return JsonResponse(state)
 
 
 class SSOSettingsView(LoginRequiredMixin, TemplateView):
@@ -1034,7 +1070,7 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
                 'query_config': widget.query_config,
                 'viz_config': widget.viz_config,
                 'position': widget.position or {'x': 0, 'y': 0, 'w': 4, 'h': 4},
-                'widget_data': self._get_widget_data(widget),
+                'widget_data': None,
                 'created_at': widget.created_at.isoformat(),
                 'updated_at': widget.updated_at.isoformat()
             }

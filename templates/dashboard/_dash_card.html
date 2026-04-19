@@ -51,7 +51,7 @@
     {% endif %}
 
     {# Widget type chips #}
-    {% if dash.widgets.exists %}
+    {% if dash.widgets.all %}
     <div class="flex flex-wrap gap-1 mb-4">
       {% for w in dash.widgets.all|slice:":6" %}
       <span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-medium {{ accent_bg }} {{ accent_text }} border {{ accent_border }}">
@@ -74,7 +74,7 @@
       <div class="flex items-center gap-3">
         <span class="flex items-center gap-1">
           <i class="fas fa-th-large opacity-50"></i>
-          {{ dash.widgets.count }} widget{{ dash.widgets.count|pluralize }}
+          {{ dash.widgets.all|length }} widget{{ dash.widgets.all|length|pluralize }}
         </span>
       </div>
       <span title="{{ dash.updated_at|date:'d M Y H:i' }}">
