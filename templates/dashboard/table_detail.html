@@ -268,8 +268,16 @@
       </div>
     </template>
 
+    {# Error state #}
+    <template x-if="!cf.loading && cf.error">
+      <div class="bg-red-50 border border-red-200 rounded-xl p-6 flex items-start gap-3" role="alert">
+        <i class="fas fa-exclamation-circle text-red-400 mt-0.5"></i>
+        <p class="text-sm text-red-700" x-text="cf.error"></p>
+      </div>
+    </template>
+
     {# Empty state #}
-    <template x-if="!cf.loading && cf.fields.length === 0">
+    <template x-if="!cf.loading && !cf.error && cf.fields.length === 0">
       <div class="bg-white rounded-xl border border-dashed border-gray-200 flex flex-col items-center justify-center py-14 gap-3">
         <i class="fas fa-calculator text-3xl text-gray-200"></i>
         <p class="text-sm text-gray-400">No calculated fields yet.</p>
@@ -502,6 +510,7 @@ function tableManager() {
       fields: [],
       loading: false,
       loaded: false,
+      error: null,
       showHelp: false,
       modal: {
         open: false, editId: null, saving: false, error: '',
@@ -655,7 +664,15 @@ function tableManager() {
           const res = await fetch('{{ cf_api_base }}', {
             headers: { 'X-CSRFToken': getCookie('csrftoken') },
           });
-          if (res.ok) this.fields = await res.json();
+          if (res.ok) {
+            this.fields = await res.json();
+          } else {
+            console.error('Failed to load calculated fields:', res.status, res.statusText);
+            this.error = `Failed to load calculated fields (${res.status}). Please refresh the page.`;
+          }
+        } catch (e) {
+          console.error('Network error loading calculated fields:', e);
+          this.error = 'Network error loading calculated fields. Please check your connection.';
         } finally {
           this.loading = false;
           this.loaded = true;

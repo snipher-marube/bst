@@ -487,7 +487,10 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         _logger = _log.getLogger(__name__)
         try:
             from apps.insights.tasks import analyze_workspace_tables
-            task = analyze_workspace_tables.delay(str(workspace.id))
+            _task_id = f'analyze_workspace:{workspace.id}'
+            task = analyze_workspace_tables.apply_async(
+                args=[str(workspace.id)], task_id=_task_id
+            )
             _logger.info('analyze_workspace_tables dispatched task_id=%s workspace=%s', task.id, workspace.id)
         except Exception as exc:
             _logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
@@ -653,6 +656,11 @@ class ChatIntegrationSaveView(LoginRequiredMixin, View):
         if not webhook_url:
             messages.error(request, "Webhook URL is required.")
             return redirect('dashboard:integrations')
+        from urllib.parse import urlparse as _urlparse
+        _parsed = _urlparse(webhook_url)
+        if _parsed.scheme not in ('http', 'https') or not _parsed.netloc:
+            messages.error(request, "Webhook URL must be a valid http/https URL.")
+            return redirect('dashboard:integrations')
         if not name:
             name = "Slack alerts" if provider == ChatIntegration.PROVIDER_SLACK else "Teams alerts"
 
@@ -800,13 +808,16 @@ class RecordCreateView(LoginRequiredMixin, TemplateView):
                 field_name = key.replace('field_', '')
                 data[field_name] = value
         
+        # Validate against table schema before persisting
+        is_valid, schema_errors = table.validate_record(data)
+        if not is_valid:
+            for err in schema_errors:
+                messages.error(request, err)
+            return redirect('dashboard:record_create', table_id=table.id)
+
         # Create record
         try:
-            record = Record.objects.create(
-                table=table,
-                data=data,
-                created_by=request.user
-            )
+            Record.objects.create(table=table, data=data, created_by=request.user)
             messages.success(request, 'Record created successfully!')
             return redirect('dashboard:table_detail', pk=table.id)
         except Exception as e:

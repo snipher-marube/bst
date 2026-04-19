@@ -41,6 +41,32 @@ def _release_lock(key):
 
 
 # ---------------------------------------------------------------------------
+# LLM circuit breaker (Redis-backed, no extra dependencies)
+# ---------------------------------------------------------------------------
+_CB_FAIL_KEY    = 'llm_circuit:failures'
+_CB_OPEN_KEY    = 'llm_circuit:open'
+_CB_FAIL_MAX    = 5
+_CB_RESET_SECS  = 300  # 5 minutes
+
+
+def _cb_is_open():
+    return bool(cache.get(_CB_OPEN_KEY))
+
+
+def _cb_record_failure():
+    failures = cache.get(_CB_FAIL_KEY, 0) + 1
+    cache.set(_CB_FAIL_KEY, failures, timeout=_CB_RESET_SECS)
+    if failures >= _CB_FAIL_MAX:
+        cache.set(_CB_OPEN_KEY, '1', timeout=_CB_RESET_SECS)
+        logger.warning('LLM circuit breaker opened after %d failures', failures)
+
+
+def _cb_record_success():
+    cache.delete(_CB_FAIL_KEY)
+    cache.delete(_CB_OPEN_KEY)
+
+
+# ---------------------------------------------------------------------------
 # LLM budget helper
 # ---------------------------------------------------------------------------
 
@@ -152,7 +178,8 @@ def generate_default_dashboard(self, table_id):
 # run_async_import
 # ---------------------------------------------------------------------------
 @shared_task(bind=True, max_retries=3, default_retry_delay=30,
-             autoretry_for=(Exception,), retry_backoff=True)
+             autoretry_for=(Exception,), retry_backoff=True,
+             time_limit=600, soft_time_limit=570)
 def run_async_import(self, import_job_id):
     """Process a CSV/Excel import job asynchronously."""
     from django.utils import timezone
@@ -261,7 +288,11 @@ def _run_insight_generation(workspace_id, task_self):
     from django.db.models import Exists, OuterRef
     from apps.dashboards.models import Record
 
-    workspace = Workspace.objects.get(id=workspace_id)
+    try:
+        workspace = Workspace.objects.get(id=workspace_id)
+    except Workspace.DoesNotExist:
+        logger.warning('analyze_workspace_tables: workspace %s not found — skipping', workspace_id)
+        return {'status': 'skipped', 'reason': 'workspace_deleted'}
     owner     = workspace.owner
 
     # Initialise LLM generator and budget (budget lazily created if LLM available)
@@ -358,6 +389,9 @@ def _enrich_with_llm(insight, insight_type, stats_context, llm_gen, budget):
 
     if llm_gen is None or budget is None:
         return
+    if _cb_is_open():
+        logger.debug('LLM circuit breaker is open — skipping narration for insight=%s', insight.id)
+        return
     # Refresh budget from DB to get latest tokens_used
     budget.refresh_from_db()
     if not budget.has_capacity(estimated_tokens=300):
@@ -365,18 +399,33 @@ def _enrich_with_llm(insight, insight_type, stats_context, llm_gen, budget):
         return
 
     try:
+        import hashlib, json as _json
+        _ctx_hash = hashlib.md5(
+            _json.dumps(stats_context, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        _cache_key = f'llm_narrative:{insight_type}:{_ctx_hash}'
+        cached = cache.get(_cache_key)
+        if cached:
+            insight.description = cached
+            insight.save(update_fields=['description'])
+            logger.debug('LLM narrative served from cache for insight=%s', insight.id)
+            return
+
         result = llm_gen.narrate_insight(insight_type, stats_context)
         if result.get('narrative'):
-            insight.description      = result['narrative']
-            insight.llm_model        = result['model']
-            insight.prompt_tokens    = result['prompt_tokens']
+            insight.description       = result['narrative']
+            insight.llm_model         = result['model']
+            insight.prompt_tokens     = result['prompt_tokens']
             insight.completion_tokens = result['completion_tokens']
             insight.save(update_fields=[
                 'description', 'llm_model', 'prompt_tokens', 'completion_tokens'
             ])
             budget.consume(result['prompt_tokens'] + result['completion_tokens'])
+            cache.set(_cache_key, result['narrative'], timeout=3600)
+            _cb_record_success()
             logger.debug('LLM narrative written for insight=%s', insight.id)
     except LLMError as exc:
+        _cb_record_failure()
         logger.warning('LLM narrate failed insight=%s: %s', insight.id, exc)
 
 
