@@ -61,7 +61,13 @@ class DataTable(models.Model):
     last_updated = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = ['workspace', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['workspace', 'name'],
+                condition=models.Q(is_active=True),
+                name='unique_active_table_name_per_workspace',
+            )
+        ]
         indexes = [
             models.Index(fields=['workspace', 'is_active']),
             models.Index(fields=['workspace', 'updated_at']),

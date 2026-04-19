@@ -22,7 +22,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog, CalculatedField, DataSource
+    Record, Dashboard, Widget, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -301,10 +301,35 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
 
     def form_valid(self, form):
         table = self.get_object()
+        now = timezone.now()
+
+        # Find dashboards affected before deleting widgets
+        affected_dashboard_ids = list(
+            Widget.objects.filter(table=table)
+            .values_list('dashboard_id', flat=True)
+            .distinct()
+        )
+
+        # Hard-delete widgets that belong to this table (they have no meaning without it)
+        Widget.objects.filter(table=table).delete()
+
+        # Soft-delete dashboards that are now widget-less
+        empty_dash_count = 0
+        for dash_id in affected_dashboard_ids:
+            if not Widget.objects.filter(dashboard_id=dash_id).exists():
+                Dashboard.objects.filter(pk=dash_id, is_active=True).update(
+                    is_active=False, deleted_at=now
+                )
+                empty_dash_count += 1
+
         table.is_active = False
-        table.deleted_at = timezone.now()
-        table.save()
-        messages.success(self.request, f'Table "{table.name}" deleted successfully!')
+        table.deleted_at = now
+        table.save(update_fields=['is_active', 'deleted_at'])
+
+        msg = f'Table "{table.name}" deleted.'
+        if empty_dash_count:
+            msg += f' {empty_dash_count} empty dashboard(s) were also removed.'
+        messages.success(self.request, msg)
         return redirect(self.success_url)
 
 
