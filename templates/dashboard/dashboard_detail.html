@@ -1337,6 +1337,11 @@ function _wsDispatch(msg) {
       _ws_onInsightsProgress(msg);
       break;
 
+    case 'table_update':
+      // Auto-refresh every widget on this dashboard that belongs to the updated table
+      _ws_onTableUpdate(msg);
+      break;
+
     case 'dashboard_update':
       if (msg.data) Object.assign(dashboardData, msg.data);
       break;
@@ -1353,6 +1358,20 @@ function _ws_onWidgetUpdate(msg) {
   if (!w) return;
   w.widget_data = msg.data;
   waitForHeight(`widget-${msg.widget_id}`, () => renderWidgetContent(w));
+}
+
+function _ws_onTableUpdate(msg) {
+  // Refresh all widgets on this dashboard that are backed by the updated table
+  let count = 0;
+  widgetMap.forEach((w, id) => {
+    if (w.table === msg.table_id) {
+      refreshWidget(id);
+      count++;
+    }
+  });
+  if (count > 0) {
+    showToast(`Data updated — refreshing ${count} widget${count > 1 ? 's' : ''}…`, 'info');
+  }
 }
 
 function _ws_onWidgetAdded(msg) {

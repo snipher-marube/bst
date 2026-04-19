@@ -500,8 +500,40 @@ class TableImportView(LoginRequiredMixin, TableImportMixin, TemplateView):
         return redirect('dashboard:table_import', pk=table.id)
 
 
+class DashboardListView(LoginRequiredMixin, ListView):
+    """All dashboards in the current workspace."""
+    template_name = 'dashboard/dashboards_list.html'
+    context_object_name = 'dashboards'
+
+    def get_queryset(self):
+        workspace = self.request.user.current_workspace
+        if not workspace:
+            return Dashboard.objects.none()
+        return (
+            Dashboard.objects
+            .filter(workspace=workspace, is_active=True)
+            .prefetch_related('widgets')
+            .order_by('-updated_at')
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        workspace = self.request.user.current_workspace
+        ctx['workspace'] = workspace
+        if workspace:
+            ctx['has_tables_with_data'] = (
+                DataTable.objects.filter(workspace=workspace, is_active=True, record_count__gt=0).exists()
+            )
+            ctx['overview_dashboard'] = Dashboard.objects.filter(
+                workspace=workspace,
+                slug='workspace-overview',
+                is_active=True,
+            ).first()
+        return ctx
+
+
 class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
-    """Automatically generate insights for the current workspace"""
+    """Generate or update the workspace insights dashboard."""
 
     def post(self, request, *args, **kwargs):
         workspace = request.user.current_workspace
@@ -512,7 +544,6 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         service = WorkspaceInsightService()
         dashboard = service.generate_workspace_overview(workspace, request.user)
 
-        # Kick off LLM insight generation asynchronously so the user isn't blocked
         import logging as _log
         _logger = _log.getLogger(__name__)
         try:
@@ -525,7 +556,11 @@ class GenerateWorkspaceInsightsView(LoginRequiredMixin, TemplateView):
         except Exception as exc:
             _logger.warning('Could not dispatch analyze_workspace_tables: %s', exc)
 
-        messages.success(request, f'Successfully generated insights in "{dashboard.name}"!')
+        new_tables = getattr(dashboard, '_new_tables_added', 0)
+        if new_tables:
+            messages.success(request, f'Added widgets for {new_tables} new table(s) in "{dashboard.name}".')
+        else:
+            messages.info(request, f'Dashboard "{dashboard.name}" is up to date — no new tables to add.')
         return redirect('dashboard:dashboard_detail', pk=dashboard.pk)
 
 
@@ -940,13 +975,19 @@ class DashboardDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'dashboard'
     
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
+        # Allow access to any dashboard in any workspace the user belongs to.
+        # Filtering by a single current_workspace is too narrow and causes 404s
+        # after redirects where the session workspace may not match.
+        from apps.workspaces.models import WorkspaceMembership
+        user_workspace_ids = WorkspaceMembership.objects.filter(
+            user=self.request.user
+        ).values_list('workspace_id', flat=True)
         return Dashboard.objects.filter(
-            workspace=workspace,
-            is_active=True
+            workspace_id__in=user_workspace_ids,
+            is_active=True,
         ).prefetch_related(
             'widgets__table',
-            'widgets__table__workspace'
+            'widgets__table__workspace',
         )
     
     def get_context_data(self, **kwargs):
@@ -1021,14 +1062,17 @@ class DashboardEditView(LoginRequiredMixin, UpdateView):
     model = Dashboard
     template_name = 'dashboard/dashboard_form.html'
     fields = ['name', 'description', 'is_public']
-    
+
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
-        return Dashboard.objects.filter(workspace=workspace, is_active=True)
-    
+        from apps.workspaces.models import WorkspaceMembership
+        user_workspace_ids = WorkspaceMembership.objects.filter(
+            user=self.request.user
+        ).values_list('workspace_id', flat=True)
+        return Dashboard.objects.filter(workspace_id__in=user_workspace_ids, is_active=True)
+
     def get_success_url(self):
         return reverse('dashboard:dashboard_detail', kwargs={'pk': self.object.pk})
-    
+
     def form_valid(self, form):
         messages.success(self.request, f'Dashboard "{form.instance.name}" updated successfully!')
         return super().form_valid(form)
@@ -1038,11 +1082,14 @@ class DashboardDeleteView(LoginRequiredMixin, DeleteView):
     """Delete a dashboard"""
     model = Dashboard
     template_name = 'dashboard/dashboard_confirm_delete.html'
-    success_url = reverse_lazy('dashboard:home')
-    
+    success_url = reverse_lazy('dashboard:dashboards')
+
     def get_queryset(self):
-        workspace = self.request.user.current_workspace
-        return Dashboard.objects.filter(workspace=workspace, is_active=True)
+        from apps.workspaces.models import WorkspaceMembership
+        user_workspace_ids = WorkspaceMembership.objects.filter(
+            user=self.request.user
+        ).values_list('workspace_id', flat=True)
+        return Dashboard.objects.filter(workspace_id__in=user_workspace_ids, is_active=True)
     
     def form_valid(self, form):
         dashboard = self.get_object()
@@ -1322,15 +1369,11 @@ class DashboardCommentsView(LoginRequiredMixin, View):
     """
 
     def _get_dashboard(self, request, pk):
-        workspace = getattr(request.user, 'current_workspace', None)
-        if not workspace:
-            wid = request.session.get('current_workspace_id')
-            if wid:
-                try:
-                    workspace = Workspace.objects.get(id=wid, members=request.user)
-                except Workspace.DoesNotExist:
-                    pass
-        return get_object_or_404(Dashboard, pk=pk, workspace=workspace, is_active=True)
+        from apps.workspaces.models import WorkspaceMembership
+        user_workspace_ids = WorkspaceMembership.objects.filter(
+            user=request.user
+        ).values_list('workspace_id', flat=True)
+        return get_object_or_404(Dashboard, pk=pk, workspace_id__in=user_workspace_ids, is_active=True)
 
     def get(self, request, pk):
         from apps.dashboards.models import DashboardComment

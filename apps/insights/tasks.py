@@ -141,16 +141,41 @@ def broadcast_widget_update(self, widget_id, dashboard_id):
 @shared_task(bind=True, max_retries=3, default_retry_delay=10,
              autoretry_for=(Exception,), retry_backoff=True)
 def notify_table_change(self, table_id, action):
-    """Notify the workspace channel that a table's data changed."""
+    """Notify all affected dashboard channels when a table's data changes.
+
+    1. Broadcasts a workspace-level table_update so the index page can update counters.
+    2. For every dashboard that has widgets using this table, broadcasts a table_update
+       to that dashboard's channel so the dashboard page can auto-refresh those widgets.
+    """
     try:
-        from apps.dashboards.models import DataTable
+        from apps.dashboards.models import DataTable, Widget
         table = DataTable.objects.select_related('workspace').get(id=table_id)
+
+        # 1. Workspace-level notification (for the overview / index page)
         _broadcast(f'workspace_{table.workspace_id}', {
             'type':     'table_update',
             'table_id': table_id,
             'action':   action,
         })
-        logger.info('Table change broadcast ok table=%s action=%s', table_id, action)
+
+        # 2. Per-dashboard notifications — find every dashboard that has widgets
+        #    backed by this table and push a table_update to its channel so the
+        #    open dashboard page can refresh the affected widgets without a reload.
+        dashboard_ids = (
+            Widget.objects
+            .filter(table_id=table_id)
+            .values_list('dashboard_id', flat=True)
+            .distinct()
+        )
+        for dash_id in dashboard_ids:
+            _broadcast(f'dashboard_{dash_id}', {
+                'type':     'table_update',
+                'table_id': table_id,
+                'action':   action,
+            })
+
+        logger.info('Table change broadcast ok table=%s action=%s dashboards=%s',
+                    table_id, action, list(dashboard_ids))
     except Exception as exc:
         logger.exception('notify_table_change failed table=%s', table_id)
         raise self.retry(exc=exc)

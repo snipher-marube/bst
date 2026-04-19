@@ -151,11 +151,12 @@ if ('serviceWorker' in navigator) {
         {% if stats.tables %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full" aria-label="{{ stats.tables }} tables">{{ stats.tables }}</span>{% endif %}
       </a>
 
-      <a href="{% url 'dashboard:home' %}#dashboards"
-         class="nav-link {% if 'dashboard' in url_name and url_name != 'home' %}active{% endif %}"
-         {% if 'dashboard' in url_name and url_name != 'home' %}aria-current="page"{% endif %}>
+      <a href="{% url 'dashboard:dashboards' %}"
+         class="nav-link {% if url_name == 'dashboards' or url_name == 'dashboard_detail' or url_name == 'dashboard_edit' %}active{% endif %}"
+         {% if url_name == 'dashboards' or url_name == 'dashboard_detail' or url_name == 'dashboard_edit' %}aria-current="page"{% endif %}>
         <i class="fas fa-chart-pie w-5 text-center" aria-hidden="true"></i>
         <span>Dashboards</span>
+        {% if stats.dashboards %}<span class="ml-auto text-[11px] bg-white/15 px-1.5 py-0.5 rounded-full" aria-label="{{ stats.dashboards }} dashboards">{{ stats.dashboards }}</span>{% endif %}
       </a>
 
       <div class="pt-4 pb-1" role="separator" aria-hidden="true">

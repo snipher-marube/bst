@@ -1,0 +1,178 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static humanize %}
+
+{% block title %}Dashboards — {{ workspace.name|default:"AnalyticsMeta" }}{% endblock %}
+{% block page_heading %}Dashboards{% endblock %}
+
+{% block topbar_actions %}
+{% if has_tables_with_data %}
+<form method="post" action="{% url 'dashboard:generate_insights' %}"
+      x-data="{ loading: false }" @submit="loading = true">
+  {% csrf_token %}
+  <button type="submit" :disabled="loading"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition disabled:opacity-60"
+          style="background:#f68712">
+    <i class="fas text-xs" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-magic'"></i>
+    <span x-show="!loading">{% if overview_dashboard %}Update Insights{% else %}Generate Insights{% endif %}</span>
+    <span x-show="loading" style="display:none">Processing…</span>
+  </button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block main_content %}
+<div class="p-6 space-y-6" x-data="{}">
+
+  {% if messages %}
+  {% for msg in messages %}
+  <div class="flex items-start gap-3 rounded-xl px-4 py-3 text-sm font-medium border
+    {% if 'success' in msg.tags %}bg-green-50 border-green-200 text-green-800
+    {% elif 'error' in msg.tags %}bg-red-50 border-red-200 text-red-800
+    {% else %}bg-blue-50 border-blue-200 text-blue-800{% endif %}">
+    <i class="fas mt-0.5
+      {% if 'success' in msg.tags %}fa-check-circle text-green-500
+      {% elif 'error' in msg.tags %}fa-exclamation-circle text-red-500
+      {% else %}fa-info-circle text-blue-500{% endif %}"></i>
+    <span>{{ msg }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if dashboards %}
+
+  {# ── Hero banner ─────────────────────────────────────────────────────── #}
+  <div class="relative rounded-2xl overflow-hidden text-white p-6"
+       style="background:linear-gradient(135deg,#03466e 0%,#055a8c 55%,#0a6fa8 100%)">
+    {# decorative circles #}
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -right-8 -top-8 w-48 h-48 bg-white/5 rounded-full"></div>
+      <div class="absolute right-28 bottom-0 w-28 h-28 bg-white/5 rounded-full"></div>
+      <div class="absolute -left-6 bottom-0 w-36 h-36 bg-white/5 rounded-full"></div>
+    </div>
+    <div class="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f68712]/25 text-[#ffb347] mb-3">
+          <i class="fas fa-chart-pie text-[10px]"></i> {{ workspace.name }}
+        </div>
+        <h1 class="text-2xl font-bold mb-1">Your Dashboards</h1>
+        <p class="text-sm text-white/70">
+          {{ dashboards|length }} dashboard{{ dashboards|length|pluralize }} · real-time data via WebSocket
+        </p>
+      </div>
+      {# Summary pills #}
+      <div class="flex flex-wrap gap-3 shrink-0">
+        {% with total_widgets=0 %}
+        <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center min-w-[80px]">
+          <div class="text-2xl font-bold">{{ dashboards|length }}</div>
+          <div class="text-[10px] text-white/70 uppercase tracking-wide mt-0.5">Dashboards</div>
+        </div>
+        {% endwith %}
+        {% if overview_dashboard %}
+        <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center min-w-[80px]">
+          <div class="text-2xl font-bold">{{ overview_dashboard.widgets.count }}</div>
+          <div class="text-[10px] text-white/70 uppercase tracking-wide mt-0.5">Auto Widgets</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Dashboard grid ───────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+    {% for dash in dashboards %}
+
+    {# pick an accent colour per card #}
+    {% if dash.slug == 'workspace-overview' %}
+      {% with accent="#f68712" accent_bg="bg-orange-50" accent_text="text-orange-600" accent_border="border-orange-200" icon="fa-magic" %}
+      {% include "dashboard/_dash_card.html" %}
+      {% endwith %}
+    {% elif forloop.counter|divisibleby:4 %}
+      {% with accent="#8b5cf6" accent_bg="bg-violet-50" accent_text="text-violet-600" accent_border="border-violet-200" icon="fa-chart-bar" %}
+      {% include "dashboard/_dash_card.html" %}
+      {% endwith %}
+    {% elif forloop.counter|divisibleby:3 %}
+      {% with accent="#10b981" accent_bg="bg-emerald-50" accent_text="text-emerald-600" accent_border="border-emerald-200" icon="fa-chart-line" %}
+      {% include "dashboard/_dash_card.html" %}
+      {% endwith %}
+    {% elif forloop.counter|divisibleby:2 %}
+      {% with accent="#0ea5e9" accent_bg="bg-sky-50" accent_text="text-sky-600" accent_border="border-sky-200" icon="fa-chart-area" %}
+      {% include "dashboard/_dash_card.html" %}
+      {% endwith %}
+    {% else %}
+      {% with accent="#03466e" accent_bg="bg-blue-50" accent_text="text-blue-600" accent_border="border-blue-200" icon="fa-chart-pie" %}
+      {% include "dashboard/_dash_card.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% endfor %}
+  </div>
+
+  {% else %}
+
+  {# ── Empty state ─────────────────────────────────────────────────────── #}
+  <div class="relative rounded-2xl overflow-hidden text-white p-10 text-center"
+       style="background:linear-gradient(135deg,#03466e 0%,#055a8c 55%,#0a6fa8 100%)">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -right-10 -top-10 w-56 h-56 bg-white/5 rounded-full"></div>
+      <div class="absolute -left-10 bottom-0 w-40 h-40 bg-white/5 rounded-full"></div>
+    </div>
+    <div class="relative max-w-md mx-auto">
+      <div class="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mx-auto mb-5">
+        <i class="fas fa-chart-pie text-3xl text-white/80"></i>
+      </div>
+      <h2 class="text-2xl font-bold mb-2">No dashboards yet</h2>
+      {% if has_tables_with_data %}
+      <p class="text-white/70 text-sm mb-6 max-w-sm mx-auto">
+        You have tables with data ready. Generate your first AI-powered dashboard in seconds — automatic charts, KPIs, distributions, and more.
+      </p>
+      <form method="post" action="{% url 'dashboard:generate_insights' %}"
+            x-data="{ loading: false }" @submit="loading = true"
+            class="flex justify-center">
+        {% csrf_token %}
+        <button type="submit" :disabled="loading"
+                class="inline-flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-bold text-[#03466e] bg-white hover:bg-white/90 transition disabled:opacity-60 shadow-lg">
+          <i class="fas text-sm" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-magic'"></i>
+          <span x-show="!loading">Generate Insights Dashboard</span>
+          <span x-show="loading" style="display:none">Building…</span>
+        </button>
+      </form>
+      {% else %}
+      <p class="text-white/70 text-sm mb-6 max-w-sm mx-auto">
+        Import your first dataset and AnalyticsMeta will automatically build charts, KPIs, and statistical summaries for you.
+      </p>
+      <a href="{% url 'dashboard:table_create_import' %}"
+         class="inline-flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-bold text-[#03466e] bg-white hover:bg-white/90 transition shadow-lg">
+        <i class="fas fa-upload"></i> Import Data
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Getting started steps (empty state only) ─────────────────────────── #}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    {% for step in "123" %}
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex gap-4 items-start">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold text-white
+                  {% if forloop.counter == 1 %}bg-[#03466e]{% elif forloop.counter == 2 %}bg-[#f68712]{% else %}bg-emerald-500{% endif %}">
+        {{ forloop.counter }}
+      </div>
+      <div>
+        {% if forloop.counter == 1 %}
+        <p class="text-sm font-semibold text-gray-800">Import your data</p>
+        <p class="text-xs text-gray-400 mt-0.5">Upload a CSV or connect a data source</p>
+        {% elif forloop.counter == 2 %}
+        <p class="text-sm font-semibold text-gray-800">Generate insights</p>
+        <p class="text-xs text-gray-400 mt-0.5">AI builds charts and KPIs automatically</p>
+        {% else %}
+        <p class="text-sm font-semibold text-gray-800">Explore in real time</p>
+        <p class="text-xs text-gray-400 mt-0.5">Live WebSocket updates as data arrives</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}

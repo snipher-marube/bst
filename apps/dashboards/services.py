@@ -1776,19 +1776,17 @@ class WorkspaceInsightService:
                 'name': 'Workspace Insights',
                 'description': 'Auto-generated insights from all your data',
                 'created_by': user,
+                'is_active': True,
                 'layout_config': {"columns": 12, "rowHeight": 100, "compact": True},
             }
         )
 
-        if not created:
-            # Regenerate: wipe previously auto-generated widgets.
-            # Suppress the empty-dashboard signal so the dashboard itself isn't deleted.
-            from .models import _skip_dashboard_cleanup
-            _skip_dashboard_cleanup.active = True
-            try:
-                dashboard.widgets.filter(title__startswith='[Auto]').delete()  # type: ignore[attr-defined]
-            finally:
-                _skip_dashboard_cleanup.active = False
+        # If the dashboard was previously soft-deleted, reactivate it.
+        if not dashboard.is_active:
+            dashboard.is_active = True
+            dashboard.deleted_at = None
+            dashboard.save(update_fields=['is_active', 'deleted_at'])
+            created = True  # treat as fresh so we regenerate widgets
 
         from django.db.models import Exists, OuterRef
         _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
@@ -1798,8 +1796,46 @@ class WorkspaceInsightService:
             .annotate(_has_data=Exists(_has_records))
             .filter(_has_data=True)
         )
-        current_y   = 0
+
+        if not created:
+            # Incremental update: only act on tables that have changed.
+            # 1. Remove widgets for tables that were deleted/deactivated.
+            active_table_ids = set(tables.values_list('id', flat=True))
+            existing_table_ids = set(
+                Widget.objects.filter(dashboard=dashboard, title__startswith='[Auto]')
+                .exclude(table=None)
+                .values_list('table_id', flat=True)
+                .distinct()
+            )
+            stale_ids = existing_table_ids - active_table_ids
+            if stale_ids:
+                from .models import _skip_dashboard_cleanup
+                _skip_dashboard_cleanup.active = True
+                try:
+                    Widget.objects.filter(dashboard=dashboard, table_id__in=stale_ids).delete()
+                finally:
+                    _skip_dashboard_cleanup.active = False
+
+            # 2. Skip tables that already have [Auto] widgets — don't touch them.
+            tables = tables.exclude(id__in=existing_table_ids - stale_ids)
+
+        # Determine the next free vertical slot below all existing widgets.
+        # position is a JSONField so we compute the max in Python (avoids
+        # DB-driver differences with JSON key path aggregation).
+        if not created:
+            _positions = list(
+                Widget.objects.filter(dashboard=dashboard)
+                .values_list('position', flat=True)
+            )
+            _max_y = max(
+                (int(p.get('y', 0)) + int(p.get('h', 4)) for p in _positions if p),
+                default=0,
+            )
+            current_y = _max_y + 1
+        else:
+            current_y = 0
         total_count = 0
+        dashboard._new_tables_added = 0
 
         for table in tables:
             logger.info(f"  Profiling table: {table.name} ({table.record_count} records)")
@@ -1865,6 +1901,7 @@ class WorkspaceInsightService:
                 position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
             )
             total_count += 1
+            dashboard._new_tables_added = getattr(dashboard, '_new_tables_added', 0) + 1
 
             # Leave a 1-unit gap before the next table's section
             current_y = table_y + 5 + 1
