@@ -460,6 +460,13 @@ class Widget(models.Model):
         ('scatter', 'Scatter Plot'),
         ('cohort', 'Cohort Retention'),
         ('funnel', 'Funnel Analysis'),
+        # Data-science grade widgets
+        ('histogram', 'Distribution Histogram'),
+        ('box_plot', 'Box & Whisker Plot'),
+        ('scatter_plot', 'Scatter + Regression'),
+        ('stat_summary', 'Statistical Summary'),
+        ('correlation_heatmap', 'Correlation Matrix'),
+        ('data_quality', 'Data Quality Card'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -517,7 +524,11 @@ class Widget(models.Model):
         return f"{self.title} ({self.widget_type})"
 
     # Widget types that use their own query_config schema (not aggregations-based).
-    _ANALYSIS_WIDGET_TYPES = {'cohort', 'funnel'}
+    _ANALYSIS_WIDGET_TYPES = {
+        'cohort', 'funnel',
+        'histogram', 'box_plot', 'scatter_plot',
+        'stat_summary', 'correlation_heatmap', 'data_quality',
+    }
 
     def clean(self):
         """Validate query_config so malformed or oversized configs are rejected

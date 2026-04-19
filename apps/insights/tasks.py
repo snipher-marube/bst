@@ -588,7 +588,7 @@ def _analyse_table(table, workspace, owner, llm_gen=None, budget=None):
         }, llm_gen, budget)
         insights.append(_trend_insight)
 
-    # ── Anomaly insights (z-score ≥ 3) ───────────────────────────────────
+    # ── Anomaly insights (z-score ≥ 3 AND IQR-fence) ────────────────────
     for field, vals in field_values.items():
         if len(vals) < 10:
             continue
@@ -633,6 +633,150 @@ def _analyse_table(table, workspace, owner, llm_gen=None, budget=None):
             'pct_outliers':   round(pct_outliers, 2),
         }, llm_gen, budget)
         insights.append(_anomaly_insight)
+
+    # ── Distribution insights (skewness + kurtosis + IQR outliers) ───────
+    try:
+        import numpy as np
+        for field, vals in field_values.items():
+            if len(vals) < 15:
+                continue
+            arr    = np.array(vals)
+            mean_v = float(np.mean(arr))
+            std_v  = float(np.std(arr, ddof=1))
+            if std_v == 0:
+                continue
+            z        = (arr - mean_v) / std_v
+            skewness = float(np.mean(z ** 3))
+            kurtosis = float(np.mean(z ** 4)) - 3
+            q1, q3   = np.percentile(arr, [25, 75])
+            iqr      = float(q3 - q1)
+            iqr_outs = int(np.sum((arr < q1 - 1.5 * iqr) | (arr > q3 + 1.5 * iqr)))
+
+            if abs(skewness) < 0.5 and abs(kurtosis) < 1 and iqr_outs == 0:
+                continue  # normal-ish — not worth flagging
+
+            skew_label = ('heavily right-skewed (long upper tail)' if skewness > 1
+                          else 'moderately right-skewed' if skewness > 0.5
+                          else 'heavily left-skewed (long lower tail)' if skewness < -1
+                          else 'moderately left-skewed' if skewness < -0.5
+                          else 'approximately symmetric')
+            kurt_label = ('heavy-tailed (leptokurtic)' if kurtosis > 1
+                          else 'light-tailed (platykurtic)' if kurtosis < -1
+                          else 'normal-tailed (mesokurtic)')
+            desc_parts = [
+                f'"{field}" in {table.name} is {skew_label} (skewness={skewness:.2f}) '
+                f'and {kurt_label} (excess kurtosis={kurtosis:.2f}).',
+            ]
+            if iqr_outs > 0:
+                desc_parts.append(
+                    f'{iqr_outs} IQR-fence outlier(s) detected '
+                    f'(outside [{q1:.2f} − 1.5×IQR, {q3:.2f} + 1.5×IQR]).'
+                )
+            if abs(skewness) > 1:
+                desc_parts.append(
+                    'Consider log-transforming this field before modelling to improve normality.'
+                )
+            _dist_insight = Insight.objects.create(
+                workspace         = workspace,
+                title             = f'{table.name} — "{field}" distribution shape',
+                description       = ' '.join(desc_parts),
+                insight_type      = 'anomaly',
+                source_table_name = table.name,
+                created_by        = owner,
+                chart_data        = {
+                    'field':        field,
+                    'skewness':     round(skewness, 4),
+                    'kurtosis':     round(kurtosis, 4),
+                    'iqr_outliers': iqr_outs,
+                    'q1':           round(float(q1), 4),
+                    'q3':           round(float(q3), 4),
+                    'iqr':          round(iqr, 4),
+                },
+            )
+            _enrich_with_llm(_dist_insight, 'anomaly', {
+                'table':        table.name,
+                'field':        field,
+                'skewness':     round(skewness, 4),
+                'kurtosis':     round(kurtosis, 4),
+                'iqr_outliers': iqr_outs,
+                'q1':           round(float(q1), 4),
+                'q3':           round(float(q3), 4),
+            }, llm_gen, budget)
+            insights.append(_dist_insight)
+
+        # ── Correlation insight (strongest pair) ──────────────────────────
+        if len(field_values) >= 2:
+            fields_list = list(field_values.keys())
+            max_r, best_pair = 0.0, None
+            for i in range(len(fields_list)):
+                for j in range(i + 1, len(fields_list)):
+                    fa, fb = fields_list[i], fields_list[j]
+                    va, vb = field_values[fa], field_values[fb]
+                    n = min(len(va), len(vb))
+                    if n < 6:
+                        continue
+                    corr_mat = np.corrcoef(np.array(va[:n]), np.array(vb[:n]))
+                    r = float(corr_mat[0, 1])
+                    if math.isnan(r):
+                        continue
+                    if abs(r) > abs(max_r):
+                        max_r, best_pair = r, (fa, fb)
+            if best_pair and abs(max_r) >= 0.4:
+                fa, fb = best_pair
+                strength = ('strong' if abs(max_r) >= 0.7 else 'moderate')
+                direction = 'positive' if max_r > 0 else 'negative'
+                _corr_insight = Insight.objects.create(
+                    workspace         = workspace,
+                    title             = f'{table.name} — {strength} correlation: "{fa}" & "{fb}"',
+                    description       = (
+                        f'"{fa}" and "{fb}" have a {strength} {direction} correlation '
+                        f'(r={max_r:.3f}). '
+                        + ('This relationship may be causal — investigate further.'
+                           if abs(max_r) >= 0.7 else
+                           'Weak to moderate linear relationship — use with caution.')
+                    ),
+                    insight_type      = 'summary',
+                    source_table_name = table.name,
+                    created_by        = owner,
+                    chart_data        = {
+                        'field_a': fa, 'field_b': fb,
+                        'r':       round(max_r, 4),
+                        'r2':      round(max_r ** 2, 4),
+                    },
+                )
+                insights.append(_corr_insight)
+
+        # ── Data-quality insight ───────────────────────────────────────────
+        _EMPTY = {'', 'none', 'nan', 'null', 'n/a', 'na'}
+        schema_fields = list(schema.keys())
+        null_counts = {}
+        for field in schema_fields:
+            null_counts[field] = sum(
+                1 for rec in records
+                if not rec or field not in rec
+                or str(rec.get(field, '')).strip().lower() in _EMPTY
+            )
+        high_null = [(f, null_counts[f] / len(records) * 100)
+                     for f in schema_fields if null_counts[f] / len(records) >= 0.15]
+        if high_null:
+            issues = '; '.join(f'"{f}" {p:.0f}% missing' for f, p in high_null[:5])
+            _dq_insight = Insight.objects.create(
+                workspace         = workspace,
+                title             = f'{table.name} — Data Quality Alert',
+                description       = (
+                    f'Several fields have high missing-value rates: {issues}. '
+                    f'Fix these before drawing conclusions or building models from this data.'
+                ),
+                insight_type      = 'anomaly',
+                source_table_name = table.name,
+                created_by        = owner,
+                chart_data        = {'high_null_fields': [{'field': f, 'null_pct': round(p, 1)}
+                                                           for f, p in high_null]},
+            )
+            insights.append(_dq_insight)
+
+    except Exception as exc:
+        logger.warning('Advanced statistical insights failed for %s: %s', table.name, exc)
 
     return insights, field_values
 
