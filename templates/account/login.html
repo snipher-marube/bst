@@ -1,707 +1,189 @@
-{% extends "base.html" %}
+{% extends "account/_base_auth.html" %}
 {% load static i18n allauth account socialaccount %}
 
-{% block title %}
-    {% trans "Sign In" %} | {{ block.super }}
-{% endblock  %}
+{% block title %}{% trans "Sign In" %} | {{ block.super }}{% endblock %}
 
+{% block auth_content %}
+<h1 class="auth-heading">{% trans "Welcome back" %}</h1>
+<p class="auth-subheading">{% trans "Sign in to your account to continue" %}</p>
 
-{% block content %}
-<style>
-    /* Brand color variables */
-    :root {
-        --primary-dark: #03466e;
-        --primary-orange: #f68712;
-        --dark-gray: #2b2b2b;
-        --light-bg: #f8fafc;
-        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
-        --error-red: #ef4444;
-        --success-green: #10b981;
-    }
-
-    /* Gradient backgrounds */
-    .gradient-brand {
-        background: linear-gradient(135deg, var(--primary-dark) 0%, #022b44 100%);
-    }
-    
-    .gradient-cta {
-        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
-    }
-
-    /* Form input styles */
-    .form-input {
-        width: 100%;
-        padding: 0.875rem 1rem 0.875rem 2.75rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        font-size: 1rem;
-        transition: all 0.2s ease;
-        background-color: #f9fafb;
-    }
-    
-    .form-input:hover {
-        background-color: #ffffff;
-        border-color: #d1d5db;
-    }
-    
-    .form-input:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        background-color: #ffffff;
-        box-shadow: var(--focus-ring);
-    }
-    
-    .form-input.error {
-        border-color: var(--error-red);
-        background-color: #fef2f2;
-    }
-    
-    .form-input.error:focus {
-        border-color: var(--error-red);
-        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
-    }
-
-    /* Input icon positioning */
-    .input-wrapper {
-        position: relative;
-    }
-    
-    .input-icon {
-        position: absolute;
-        left: 1rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #9ca3af;
-        transition: color 0.2s ease;
-        pointer-events: none;
-        z-index: 10;
-    }
-    
-    .input-wrapper:focus-within .input-icon {
-        color: var(--primary-orange);
-    }
-
-    /* Primary button */
-    .btn-primary {
-        width: 100%;
-        padding: 0.875rem 1.5rem;
-        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
-        color: white;
-        font-weight: 600;
-        font-size: 1rem;
-        border: none;
-        border-radius: 0.75rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(246, 135, 18, 0.3);
-    }
-    
-    .btn-primary:focus {
-        outline: none;
-        box-shadow: var(--focus-ring);
-    }
-    
-    .btn-primary:active {
-        transform: translateY(0);
-    }
-    
-    .btn-primary:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-    }
-
-    /* Secondary buttons (passkey, magic link) */
-    .btn-secondary {
-        width: 100%;
-        padding: 0.875rem 1.5rem;
-        background-color: white;
-        color: var(--primary-dark);
-        font-weight: 600;
-        font-size: 1rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    
-    .btn-secondary:hover {
-        border-color: var(--primary-orange);
-        background-color: #fff5e6;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-    
-    .btn-secondary:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        box-shadow: var(--focus-ring);
-    }
-    
-    .btn-secondary:active {
-        transform: translateY(0);
-    }
-
-    /* Social login buttons */
-    .social-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        padding: 0.875rem 1.5rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        font-weight: 500;
-        color: var(--dark-gray);
-        background-color: white;
-        transition: all 0.2s ease;
-        text-decoration: none;
-    }
-    
-    .social-btn:hover {
-        border-color: var(--primary-orange);
-        background-color: #fff5e6;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-    
-    .social-btn:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        box-shadow: var(--focus-ring);
-    }
-    
-    .social-btn.google:hover .fa-google {
-        color: #ea4335;
-    }
-    
-    .social-btn.linkedin:hover .fa-linkedin {
-        color: #0077b5;
-    }
-
-    /* Remember me checkbox */
-    .checkbox-custom {
-        width: 1.25rem;
-        height: 1.25rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.375rem;
-        background-color: white;
-        transition: all 0.2s ease;
-        cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-    }
-    
-    .checkbox-custom:checked {
-        background-color: var(--primary-orange);
-        border-color: var(--primary-orange);
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z' clip-rule='evenodd'/%3E%3C/svg%3E");
-        background-size: 0.875rem;
-        background-position: center;
-        background-repeat: no-repeat;
-    }
-    
-    .checkbox-custom:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        box-shadow: var(--focus-ring);
-    }
-
-    /* Forgot password link */
-    .forgot-link {
-        color: var(--primary-dark);
-        font-size: 0.875rem;
-        font-weight: 500;
-        text-decoration: none;
-        transition: color 0.2s ease;
-    }
-    
-    .forgot-link:hover {
-        color: var(--primary-orange);
-        text-decoration: underline;
-    }
-    
-    .forgot-link:focus {
-        outline: 2px solid var(--primary-orange);
-        outline-offset: 2px;
-        border-radius: 0.25rem;
-    }
-
-    /* Error message */
-    .error-message {
-        color: var(--error-red);
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    /* Divider with text */
-    .divider {
-        display: flex;
-        align-items: center;
-        text-align: center;
-        color: #9ca3af;
-        font-size: 0.875rem;
-        margin: 1.5rem 0;
-    }
-    
-    .divider::before,
-    .divider::after {
-        content: '';
-        flex: 1;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    
-    .divider span {
-        margin: 0 1rem;
-    }
-
-    /* Loading spinner */
-    .spinner {
-        display: inline-block;
-        width: 1.25rem;
-        height: 1.25rem;
-        border: 3px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
-    }
-    
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    /* Alert messages */
-    .alert {
-        padding: 1rem;
-        border-radius: 0.75rem;
-        margin-bottom: 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-    
-    .alert-error {
-        background-color: #fef2f2;
-        border-left: 4px solid var(--error-red);
-        color: #991b1b;
-    }
-    
-    .alert-success {
-        background-color: #f0fdf4;
-        border-left: 4px solid var(--success-green);
-        color: #166534;
-    }
-    
-    .alert-info {
-        background-color: #eff6ff;
-        border-left: 4px solid var(--primary-dark);
-        color: #1e3a8a;
-    }
-
-    /* Accessibility focus styles */
-    *:focus-visible {
-        outline: 2px solid var(--primary-orange);
-        outline-offset: 2px;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 640px) {
-        .form-input {
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
-        }
-        
-        .btn-primary,
-        .btn-secondary,
-        .social-btn {
-            padding: 0.75rem 1rem;
-        }
-    }
-</style>
-
-<main class="min-h-screen bg-gray-50 py-8 sm:py-12 lg:py-16" id="main-content">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="max-w-md mx-auto">
-            
-            <!-- Skip to form link for keyboard users -->
-            <a href="#login-form" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
-                {% trans "Skip to login form" %}
-            </a>
-
-            <!-- Brand Header -->
-            <header class="text-center mb-8">
-                <a href="/" class="inline-block" aria-label="{% trans 'Go to homepage' %}">
-                    {% if site_settings and site_settings.logo %}
-                    <img src="{{ site_settings.logo.url }}" 
-                         alt="{{ site_name }}" 
-                         class="h-16 w-auto mx-auto mb-4 hover:scale-105 transition-transform duration-300"
-                         loading="lazy">
-                    {% else %}
-                    <div class="flex items-center justify-center space-x-3 mb-4">
-                        <div class="w-12 h-12 bg-[#f68712] rounded-xl flex items-center justify-center shadow-lg transform hover:rotate-6 transition-transform duration-300" 
-                             aria-hidden="true">
-                            <span class="text-white font-bold text-2xl">M</span>
-                        </div>
-                        <span class="text-[#03466e] font-bold text-3xl tracking-tight">etaAnalytics</span>
-                    </div>
-                    {% endif %}
-                </a>
-                
-                <h1 class="text-3xl font-bold text-[#03466e] mt-4" id="login-heading">
-                    {% trans "Welcome back" %}
-                </h1>
-                <p class="text-[#2b2b2b]/70 mt-2 text-lg">
-                    {% trans "Sign in to your account" %}
-                </p>
-            </header>
-
-            <!-- Messages/Alerts -->
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} mb-4" role="alert">
-                        <i class="fas {% if message.tags == 'error' %}fa-exclamation-circle{% elif message.tags == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} text-lg" aria-hidden="true"></i>
-                        <span>{{ message }}</span>
-                    </div>
-                {% endfor %}
-            {% endif %}
-
-            <!-- Login Card -->
-            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                <!-- Card Header with Brand Accent -->
-                <div class="h-2 bg-gradient-to-r from-[#f68712] to-[#ff9f3d]" role="presentation"></div>
-                
-                <div class="p-6 sm:p-8">
-                    <!-- Local Login Form -->
-                    {% if not SOCIALACCOUNT_ONLY %}
-                        {% url 'account_login' as login_url %}
-                        
-                        <form id="login-form" 
-                              method="post" 
-                              action="{{ login_url }}" 
-                              class="space-y-5"
-                              novalidate>
-                            {% csrf_token %}
-                            
-                            <!-- Non-field errors -->
-                            {% if form.non_field_errors %}
-                            <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-lg" 
-                                 role="alert"
-                                 aria-live="assertive">
-                                <div class="flex">
-                                    <div class="flex-shrink-0" aria-hidden="true">
-                                        <i class="fas fa-exclamation-circle text-red-500 text-lg"></i>
-                                    </div>
-                                    <div class="ml-3">
-                                        {{ form.non_field_errors }}
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            <!-- Login Field (Email or Username) -->
-                            <div class="space-y-1">
-                                <label for="id_login" class="block text-sm font-semibold text-[#2b2b2b]">
-                                    {% trans "Email" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
-                                    <span class="sr-only">required</span>
-                                </label>
-                                <div class="input-wrapper">
-                                    <i class="fas fa-envelope input-icon" aria-hidden="true"></i>
-                                    <input type="email" 
-                                           name="login" 
-                                           id="id_login" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="login-error"
-                                           class="form-input {% if form.login.errors %}error{% endif %}"
-                                           placeholder="{% trans 'you@example.com' %}"
-                                           value="{{ form.login.value|default:'' }}"
-                                           autocomplete="email"
-                                           autofocus>
-                                </div>
-                                
-                                {% if form.login.errors %}
-                                <div id="login-error" class="error-message" role="alert">
-                                    <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
-                                    {{ form.login.errors.0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Password Field -->
-                            <div class="space-y-1">
-                                <label for="id_password" class="block text-sm font-semibold text-[#2b2b2b]">
-                                    {% trans "Password" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
-                                    <span class="sr-only">required</span>
-                                </label>
-                                <div class="input-wrapper">
-                                    <i class="fas fa-lock input-icon" aria-hidden="true"></i>
-                                    <input type="password" 
-                                           name="password" 
-                                           id="id_password" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="password-error"
-                                           class="form-input {% if form.password.errors %}error{% endif %}"
-                                           placeholder="••••••••"
-                                           autocomplete="current-password">
-                                    <button type="button" 
-                                            class="absolute inset-y-0 right-0 pr-3 flex items-center toggle-password"
-                                            data-target="id_password"
-                                            aria-label="{% trans 'Toggle password visibility' %}">
-                                        <i class="fas fa-eye text-gray-400 hover:text-[#f68712] transition-colors" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                
-                                {% if form.password.errors %}
-                                <div id="password-error" class="error-message" role="alert">
-                                    <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
-                                    {{ form.password.errors.0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Remember Me & Forgot Password -->
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center space-x-2">
-                                    <input type="checkbox" 
-                                           name="remember" 
-                                           id="id_remember" 
-                                           class="checkbox-custom"
-                                           {% if form.remember.value %}checked{% endif %}>
-                                    <label for="id_remember" class="text-sm text-[#2b2b2b] cursor-pointer select-none">
-                                        {% trans "Remember me" %}
-                                    </label>
-                                </div>
-                                
-                                <a href="{% url 'account_reset_password' %}" 
-                                   class="forgot-link"
-                                   aria-label="{% trans 'Forgot your password?' %}">
-                                    {% trans "Forgot password?" %}
-                                </a>
-                            </div>
-
-                            {{ redirect_field }}
-
-                            <!-- Submit Button -->
-                            <button type="submit" 
-                                    class="btn-primary"
-                                    id="login-submit"
-                                    aria-label="{% trans 'Sign in to your account' %}">
-                                <span>{% trans "Sign In" %}</span>
-                                <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform" aria-hidden="true"></i>
-                            </button>
-                        </form>
-                    {% endif %}
-
-                    <!-- Alternative Login Methods -->
-                    {% if LOGIN_BY_CODE_ENABLED or PASSKEY_LOGIN_ENABLED %}
-                        <div class="divider" role="separator">
-                            <span>{% trans "or" %}</span>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            {% if PASSKEY_LOGIN_ENABLED %}
-                                <button type="submit" 
-                                        form="mfa_login" 
-                                        id="passkey_login" 
-                                        class="btn-secondary"
-                                        aria-label="{% trans 'Sign in with a passkey' %}">
-                                    <i class="fas fa-key text-[#f68712]" aria-hidden="true"></i>
-                                    <span>{% trans "Sign in with a passkey" %}</span>
-                                </button>
-                            {% endif %}
-                            
-                            {% if LOGIN_BY_CODE_ENABLED %}
-                                <a href="{{ request_login_code_url }}" 
-                                   class="btn-secondary"
-                                   aria-label="{% trans 'Request a sign-in code' %}">
-                                    <i class="fas fa-envelope text-[#f68712]" aria-hidden="true"></i>
-                                    <span>{% trans "Send me a sign-in code" %}</span>
-                                </a>
-                            {% endif %}
-                        </div>
-                    {% endif %}
-
-                    <!-- Social Login -->
-                    {% if SOCIALACCOUNT_ENABLED %}
-                        <div class="divider" role="separator">
-                            <span>{% trans "or continue with" %}</span>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            {% get_providers as socialaccount_providers %}
-                            
-                            {% for provider in socialaccount_providers %}
-                                <a href="{% provider_login_url provider.id process='login' %}" 
-                                   class="social-btn {{ provider.id }}"
-                                   rel="nofollow noopener"
-                                   aria-label="{% blocktrans %}Sign in with {{ provider.name }}{% endblocktrans %}">
-                                    {% if provider.id == "google" %}
-                                        <i class="fab fa-google text-xl mr-3" aria-hidden="true"></i>
-                                    {% elif provider.id == "linkedin" %}
-                                        <i class="fab fa-linkedin text-xl mr-3" aria-hidden="true"></i>
-                                    {% else %}
-                                        <i class="fas fa-globe text-xl mr-3" aria-hidden="true"></i>
-                                    {% endif %}
-                                    <span>{% blocktrans %}Sign in with {{ provider.name }}{% endblocktrans %}</span>
-                                </a>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-
-                    <!-- Sign Up Link -->
-                    <p class="text-center text-sm text-[#2b2b2b]/70 mt-8">
-                        {% blocktranslate %}Don't have an account?{% endblocktranslate %}
-                        <a href="{{ signup_url }}" 
-                           class="font-semibold text-[#03466e] hover:text-[#f68712] transition-colors focus:outline-none focus:underline ml-1">
-                            {% trans "Sign up" %}
-                            <span class="sr-only">{% trans "for a new account" %}</span>
-                            <i class="fas fa-arrow-right ml-1 text-xs" aria-hidden="true"></i>
-                        </a>
-                    </p>
-                </div>
-            </div>
-
-            <!-- Trust Indicators -->
-            <div class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-                <div class="group focus-within:outline-none focus-within:ring-2 focus-within:ring-[#f68712] focus-within:ring-offset-2 rounded-lg p-2">
-                    <div class="w-10 h-10 bg-[#03466e]/10 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-[#f68712]/10 transition-colors" aria-hidden="true">
-                        <i class="fas fa-shield-alt text-[#03466e] group-hover:text-[#f68712] transition-colors"></i>
-                    </div>
-                    <p class="text-xs text-[#2b2b2b]/60">{% trans "256-bit Encryption" %}</p>
-                </div>
-                <div class="group focus-within:outline-none focus-within:ring-2 focus-within:ring-[#f68712] focus-within:ring-offset-2 rounded-lg p-2">
-                    <div class="w-10 h-10 bg-[#03466e]/10 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-[#f68712]/10 transition-colors" aria-hidden="true">
-                        <i class="fas fa-headset text-[#03466e] group-hover:text-[#f68712] transition-colors"></i>
-                    </div>
-                    <p class="text-xs text-[#2b2b2b]/60">{% trans "24/7 Support" %}</p>
-                </div>
-            </div>
-
-            <!-- Security Note -->
-            <p class="text-center text-xs text-gray-500 mt-6">
-                <i class="fas fa-lock mr-1 text-[#f68712]" aria-hidden="true"></i>
-                {% trans "Your information is protected by enterprise-grade security" %}
-            </p>
-        </div>
-    </div>
-</main>
-
-<!-- Hidden MFA form (if needed) -->
-{% if PASSKEY_LOGIN_ENABLED %}
-    <form id="mfa_login" method="post" action="{% url 'mfa_login_webauthn' %}" class="hidden">
-        {% csrf_token %}
-        {{ redirect_field }}
-    </form>
+{# ── Non-field errors ─────────────────────────────────────── #}
+{% if form.non_field_errors %}
+<div class="auth-alert auth-alert-error" role="alert" aria-live="assertive">
+    <i class="fas fa-circle-xmark" aria-hidden="true"></i>
+    <span>{{ form.non_field_errors.0 }}</span>
+</div>
 {% endif %}
 
-<!-- JavaScript for enhanced UX -->
+{# ── Social buttons ───────────────────────────────────────── #}
+{% if SOCIALACCOUNT_ENABLED %}
+    {% get_providers as providers %}
+    {% if providers %}
+    <div class="auth-social-row mb-4">
+        {% for provider in providers %}
+            <a href="{% provider_login_url provider.id process='login' %}"
+               class="auth-social-btn"
+               rel="nofollow noopener"
+               aria-label="{% blocktrans %}Sign in with {{ provider.name }}{% endblocktrans %}">
+                {% if provider.id == "google" %}
+                    <i class="fab fa-google text-[#ea4335]" aria-hidden="true"></i>
+                {% elif provider.id == "linkedin" or provider.id == "linkedin_oidc" %}
+                    <i class="fab fa-linkedin text-[#0a66c2]" aria-hidden="true"></i>
+                {% elif provider.id == "github" %}
+                    <i class="fab fa-github text-[#24292e]" aria-hidden="true"></i>
+                {% else %}
+                    <i class="fas fa-globe text-[#03466e]" aria-hidden="true"></i>
+                {% endif %}
+                <span>{{ provider.name }}</span>
+            </a>
+        {% endfor %}
+    </div>
+    <div class="auth-divider">{% trans "or sign in with email" %}</div>
+    {% endif %}
+{% endif %}
+
+{# ── Email / password form ────────────────────────────────── #}
+{% if not SOCIALACCOUNT_ONLY %}
+<form id="login-form" method="post" action="{% url 'account_login' %}" novalidate>
+    {% csrf_token %}
+
+    {# Email #}
+    <div class="auth-field">
+        <label for="id_login" class="auth-label">
+            {% trans "Email" %}<span class="auth-label-required" aria-hidden="true">*</span>
+            <span class="sr-only">{% trans "required" %}</span>
+        </label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-envelope auth-input-icon" aria-hidden="true"></i>
+            <input type="email" name="login" id="id_login"
+                   class="auth-input {% if form.login.errors %}is-error{% endif %}"
+                   value="{{ form.login.value|default:'' }}"
+                   placeholder="you@company.com"
+                   autocomplete="email"
+                   aria-required="true"
+                   {% if not form.login.errors %}autofocus{% endif %}>
+        </div>
+        {% if form.login.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>
+            {{ form.login.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# Password #}
+    <div class="auth-field">
+        <label for="id_password" class="auth-label">
+            {% trans "Password" %}<span class="auth-label-required" aria-hidden="true">*</span>
+            <span class="sr-only">{% trans "required" %}</span>
+        </label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-lock auth-input-icon" aria-hidden="true"></i>
+            <input type="password" name="password" id="id_password"
+                   class="auth-input {% if form.password.errors %}is-error{% endif %}"
+                   placeholder="••••••••"
+                   autocomplete="current-password"
+                   aria-required="true">
+            <button type="button" class="auth-pw-toggle" data-target="id_password"
+                    aria-label="{% trans 'Show password' %}">
+                <i class="fas fa-eye" aria-hidden="true"></i>
+            </button>
+        </div>
+        {% if form.password.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>
+            {{ form.password.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# Remember me + forgot #}
+    <div class="flex items-center justify-between mb-5">
+        <label class="flex items-center gap-2 cursor-pointer select-none text-sm text-[#2b2b2b]">
+            <input type="checkbox" name="remember" id="id_remember" class="auth-check"
+                   {% if form.remember.value %}checked{% endif %}>
+            {% trans "Remember me" %}
+        </label>
+        <a href="{% url 'account_reset_password' %}" class="auth-link text-sm">
+            {% trans "Forgot password?" %}
+        </a>
+    </div>
+
+    {{ redirect_field }}
+
+    <button type="submit" id="login-submit" class="auth-btn auth-btn-primary">
+        <span>{% trans "Sign In" %}</span>
+        <i class="fas fa-arrow-right text-sm" aria-hidden="true"></i>
+    </button>
+</form>
+{% endif %}
+
+{# ── Alternative methods ──────────────────────────────────── #}
+{% if LOGIN_BY_CODE_ENABLED or PASSKEY_LOGIN_ENABLED %}
+<div class="auth-divider mt-4">{% trans "other options" %}</div>
+<div class="flex flex-col gap-2">
+    {% if PASSKEY_LOGIN_ENABLED %}
+    <button type="submit" form="passkey-form" id="passkey-btn"
+            class="auth-btn auth-btn-secondary text-sm w-full">
+        <i class="fas fa-fingerprint text-[#f68712]" aria-hidden="true"></i>
+        {% trans "Sign in with a passkey" %}
+    </button>
+    {% endif %}
+    {% if LOGIN_BY_CODE_ENABLED %}
+    <a href="{{ request_login_code_url }}" class="auth-btn auth-btn-secondary text-sm w-full">
+        <i class="fas fa-envelope-open-text text-[#f68712]" aria-hidden="true"></i>
+        {% trans "Email me a sign-in code" %}
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block auth_footer %}
+<p class="text-center text-sm text-gray-500 mt-5">
+    {% trans "Don't have an account?" %}
+    <a href="{{ signup_url }}" class="auth-link font-semibold ml-1">{% trans "Create one" %}</a>
+</p>
+{% endblock %}
+
+{# Hidden passkey form #}
+{% if PASSKEY_LOGIN_ENABLED %}
+<form id="passkey-form" method="post" action="{% url 'mfa_login_webauthn' %}" class="hidden">
+    {% csrf_token %}{{ redirect_field }}
+</form>
+{% endif %}
+
+{% block extra_scripts %}
 <script>
-(function() {
+(function () {
     'use strict';
 
     // Password visibility toggle
-    const toggleButtons = document.querySelectorAll('.toggle-password');
-    toggleButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const targetId = this.dataset.target;
-            const input = document.getElementById(targetId);
-            const icon = this.querySelector('i');
-            
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-                this.setAttribute('aria-label', '{% trans "Hide password" %}');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-                this.setAttribute('aria-label', '{% trans "Show password" %}');
-            }
+    document.querySelectorAll('.auth-pw-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const input = document.getElementById(btn.dataset.target);
+            const icon  = btn.querySelector('i');
+            const show  = input.type === 'password';
+            input.type  = show ? 'text' : 'password';
+            icon.classList.toggle('fa-eye',      !show);
+            icon.classList.toggle('fa-eye-slash', show);
+            btn.setAttribute('aria-label', show ? '{% trans "Hide password" %}' : '{% trans "Show password" %}');
         });
     });
 
     // Loading state on submit
-    const loginForm = document.getElementById('login-form');
-    const submitBtn = document.getElementById('login-submit');
-    
-    if (loginForm && submitBtn) {
-        loginForm.addEventListener('submit', function() {
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<div class="spinner" role="status" aria-label="{% trans 'Loading' %}"></div><span class="sr-only">{% trans 'Signing in...' %}</span>';
+    const form = document.getElementById('login-form');
+    const btn  = document.getElementById('login-submit');
+    if (form && btn) {
+        form.addEventListener('submit', () => {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="auth-spinner"></span><span class="sr-only">{% trans "Signing in…" %}</span>';
         });
     }
-
-    // Remember me checkbox enhancement
-    const rememberCheckbox = document.getElementById('id_remember');
-    if (rememberCheckbox) {
-        rememberCheckbox.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                this.checked = !this.checked;
-            }
-        });
-    }
-
-    // Auto-dismiss alerts after 5 seconds
-    const alerts = document.querySelectorAll('.alert');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.transition = 'opacity 0.5s ease';
-            alert.style.opacity = '0';
-            setTimeout(() => {
-                alert.style.display = 'none';
-            }, 500);
-        }, 5000);
-    });
-
-    // Add input validation on blur
-    const emailInput = document.getElementById('id_login');
-    if (emailInput) {
-        emailInput.addEventListener('blur', function() {
-            const email = this.value;
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            
-            if (email && !emailRegex.test(email)) {
-                this.classList.add('error');
-                let errorDiv = document.getElementById('login-error');
-                if (!errorDiv) {
-                    errorDiv = document.createElement('div');
-                    errorDiv.id = 'login-error';
-                    errorDiv.className = 'error-message';
-                    errorDiv.setAttribute('role', 'alert');
-                    errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> {% trans "Please enter a valid email address" %}';
-                    this.parentElement.parentElement.appendChild(errorDiv);
-                }
-            } else if (this.classList.contains('error')) {
-                this.classList.remove('error');
-                const errorDiv = document.getElementById('login-error');
-                if (errorDiv) errorDiv.remove();
-            }
-        });
-    }
-
 })();
 </script>
-
-<!-- Passkey login script -->
 {% if PASSKEY_LOGIN_ENABLED %}
-    {% include "mfa/webauthn/snippets/login_script.html" with button_id="passkey_login" %}
+    {% include "mfa/webauthn/snippets/login_script.html" with button_id="passkey-btn" %}
 {% endif %}
 {% endblock %}

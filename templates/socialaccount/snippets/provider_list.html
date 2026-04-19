@@ -1,18 +1,34 @@
-{% load allauth socialaccount %}
+{% load i18n allauth socialaccount %}
 {% get_providers as socialaccount_providers %}
 {% if socialaccount_providers %}
-    {% element provider_list %}
-        {% for provider in socialaccount_providers %}
-            {% if provider.id == "openid" %}
-                {% for brand in provider.get_brands %}
-                    {% provider_login_url provider openid=brand.openid_url process=process as href %}
-                    {% element provider name=brand.name provider_id=provider.id href=href %}
-                    {% endelement %}
-                {% endfor %}
-            {% endif %}
+<div class="auth-social-row">
+    {% for provider in socialaccount_providers %}
+        {% if provider.id == "openid" %}
+            {% for brand in provider.get_brands %}
+                {% provider_login_url provider openid=brand.openid_url process=process as href %}
+                <a href="{{ href }}" class="auth-social-btn" aria-label="{{ brand.name }}">
+                    <i class="fas fa-link" aria-hidden="true"></i>
+                    <span>{{ brand.name }}</span>
+                </a>
+            {% endfor %}
+        {% else %}
             {% provider_login_url provider process=process scope=scope auth_params=auth_params as href %}
-            {% element provider name=provider.name provider_id=provider.id href=href %}
-            {% endelement %}
-        {% endfor %}
-    {% endelement %}
+            <a href="{{ href }}" class="auth-social-btn
+                {% if provider.id == 'google' %}border-[#ea4335] text-[#ea4335] hover:bg-[#ea4335]
+                {% elif provider.id == 'github' %}border-[#24292e] text-[#24292e] hover:bg-[#24292e]
+                {% elif provider.id == 'linkedin_oauth2' %}border-[#0077b5] text-[#0077b5] hover:bg-[#0077b5]
+                {% elif provider.id == 'facebook' %}border-[#1877f2] text-[#1877f2] hover:bg-[#1877f2]
+                {% else %}border-[#03466e] text-[#03466e] hover:bg-[#03466e]{% endif %}"
+               aria-label="{% blocktrans with name=provider.name %}Continue with {{ name }}{% endblocktrans %}">
+                {% if provider.id == 'google' %}<i class="fab fa-google text-sm" aria-hidden="true"></i>
+                {% elif provider.id == 'github' %}<i class="fab fa-github text-sm" aria-hidden="true"></i>
+                {% elif provider.id == 'linkedin_oauth2' %}<i class="fab fa-linkedin-in text-sm" aria-hidden="true"></i>
+                {% elif provider.id == 'facebook' %}<i class="fab fa-facebook-f text-sm" aria-hidden="true"></i>
+                {% elif provider.id == 'twitter' %}<i class="fab fa-x-twitter text-sm" aria-hidden="true"></i>
+                {% else %}<i class="fas fa-link text-sm" aria-hidden="true"></i>{% endif %}
+                <span class="text-sm font-medium">{{ provider.name }}</span>
+            </a>
+        {% endif %}
+    {% endfor %}
+</div>
 {% endif %}

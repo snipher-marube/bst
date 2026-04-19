@@ -1,4 +1,5 @@
-{% load i18n allauth %}
-{% element p %}
-    <strong>{% trans 'Warning:' %}</strong> {% trans "You currently do not have any email address set up. You should really add an email address so you can receive notifications, reset your password, etc." %}
-{% endelement %}
+{% load i18n %}
+<div class="auth-alert auth-alert-warning mb-4">
+    <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+    <p class="text-sm"><strong>{% trans 'Warning:' %}</strong> {% trans "You have no email address set up. Add one to receive notifications and reset your password." %}</p>
+</div>

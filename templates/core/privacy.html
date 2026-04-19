@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}Privacy Policy | MetaAnalytics{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-[#f8fafc]">
+
+    {# Hero #}
+    <div class="bg-[#03466e] text-white py-16 px-4">
+        <div class="max-w-3xl mx-auto text-center">
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-white/10 mb-5" aria-hidden="true">
+                <i class="fas fa-shield-halved text-2xl text-[#f68712]"></i>
+            </div>
+            <h1 class="text-3xl font-bold mb-2">Privacy Policy</h1>
+            <p class="text-blue-200 text-sm">Effective date: 1 January 2025 &nbsp;&middot;&nbsp; Last updated: 18 April 2026</p>
+        </div>
+    </div>
+
+    {# Content #}
+    <div class="max-w-3xl mx-auto px-4 py-12">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+
+            {# Quick nav #}
+            <div class="bg-[#f9fafb] border-b border-gray-100 px-8 py-5">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contents</p>
+                <nav class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <a href="#overview" class="text-[#03466e] hover:text-[#f68712] transition-colors">1. Overview</a>
+                    <a href="#data-collected" class="text-[#03466e] hover:text-[#f68712] transition-colors">2. Data We Collect</a>
+                    <a href="#how-we-use" class="text-[#03466e] hover:text-[#f68712] transition-colors">3. How We Use It</a>
+                    <a href="#sharing" class="text-[#03466e] hover:text-[#f68712] transition-colors">4. Sharing</a>
+                    <a href="#cookies" class="text-[#03466e] hover:text-[#f68712] transition-colors">5. Cookies</a>
+                    <a href="#retention" class="text-[#03466e] hover:text-[#f68712] transition-colors">6. Retention</a>
+                    <a href="#security" class="text-[#03466e] hover:text-[#f68712] transition-colors">7. Security</a>
+                    <a href="#rights" class="text-[#03466e] hover:text-[#f68712] transition-colors">8. Your Rights</a>
+                    <a href="#children" class="text-[#03466e] hover:text-[#f68712] transition-colors">9. Children</a>
+                    <a href="#international" class="text-[#03466e] hover:text-[#f68712] transition-colors">10. International</a>
+                    <a href="#changes" class="text-[#03466e] hover:text-[#f68712] transition-colors">11. Changes</a>
+                    <a href="#contact" class="text-[#03466e] hover:text-[#f68712] transition-colors">12. Contact</a>
+                </nav>
+            </div>
+
+            <div class="px-8 py-8 prose prose-slate max-w-none
+                        prose-headings:text-[#03466e] prose-headings:font-semibold
+                        prose-a:text-[#03466e] prose-a:no-underline hover:prose-a:text-[#f68712]
+                        prose-strong:text-[#2b2b2b]">
+
+                <p class="lead text-gray-600 text-base">
+                    Business Sight Technologies Ltd ("MetaAnalytics", "we", "our", "us") is committed to protecting your personal information. This policy explains what we collect, why, and how you can control it.
+                </p>
+
+                <section id="overview" class="pt-4">
+                    <h2>1. Overview</h2>
+                    <p>This Privacy Policy applies to all personal data processed through the MetaAnalytics web platform, APIs, and related services. We act as a <strong>data controller</strong> for account and usage data, and as a <strong>data processor</strong> for any personal data you upload into your dashboards.</p>
+                </section>
+
+                <section id="data-collected" class="pt-4">
+                    <h2>2. Data We Collect</h2>
+                    <h3>2.1 Account data</h3>
+                    <ul>
+                        <li>Name, email address, and password (hashed)</li>
+                        <li>Profile picture and job title (optional)</li>
+                        <li>Billing address and payment method (handled by Stripe — we never store card numbers)</li>
+                    </ul>
+                    <h3>2.2 Usage data</h3>
+                    <ul>
+                        <li>Pages visited, features used, and interactions with dashboards</li>
+                        <li>IP address, browser type, and device identifiers</li>
+                        <li>Session duration and referral source</li>
+                    </ul>
+                    <h3>2.3 Customer data</h3>
+                    <p>Any data you upload, connect via integrations, or generate through the platform. You remain the data controller for this data.</p>
+                    <h3>2.4 Communications data</h3>
+                    <p>Messages you send us via the contact form, support tickets, or email.</p>
+                </section>
+
+                <section id="how-we-use" class="pt-4">
+                    <h2>3. How We Use Your Data</h2>
+                    <ul>
+                        <li><strong>Providing the service</strong> — authenticating you, processing data, and displaying dashboards.</li>
+                        <li><strong>Billing</strong> — processing payments and sending invoices.</li>
+                        <li><strong>Communication</strong> — sending transactional emails (password resets, account notices) and, with your consent, product updates.</li>
+                        <li><strong>Analytics &amp; improvement</strong> — understanding how the platform is used to improve features.</li>
+                        <li><strong>Security</strong> — detecting and preventing fraud and abuse.</li>
+                        <li><strong>Legal compliance</strong> — meeting our obligations under applicable law.</li>
+                    </ul>
+                    <p>We rely on <strong>contract performance</strong>, <strong>legitimate interests</strong>, and <strong>consent</strong> as our legal bases for processing under GDPR.</p>
+                </section>
+
+                <section id="sharing" class="pt-4">
+                    <h2>4. Sharing Your Data</h2>
+                    <p>We do not sell your personal data. We share it only with:</p>
+                    <ul>
+                        <li><strong>Service providers</strong> acting as processors on our behalf (hosting, email delivery, payment processing, error monitoring).</li>
+                        <li><strong>Law enforcement</strong> when required by applicable law or valid legal process.</li>
+                        <li><strong>Successors</strong> in the event of a merger or acquisition, with prior notice to you.</li>
+                    </ul>
+                    <p>All third-party processors are bound by data processing agreements and may not use your data for their own purposes.</p>
+                </section>
+
+                <section id="cookies" class="pt-4">
+                    <h2>5. Cookies &amp; Tracking</h2>
+                    <p>We use strictly necessary cookies to maintain your session. With your consent we also use analytics cookies to measure platform usage. You can manage cookie preferences at any time via the cookie banner or your browser settings.</p>
+                    <div class="overflow-x-auto">
+                        <table class="text-sm w-full border-collapse">
+                            <thead class="bg-[#f9fafb]">
+                                <tr>
+                                    <th class="border border-gray-200 px-3 py-2 text-left">Cookie</th>
+                                    <th class="border border-gray-200 px-3 py-2 text-left">Purpose</th>
+                                    <th class="border border-gray-200 px-3 py-2 text-left">Expiry</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="border border-gray-200 px-3 py-2 font-mono text-xs">sessionid</td>
+                                    <td class="border border-gray-200 px-3 py-2">Authentication session</td>
+                                    <td class="border border-gray-200 px-3 py-2">2 weeks</td>
+                                </tr>
+                                <tr>
+                                    <td class="border border-gray-200 px-3 py-2 font-mono text-xs">csrftoken</td>
+                                    <td class="border border-gray-200 px-3 py-2">CSRF protection</td>
+                                    <td class="border border-gray-200 px-3 py-2">1 year</td>
+                                </tr>
+                                <tr>
+                                    <td class="border border-gray-200 px-3 py-2 font-mono text-xs">_analytics</td>
+                                    <td class="border border-gray-200 px-3 py-2">Usage analytics (consent)</td>
+                                    <td class="border border-gray-200 px-3 py-2">90 days</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="retention" class="pt-4">
+                    <h2>6. Data Retention</h2>
+                    <ul>
+                        <li>Account data is retained for the lifetime of your account plus 30 days after deletion.</li>
+                        <li>Billing records are retained for 7 years for tax compliance.</li>
+                        <li>Usage logs are retained for 90 days.</li>
+                        <li>Customer data you upload is deleted within 30 days of account closure.</li>
+                    </ul>
+                </section>
+
+                <section id="security" class="pt-4">
+                    <h2>7. Security</h2>
+                    <p>We apply industry-standard safeguards including TLS encryption in transit, AES-256 encryption at rest, regular penetration testing, and role-based access controls. In the event of a data breach that affects your rights, we will notify you within 72 hours as required by GDPR.</p>
+                </section>
+
+                <section id="rights" class="pt-4">
+                    <h2>8. Your Rights</h2>
+                    <p>Depending on your location you may have the right to:</p>
+                    <ul>
+                        <li><strong>Access</strong> — request a copy of personal data we hold about you.</li>
+                        <li><strong>Rectification</strong> — correct inaccurate data.</li>
+                        <li><strong>Erasure</strong> — request deletion of your data ("right to be forgotten").</li>
+                        <li><strong>Portability</strong> — receive your data in a machine-readable format.</li>
+                        <li><strong>Objection / Restriction</strong> — object to or limit certain processing.</li>
+                        <li><strong>Withdraw consent</strong> — at any time for consent-based processing.</li>
+                    </ul>
+                    <p>To exercise any right, email <a href="mailto:privacy@metaanalytics.io">privacy@metaanalytics.io</a> or use our <a href="{% url 'core:contact' %}">contact form</a>. We will respond within 30 days.</p>
+                </section>
+
+                <section id="children" class="pt-4">
+                    <h2>9. Children's Privacy</h2>
+                    <p>MetaAnalytics is not directed at children under 16. We do not knowingly collect personal data from minors. If you believe a child has provided us data, please contact us immediately and we will delete it.</p>
+                </section>
+
+                <section id="international" class="pt-4">
+                    <h2>10. International Transfers</h2>
+                    <p>Your data may be processed in countries outside your own. Where we transfer personal data outside the EEA we rely on Standard Contractual Clauses (SCCs) or other approved safeguards to ensure an equivalent level of protection.</p>
+                </section>
+
+                <section id="changes" class="pt-4">
+                    <h2>11. Changes to This Policy</h2>
+                    <p>We may update this policy periodically. We will notify you by email and display a prominent notice in the platform at least 14 days before material changes take effect.</p>
+                </section>
+
+                <section id="contact" class="pt-4">
+                    <h2>12. Contact &amp; DPO</h2>
+                    <p>Data controller: <strong>Business Sight Technologies Ltd</strong></p>
+                    <ul>
+                        <li><strong>Privacy enquiries:</strong> <a href="mailto:privacy@metaanalytics.io">privacy@metaanalytics.io</a></li>
+                        <li><strong>Web:</strong> <a href="{% url 'core:contact' %}">Contact form</a></li>
+                    </ul>
+                    <p>If you are in the EU/EEA and believe we have not addressed your concerns, you have the right to lodge a complaint with your local data protection authority.</p>
+                </section>
+
+            </div>{# end prose #}
+        </div>{# end card #}
+
+        {# Footer links #}
+        <div class="mt-8 text-center text-sm text-gray-400 space-x-4">
+            <a href="{% url 'core:terms' %}" class="hover:text-[#03466e] transition-colors">Terms of Service</a>
+            <span>&middot;</span>
+            <a href="{% url 'core:contact' %}" class="hover:text-[#03466e] transition-colors">Contact</a>
+            <span>&middot;</span>
+            <a href="/" class="hover:text-[#03466e] transition-colors">Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

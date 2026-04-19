@@ -3578,3 +3578,205 @@ class TestCohortFunnelWidgetTypes(TestCase):
         result = QueryEngine().execute_widget_query(w)
         self.assertNotIn('error', result)
         self.assertIn('steps', result)
+
+
+# ---------------------------------------------------------------------------
+# Gap 25 — In-dashboard collaboration (DashboardComment)
+# ---------------------------------------------------------------------------
+
+import json as _json
+from django.urls import reverse
+from apps.dashboards.factories import WorkspaceMembershipFactory
+from apps.dashboards.models import DashboardComment
+
+
+class _CommentTestBase(TestCase):
+    """Common setup: owner + workspace + dashboard, session seeded."""
+
+    def setUp(self):
+        self.user      = UserFactory(first_name='Alice', last_name='Owner')
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.dashboard = DashboardFactory(workspace=self.workspace, created_by=self.user)
+        self.client.force_login(self.user)
+        session = self.client.session
+        session['current_workspace_id'] = str(self.workspace.id)
+        session.save()
+
+    def _comments_url(self):
+        return reverse('dashboard:dashboard_comments', kwargs={'pk': self.dashboard.pk})
+
+    def _delete_url(self, comment_id):
+        return reverse('dashboard:dashboard_comment_delete', kwargs={
+            'pk': self.dashboard.pk, 'comment_id': comment_id,
+        })
+
+    def _post_comment(self, body, client=None):
+        c = client or self.client
+        return c.post(
+            self._comments_url(),
+            data=_json.dumps({'body': body}),
+            content_type='application/json',
+        )
+
+
+class TestDashboardCommentModel(_CommentTestBase):
+
+    def test_str_contains_body_preview(self):
+        c = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=self.user, body='Hello world'
+        )
+        self.assertIn('Hello world', str(c))
+
+    def test_is_deleted_defaults_false(self):
+        c = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=self.user, body='Test'
+        )
+        self.assertFalse(c.is_deleted)
+
+    def test_ordering_by_created_at(self):
+        c1 = DashboardComment.objects.create(dashboard=self.dashboard, user=self.user, body='First')
+        c2 = DashboardComment.objects.create(dashboard=self.dashboard, user=self.user, body='Second')
+        qs = list(DashboardComment.objects.filter(dashboard=self.dashboard))
+        self.assertEqual(qs[0].id, c1.id)
+        self.assertEqual(qs[1].id, c2.id)
+
+    def test_soft_delete_does_not_remove_row(self):
+        c = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=self.user, body='Will be soft deleted'
+        )
+        c.is_deleted = True
+        c.save(update_fields=['is_deleted'])
+        self.assertTrue(DashboardComment.objects.filter(pk=c.pk).exists())
+
+
+class TestDashboardCommentsGet(_CommentTestBase):
+
+    def test_get_empty_returns_200_with_list(self):
+        resp = self.client.get(self._comments_url())
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('comments', data)
+        self.assertEqual(data['comments'], [])
+
+    def test_get_returns_existing_non_deleted_comments(self):
+        DashboardComment.objects.create(dashboard=self.dashboard, user=self.user, body='Visible')
+        deleted = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=self.user, body='Gone', is_deleted=True
+        )
+        resp = self.client.get(self._comments_url())
+        bodies = [c['body'] for c in resp.json()['comments']]
+        self.assertIn('Visible', bodies)
+        self.assertNotIn('Gone', bodies)
+
+    def test_get_is_mine_flag(self):
+        DashboardComment.objects.create(dashboard=self.dashboard, user=self.user, body='Mine')
+        resp = self.client.get(self._comments_url())
+        comment = resp.json()['comments'][0]
+        self.assertTrue(comment['is_mine'])
+
+    def test_get_unauthenticated_redirects(self):
+        from django.test import Client
+        anon = Client()
+        resp = anon.get(self._comments_url())
+        self.assertIn(resp.status_code, [302, 301])
+
+    def test_get_wrong_workspace_returns_404(self):
+        other_ws   = WorkspaceFactory()
+        other_dash = DashboardFactory(workspace=other_ws)
+        url = reverse('dashboard:dashboard_comments', kwargs={'pk': other_dash.pk})
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 404)
+
+
+class TestDashboardCommentsPost(_CommentTestBase):
+
+    def test_post_creates_comment_returns_201(self):
+        resp = self._post_comment('Hello!')
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data['body'], 'Hello!')
+        self.assertTrue(data['is_mine'])
+        self.assertEqual(DashboardComment.objects.filter(dashboard=self.dashboard).count(), 1)
+
+    def test_post_empty_body_returns_400(self):
+        resp = self._post_comment('   ')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('error', resp.json())
+
+    def test_post_too_long_body_returns_400(self):
+        resp = self._post_comment('x' * 2001)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('error', resp.json())
+
+    def test_post_invalid_json_returns_400(self):
+        resp = self.client.post(
+            self._comments_url(),
+            data='not-json',
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_post_unauthenticated_redirects(self):
+        from django.test import Client
+        anon = Client()
+        resp = anon.post(
+            self._comments_url(),
+            data=_json.dumps({'body': 'Hi'}),
+            content_type='application/json',
+        )
+        self.assertIn(resp.status_code, [301, 302])
+
+    def test_post_mention_creates_notification(self):
+        mentioned = UserFactory(email='bob@example.com', first_name='Bob', last_name='Smith')
+        WorkspaceMembershipFactory(workspace=self.workspace, user=mentioned)
+        resp = self._post_comment('Hey @bob, check this out')
+        self.assertEqual(resp.status_code, 201)
+        from apps.notifications.models import Notification
+        notif = Notification.objects.filter(user=mentioned).first()
+        self.assertIsNotNone(notif)
+        self.assertIn('mentioned you', notif.title)
+
+    def test_post_self_mention_does_not_create_notification(self):
+        username = self.user.email.split('@')[0]
+        resp = self._post_comment(f'Hey @{username}, reminding myself')
+        self.assertEqual(resp.status_code, 201)
+        from apps.notifications.models import Notification
+        self.assertEqual(Notification.objects.filter(user=self.user).count(), 0)
+
+
+class TestDeleteDashboardComment(_CommentTestBase):
+
+    def test_delete_soft_deletes_own_comment(self):
+        comment = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=self.user, body='Delete me'
+        )
+        resp = self.client.post(self._delete_url(comment.pk))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['deleted'])
+        comment.refresh_from_db()
+        self.assertTrue(comment.is_deleted)
+
+    def test_delete_other_users_comment_returns_404(self):
+        other = UserFactory()
+        WorkspaceMembershipFactory(workspace=self.workspace, user=other)
+        comment = DashboardComment.objects.create(
+            dashboard=self.dashboard, user=other, body='Not yours'
+        )
+        resp = self.client.post(self._delete_url(comment.pk))
+        self.assertEqual(resp.status_code, 404)
+        comment.refresh_from_db()
+        self.assertFalse(comment.is_deleted)
+
+    def test_delete_nonexistent_comment_returns_404(self):
+        import uuid
+        resp = self.client.post(self._delete_url(uuid.uuid4()))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_delete_comment_on_wrong_dashboard_returns_404(self):
+        other_ws   = WorkspaceFactory(owner=self.user)
+        other_dash = DashboardFactory(workspace=other_ws, created_by=self.user)
+        comment    = DashboardComment.objects.create(
+            dashboard=other_dash, user=self.user, body='Wrong dash'
+        )
+        resp = self.client.post(self._delete_url(comment.pk))
+        self.assertEqual(resp.status_code, 404)

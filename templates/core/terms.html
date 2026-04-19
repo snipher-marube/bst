@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}Terms of Service | MetaAnalytics{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-[#f8fafc]">
+
+    {# Hero #}
+    <div class="bg-[#03466e] text-white py-16 px-4">
+        <div class="max-w-3xl mx-auto text-center">
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-white/10 mb-5" aria-hidden="true">
+                <i class="fas fa-file-contract text-2xl text-[#f68712]"></i>
+            </div>
+            <h1 class="text-3xl font-bold mb-2">Terms of Service</h1>
+            <p class="text-blue-200 text-sm">Effective date: 1 January 2025 &nbsp;&middot;&nbsp; Last updated: 18 April 2026</p>
+        </div>
+    </div>
+
+    {# Content #}
+    <div class="max-w-3xl mx-auto px-4 py-12">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+
+            {# Quick nav #}
+            <div class="bg-[#f9fafb] border-b border-gray-100 px-8 py-5">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contents</p>
+                <nav class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <a href="#acceptance" class="text-[#03466e] hover:text-[#f68712] transition-colors">1. Acceptance</a>
+                    <a href="#services" class="text-[#03466e] hover:text-[#f68712] transition-colors">2. Services</a>
+                    <a href="#accounts" class="text-[#03466e] hover:text-[#f68712] transition-colors">3. Accounts</a>
+                    <a href="#acceptable-use" class="text-[#03466e] hover:text-[#f68712] transition-colors">4. Acceptable Use</a>
+                    <a href="#data" class="text-[#03466e] hover:text-[#f68712] transition-colors">5. Your Data</a>
+                    <a href="#billing" class="text-[#03466e] hover:text-[#f68712] transition-colors">6. Billing</a>
+                    <a href="#ip" class="text-[#03466e] hover:text-[#f68712] transition-colors">7. Intellectual Property</a>
+                    <a href="#liability" class="text-[#03466e] hover:text-[#f68712] transition-colors">8. Liability</a>
+                    <a href="#termination" class="text-[#03466e] hover:text-[#f68712] transition-colors">9. Termination</a>
+                    <a href="#changes" class="text-[#03466e] hover:text-[#f68712] transition-colors">10. Changes</a>
+                    <a href="#contact" class="text-[#03466e] hover:text-[#f68712] transition-colors">11. Contact</a>
+                </nav>
+            </div>
+
+            <div class="px-8 py-8 prose prose-slate max-w-none
+                        prose-headings:text-[#03466e] prose-headings:font-semibold
+                        prose-a:text-[#03466e] prose-a:no-underline hover:prose-a:text-[#f68712]
+                        prose-strong:text-[#2b2b2b]">
+
+                <p class="lead text-gray-600 text-base">
+                    Please read these Terms of Service ("Terms") carefully before using MetaAnalytics. By accessing or using our platform you agree to be bound by these Terms.
+                </p>
+
+                <section id="acceptance" class="pt-4">
+                    <h2>1. Acceptance of Terms</h2>
+                    <p>By creating an account or using MetaAnalytics in any way, you confirm that you are at least 18 years old, have the legal capacity to enter into binding agreements, and agree to these Terms in full. If you are using MetaAnalytics on behalf of an organisation, you represent that you have authority to bind that organisation.</p>
+                </section>
+
+                <section id="services" class="pt-4">
+                    <h2>2. Description of Services</h2>
+                    <p>MetaAnalytics is a cloud-based business intelligence (BI) and analytics platform that allows you to connect data sources, build dashboards, generate insights, and collaborate with team members. We reserve the right to modify, suspend, or discontinue any feature at any time with reasonable notice.</p>
+                </section>
+
+                <section id="accounts" class="pt-4">
+                    <h2>3. Accounts and Security</h2>
+                    <ul>
+                        <li>You are responsible for maintaining the confidentiality of your login credentials.</li>
+                        <li>You must notify us immediately at <a href="mailto:security@metaanalytics.io">security@metaanalytics.io</a> of any unauthorised use.</li>
+                        <li>We are not liable for losses resulting from unauthorised access caused by your failure to keep credentials secure.</li>
+                        <li>Each account must be used by a single individual; account sharing is not permitted on individual-seat plans.</li>
+                    </ul>
+                </section>
+
+                <section id="acceptable-use" class="pt-4">
+                    <h2>4. Acceptable Use</h2>
+                    <p>You agree not to:</p>
+                    <ul>
+                        <li>Use the platform for any unlawful purpose or in violation of any regulations.</li>
+                        <li>Upload, transmit, or store data that infringes intellectual property rights or contains malware.</li>
+                        <li>Attempt to gain unauthorised access to any part of our infrastructure.</li>
+                        <li>Resell, sublicense, or white-label the service without our written consent.</li>
+                        <li>Use automated means to scrape or extract data in ways that circumvent our API rate limits.</li>
+                    </ul>
+                    <p>Violation of this section may result in immediate account termination.</p>
+                </section>
+
+                <section id="data" class="pt-4">
+                    <h2>5. Your Data</h2>
+                    <p>You retain all rights to the data you upload ("Customer Data"). By using the platform you grant us a limited, non-exclusive licence to process Customer Data solely to provide the services. We will not sell or share your Customer Data with third parties except as described in our <a href="{% url 'core:privacy' %}">Privacy Policy</a>.</p>
+                    <p>You are solely responsible for ensuring you have the right to upload and process any personal data under applicable law (e.g. GDPR, CCPA).</p>
+                </section>
+
+                <section id="billing" class="pt-4">
+                    <h2>6. Billing and Payments</h2>
+                    <ul>
+                        <li>Paid plans are billed in advance on a monthly or annual cycle.</li>
+                        <li>All fees are exclusive of taxes unless stated otherwise.</li>
+                        <li>Refunds are provided at our discretion; annual plans may be eligible for a pro-rated refund within 14 days of purchase.</li>
+                        <li>Failure to pay may result in service suspension after a grace period of 7 days.</li>
+                    </ul>
+                </section>
+
+                <section id="ip" class="pt-4">
+                    <h2>7. Intellectual Property</h2>
+                    <p>MetaAnalytics and all related software, designs, and documentation are the exclusive property of Business Sight Technologies Ltd and protected by applicable intellectual property laws. Nothing in these Terms transfers ownership of any intellectual property to you.</p>
+                </section>
+
+                <section id="liability" class="pt-4">
+                    <h2>8. Limitation of Liability</h2>
+                    <p>To the maximum extent permitted by law, MetaAnalytics shall not be liable for any indirect, incidental, special, consequential, or punitive damages. Our total aggregate liability for any claim shall not exceed the fees you paid in the three months preceding the claim.</p>
+                    <p>The platform is provided "as is" without warranties of any kind, express or implied.</p>
+                </section>
+
+                <section id="termination" class="pt-4">
+                    <h2>9. Termination</h2>
+                    <p>You may cancel your account at any time from your account settings. We may terminate or suspend your account for breach of these Terms. Upon termination, your access to the service will cease and we may delete your data after a 30-day grace period.</p>
+                </section>
+
+                <section id="changes" class="pt-4">
+                    <h2>10. Changes to Terms</h2>
+                    <p>We may update these Terms from time to time. We will notify registered users by email at least 14 days before material changes take effect. Continued use after the effective date constitutes acceptance of the revised Terms.</p>
+                </section>
+
+                <section id="contact" class="pt-4">
+                    <h2>11. Contact</h2>
+                    <p>Questions about these Terms? Contact us:</p>
+                    <ul>
+                        <li><strong>Email:</strong> <a href="mailto:legal@metaanalytics.io">legal@metaanalytics.io</a></li>
+                        <li><strong>Web:</strong> <a href="{% url 'core:contact' %}">Contact form</a></li>
+                    </ul>
+                </section>
+
+            </div>{# end prose #}
+        </div>{# end card #}
+
+        {# Footer links #}
+        <div class="mt-8 text-center text-sm text-gray-400 space-x-4">
+            <a href="{% url 'core:privacy' %}" class="hover:text-[#03466e] transition-colors">Privacy Policy</a>
+            <span>&middot;</span>
+            <a href="{% url 'core:contact' %}" class="hover:text-[#03466e] transition-colors">Contact</a>
+            <span>&middot;</span>
+            <a href="/" class="hover:text-[#03466e] transition-colors">Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
