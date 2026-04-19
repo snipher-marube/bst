@@ -1488,8 +1488,13 @@ class TestInsightEngineWidgetCompleteness(TestCase):
                     spec.get('title', '').strip(),
                     f"Empty title: {spec}"
                 )
-                aggs = (spec.get('query_config') or {}).get('aggregations')
-                self.assertTrue(aggs, f"No aggregations in query_config: {spec}")
+                _DS_TYPES = {
+                    'histogram', 'box_plot', 'scatter_plot',
+                    'stat_summary', 'correlation_heatmap', 'data_quality',
+                }
+                if spec.get('type') not in _DS_TYPES:
+                    aggs = (spec.get('query_config') or {}).get('aggregations')
+                    self.assertTrue(aggs, f"No aggregations in query_config: {spec}")
                 desc = (spec.get('viz_config') or {}).get('description', '')
                 self.assertTrue(
                     desc.strip(),

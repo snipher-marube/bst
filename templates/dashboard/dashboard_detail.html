@@ -663,11 +663,17 @@ function renderWidgetContent(widget) {
   }
 
   switch (widget.widget_type) {
-    case 'metric':     renderKPI(el, widget, data);           break;
-    case 'table':      renderTable(el, data);                 break;
-    case 'line_chart': renderChart(el, data, 'scatter', widget); break;
-    case 'bar_chart':  renderChart(el, data, 'bar',     widget); break;
-    case 'pie_chart':  renderChart(el, data, 'pie',     widget); break;
+    case 'metric':              renderKPI(el, widget, data);              break;
+    case 'table':               renderTable(el, data);                    break;
+    case 'line_chart':          renderChart(el, data, 'scatter', widget); break;
+    case 'bar_chart':           renderChart(el, data, 'bar',     widget); break;
+    case 'pie_chart':           renderChart(el, data, 'pie',     widget); break;
+    case 'histogram':           renderHistogram(el, widget, data);        break;
+    case 'box_plot':            renderBoxPlot(el, widget, data);          break;
+    case 'scatter_plot':        renderScatterPlot(el, widget, data);      break;
+    case 'stat_summary':        renderStatSummary(el, widget, data);      break;
+    case 'correlation_heatmap': renderCorrelationHeatmap(el, widget, data); break;
+    case 'data_quality':        renderDataQuality(el, widget, data);      break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
   }
@@ -853,6 +859,340 @@ function renderChart(el, data, chartType, widget) {
     foot.innerHTML = `<i class="fas fa-lightbulb" style="color:#f68712;margin-right:.3rem;font-size:.6rem"></i>${esc(desc)}`;
     el.appendChild(foot);
   }
+}
+
+// ───────────────────────────────────────────────────────────────
+//  DATA-SCIENCE RENDERERS
+// ───────────────────────────────────────────────────────────────
+
+// Shared helper: add insight description footer identical to renderChart
+function _dsFooter(el, widget) {
+  const desc = (widget?.viz_config || {}).description;
+  if (!desc) return;
+  const foot = document.createElement('div');
+  foot.style.cssText = [
+    'font-size:.6875rem', 'color:#6b7280', 'padding:.3rem 1rem .4rem',
+    'border-top:1px solid #f3f4f6', 'line-height:1.4',
+    'background:#fafafa', 'white-space:normal',
+  ].join(';');
+  foot.innerHTML = `<i class="fas fa-lightbulb" style="color:#f68712;margin-right:.3rem;font-size:.6rem"></i>${esc(desc)}`;
+  el.appendChild(foot);
+}
+
+// Shared helper: register Plotly div for resize events
+function _dsPlot(el, widget, traces, layout) {
+  const desc      = (widget?.viz_config || {}).description;
+  const descH     = desc ? 36 : 0;
+  const div       = document.createElement('div');
+  div.style.cssText = `width:100%;height:calc(100% - ${descH}px)`;
+  el.innerHTML = '';
+  el.appendChild(div);
+  Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+  _dsFooter(el, widget);
+}
+
+// ── Histogram ───────────────────────────────────────────────────
+function renderHistogram(el, widget, data) {
+  if (!data.bins || !data.counts) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error || 'No histogram data')}</p></div>`; return;
+  }
+  const bins   = data.bins;
+  const counts = data.counts;
+  const s      = data.stats || {};
+  const field  = data.field || 'Value';
+
+  // Midpoints as x labels
+  const x = counts.map((_, i) => round2((bins[i] + bins[i + 1]) / 2));
+
+  const trace = {
+    type: 'bar', x, y: counts,
+    marker: { color: counts.map((_, i) => BRAND.colors[i % BRAND.colors.length]), opacity: .82 },
+    hovertemplate: `<b>[%{customdata[0]:.2f} – %{customdata[1]:.2f}]</b><br>Count: <b>%{y}</b><extra></extra>`,
+    customdata: counts.map((_, i) => [bins[i], bins[i + 1]]),
+  };
+
+  // Mean + median vertical lines as shapes
+  const shapes = [], annotations = [];
+  if (s.mean !== undefined) {
+    shapes.push({ type: 'line', x0: s.mean, x1: s.mean, y0: 0, y1: 1, yref: 'paper',
+      line: { color: BRAND.primary, width: 1.8, dash: 'dash' } });
+    annotations.push({ x: s.mean, y: 1.02, yref: 'paper', text: `μ=${fmtNum(s.mean)}`,
+      showarrow: false, font: { size: 9, color: BRAND.primary } });
+  }
+  if (s.median !== undefined) {
+    shapes.push({ type: 'line', x0: s.median, x1: s.median, y0: 0, y1: 1, yref: 'paper',
+      line: { color: BRAND.accent, width: 1.8, dash: 'dot' } });
+    annotations.push({ x: s.median, y: 0.94, yref: 'paper', text: `med=${fmtNum(s.median)}`,
+      showarrow: false, font: { size: 9, color: BRAND.accent } });
+  }
+
+  const layout = {
+    paper_bgcolor: BRAND.paper, plot_bgcolor: BRAND.paper,
+    margin: { t: 24, r: 12, b: 44, l: 50 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    bargap: 0.04, showlegend: false, shapes, annotations,
+    xaxis: { gridcolor: BRAND.gridColor, title: { text: field, font: { size: 10 } } },
+    yaxis: { gridcolor: BRAND.gridColor, title: { text: 'Count', font: { size: 10 } } },
+  };
+
+  // Stats pill overlay (skewness + kurtosis)
+  el.innerHTML = '';
+  if (s.skewness !== undefined) {
+    const skewLabel = Math.abs(s.skewness) < 0.5 ? 'symmetric'
+                    : s.skewness > 0 ? 'right-skewed' : 'left-skewed';
+    const pill = document.createElement('div');
+    pill.style.cssText = 'font-size:.65rem;color:#6b7280;padding:.2rem .75rem 0;display:flex;gap:.75rem;flex-wrap:wrap';
+    pill.innerHTML = [
+      `<span>n=<b>${s.count}</b></span>`,
+      `<span>σ=<b>${fmtNum(s.std)}</b></span>`,
+      `<span>Skew=<b>${s.skewness?.toFixed(2)}</b> <em>(${skewLabel})</em></span>`,
+      `<span>Kurt=<b>${s.kurtosis?.toFixed(2)}</b></span>`,
+    ].join('');
+    el.appendChild(pill);
+  }
+  _dsPlot(el, widget, [trace], layout);
+}
+
+function round2(v) { return Math.round(v * 100) / 100; }
+
+// ── Box & Whisker Plot ───────────────────────────────────────────
+function renderBoxPlot(el, widget, data) {
+  if (!data.groups || !data.groups.length) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error || 'No box plot data')}</p></div>`; return;
+  }
+  const field  = data.field || 'Value';
+  const groups = data.groups;
+
+  const traces = groups.map((g, i) => ({
+    type: 'box',
+    name: esc(String(g.name)),
+    q1:       [g.q1],
+    median:   [g.median],
+    q3:       [g.q3],
+    lowerfence:  [g.whisker_low],
+    upperfence:  [g.whisker_high],
+    mean:     [g.mean],
+    y:        g.outliers || [],
+    boxpoints: g.outliers?.length ? 'suspectedoutliers' : false,
+    marker:   { color: BRAND.colors[i % BRAND.colors.length], size: 4 },
+    line:     { color: BRAND.colors[i % BRAND.colors.length] },
+    hovertemplate: `<b>${esc(String(g.name))}</b><br>` +
+      `Q1: %{q1[0]:.2f}<br>Median: %{median[0]:.2f}<br>Q3: %{q3[0]:.2f}<br>` +
+      `IQR: ${g.iqr?.toFixed(2)}<br>n=${g.count}<extra></extra>`,
+  }));
+
+  const layout = {
+    paper_bgcolor: BRAND.paper, plot_bgcolor: BRAND.paper,
+    margin: { t: 10, r: 12, b: 44, l: 56 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: groups.length > 1,
+    yaxis: { gridcolor: BRAND.gridColor, title: { text: field, font: { size: 10 } } },
+    xaxis: { gridcolor: BRAND.gridColor },
+  };
+  _dsPlot(el, widget, traces, layout);
+}
+
+// ── Scatter Plot + Regression ────────────────────────────────────
+function renderScatterPlot(el, widget, data) {
+  if (!data.x || !data.y) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error || 'No scatter data')}</p></div>`; return;
+  }
+  const xf  = data.x_field || 'X';
+  const yf  = data.y_field || 'Y';
+  const r2  = data.r_squared ?? null;
+  const reg = data.regression;
+
+  const scatterTrace = {
+    type: 'scatter', mode: 'markers',
+    x: data.x, y: data.y,
+    marker: { color: BRAND.accent, size: 5, opacity: .7,
+              line: { color: 'rgba(255,255,255,.5)', width: 1 } },
+    name: 'Observations',
+    hovertemplate: `${xf}: <b>%{x:.2f}</b><br>${yf}: <b>%{y:.2f}</b><extra></extra>`,
+  };
+
+  const traces = [scatterTrace];
+  if (reg) {
+    traces.push({
+      type: 'scatter', mode: 'lines',
+      x: reg.line_x, y: reg.line_y,
+      line: { color: BRAND.primary, width: 2.5, dash: 'solid' },
+      name: `Regression (r²=${r2?.toFixed(3) ?? '?'})`,
+      hoverinfo: 'skip',
+    });
+  }
+
+  const r2Label = r2 !== null ? ` | r²=${r2.toFixed(3)}` : '';
+  const layout = {
+    paper_bgcolor: BRAND.paper, plot_bgcolor: BRAND.paper,
+    margin: { t: 24, r: 12, b: 52, l: 56 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: !!reg,
+    legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(255,255,255,.7)', font: { size: 9 } },
+    xaxis: { gridcolor: BRAND.gridColor, title: { text: xf, font: { size: 10 } } },
+    yaxis: { gridcolor: BRAND.gridColor, title: { text: yf, font: { size: 10 } } },
+    annotations: r2 !== null ? [{
+      x: 0.99, y: 0.03, xref: 'paper', yref: 'paper',
+      text: `r=${data.r?.toFixed(3)}${r2Label}`,
+      showarrow: false, font: { size: 9, color: '#6b7280' },
+      bgcolor: 'rgba(255,255,255,.8)', borderpad: 3,
+    }] : [],
+  };
+  _dsPlot(el, widget, traces, layout);
+}
+
+// ── Statistical Summary ──────────────────────────────────────────
+function renderStatSummary(el, widget, data) {
+  if (!data.fields || !data.fields.length) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error || 'No stat data')}</p></div>`; return;
+  }
+  const rows = data.fields;
+
+  const skewClass = (s) => Math.abs(s) < 0.5 ? 'text-green-600'
+                         : Math.abs(s) < 1   ? 'text-yellow-600'
+                         : 'text-red-600';
+  const skewLabel = (s) => Math.abs(s) < 0.5 ? 'symmetric'
+                         : s > 0 ? 'right-skewed' : 'left-skewed';
+
+  let html = `
+  <div style="height:100%;overflow:auto;padding:.5rem">
+    <table class="data-table" style="font-size:.72rem;width:100%">
+      <thead><tr>
+        <th>Field</th><th>n</th><th>Null%</th>
+        <th>Mean</th><th>Median</th><th>Std</th>
+        <th>Min</th><th>Max</th>
+        <th>Q1</th><th>Q3</th><th>IQR</th>
+        <th>Skewness</th><th>Kurtosis</th><th>Outliers</th>
+      </tr></thead><tbody>`;
+  rows.forEach(f => {
+    const sk = f.skewness ?? 0;
+    html += `<tr>
+      <td style="font-weight:600;white-space:nowrap">${esc(f.name)}</td>
+      <td>${f.count}</td>
+      <td>${f.null_pct}%</td>
+      <td>${fmtNum(f.mean)}</td>
+      <td>${fmtNum(f.median)}</td>
+      <td>${fmtNum(f.std)}</td>
+      <td>${fmtNum(f.min)}</td>
+      <td>${fmtNum(f.max)}</td>
+      <td>${fmtNum(f.q1)}</td>
+      <td>${fmtNum(f.q3)}</td>
+      <td>${fmtNum(f.iqr)}</td>
+      <td class="${skewClass(sk)}" title="${skewLabel(sk)}">${sk?.toFixed(2)} <span style="font-size:.6rem">(${skewLabel(sk)})</span></td>
+      <td>${f.kurtosis?.toFixed(2)}</td>
+      <td>${f.outlier_count ?? 0}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  el.innerHTML = html;
+  _dsFooter(el, widget);
+}
+
+// ── Correlation Heatmap ──────────────────────────────────────────
+function renderCorrelationHeatmap(el, widget, data) {
+  if (!data.fields || !data.matrix) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error || 'No correlation data')}</p></div>`; return;
+  }
+  const fields = data.fields;
+  const matrix = data.matrix;
+
+  const textValues = matrix.map(row => row.map(v => v?.toFixed(2)));
+
+  const trace = {
+    type: 'heatmap',
+    z:    matrix,
+    x:    fields,
+    y:    fields,
+    text: textValues,
+    texttemplate: '%{text}',
+    colorscale: 'RdBu',
+    reversescale: true,
+    zmin: -1, zmax: 1,
+    hovertemplate: '<b>%{x}</b> × <b>%{y}</b><br>r = <b>%{z:.3f}</b><extra></extra>',
+    showscale: true,
+  };
+
+  const layout = {
+    paper_bgcolor: BRAND.paper, plot_bgcolor: BRAND.paper,
+    margin: { t: 10, r: 80, b: 80, l: 80 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 10, color: '#374151' },
+    xaxis: { tickangle: -30, automargin: true },
+    yaxis: { automargin: true },
+  };
+  _dsPlot(el, widget, [trace], layout);
+}
+
+// ── Data Quality Card ────────────────────────────────────────────
+function renderDataQuality(el, widget, data) {
+  if (data.error) {
+    el.innerHTML = `<div class="state-center"><p>${esc(data.error)}</p></div>`; return;
+  }
+  const score    = data.score ?? 0;
+  const total    = data.total_records ?? 0;
+  const complete = data.complete_records ?? 0;
+  const dups     = data.duplicate_count ?? 0;
+  const fields   = data.fields || [];
+
+  const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+  const scoreLabel = score >= 80 ? 'Excellent' : score >= 60 ? 'Fair' : 'Poor';
+  const scoreIcon  = score >= 80 ? 'fa-check-circle' : score >= 60 ? 'fa-exclamation-circle' : 'fa-times-circle';
+
+  let fieldRows = '';
+  fields.forEach(f => {
+    const nullColor = f.null_pct > 20 ? '#ef4444' : f.null_pct > 5 ? '#f59e0b' : '#10b981';
+    const issueHtml = f.issues?.length
+      ? `<span style="color:#ef4444;font-size:.6rem">${f.issues.map(esc).join(' · ')}</span>`
+      : `<span style="color:#10b981;font-size:.6rem">✓ clean</span>`;
+    fieldRows += `<tr>
+      <td style="font-weight:600">${esc(f.name)}</td>
+      <td style="color:#6b7280">${esc(f.data_type)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <div style="flex:1;height:6px;background:#e5e7eb;border-radius:3px">
+            <div style="width:${Math.min(100, f.null_pct)}%;height:100%;background:${nullColor};border-radius:3px"></div>
+          </div>
+          <span style="font-size:.65rem;color:${nullColor};min-width:3rem">${f.null_pct}% null</span>
+        </div>
+      </td>
+      <td style="color:#374151">${f.unique_count?.toLocaleString()}</td>
+      <td>${issueHtml}</td>
+    </tr>`;
+  });
+
+  el.innerHTML = `
+  <div style="height:100%;overflow:auto;padding:.75rem 1rem">
+    <div style="display:flex;gap:1.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <i class="fas ${scoreIcon}" style="font-size:2rem;color:${scoreColor}"></i>
+        <div>
+          <div style="font-size:1.6rem;font-weight:700;color:${scoreColor};line-height:1">${score}</div>
+          <div style="font-size:.65rem;color:#6b7280">Quality Score · ${scoreLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:1.1rem;font-weight:600;color:#374151">${total.toLocaleString()}</div>
+          <div style="font-size:.6rem;color:#9ca3af">Total Records</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.1rem;font-weight:600;color:#10b981">${complete.toLocaleString()}</div>
+          <div style="font-size:.6rem;color:#9ca3af">Complete</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.1rem;font-weight:600;color:${dups > 0 ? '#ef4444' : '#10b981'}">${dups.toLocaleString()}</div>
+          <div style="font-size:.6rem;color:#9ca3af">Duplicates</div>
+        </div>
+      </div>
+    </div>
+    <table class="data-table" style="font-size:.72rem;width:100%">
+      <thead><tr>
+        <th>Field</th><th>Type</th><th>Completeness</th><th>Unique Values</th><th>Status</th>
+      </tr></thead>
+      <tbody>${fieldRows}</tbody>
+    </table>
+  </div>`;
+  _dsFooter(el, widget);
 }
 
 // ───────────────────────────────────────────────────────────────

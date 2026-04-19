@@ -22,7 +22,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog, CalculatedField, DataSource
+    Record, Dashboard, Widget, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -301,10 +301,40 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
 
     def form_valid(self, form):
         table = self.get_object()
+        now = timezone.now()
+
+        # Snapshot which dashboards will be affected before we delete anything
+        affected_dashboard_ids = list(
+            Widget.objects.filter(table=table)
+            .values_list('dashboard_id', flat=True)
+            .distinct()
+        )
+
+        # Hard-delete every widget belonging to this table.
+        # Suppress the post_delete signal so it doesn't race with our own cleanup below.
+        from apps.dashboards.models import _skip_dashboard_cleanup
+        _skip_dashboard_cleanup.active = True
+        try:
+            Widget.objects.filter(table=table).delete()
+        finally:
+            _skip_dashboard_cleanup.active = False
+
+        # For each affected dashboard, hard-delete it if it now has no remaining widgets.
+        deleted_dash_count = 0
+        for dash_id in affected_dashboard_ids:
+            if not Widget.objects.filter(dashboard_id=dash_id).exists():
+                Dashboard.objects.filter(pk=dash_id).delete()
+                deleted_dash_count += 1
+
+        # Soft-delete the table itself
         table.is_active = False
-        table.deleted_at = timezone.now()
-        table.save()
-        messages.success(self.request, f'Table "{table.name}" deleted successfully!')
+        table.deleted_at = now
+        table.save(update_fields=['is_active', 'deleted_at'])
+
+        msg = f'Table "{table.name}" deleted.'
+        if deleted_dash_count:
+            msg += f' {deleted_dash_count} dashboard(s) with no remaining widgets were also removed.'
+        messages.success(self.request, msg)
         return redirect(self.success_url)
 
 

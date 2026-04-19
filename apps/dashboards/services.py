@@ -139,6 +139,18 @@ class QueryEngine:
                 data = CohortAnalysisEngine().execute(widget)
             elif widget.widget_type == 'funnel':
                 data = FunnelAnalysisEngine().execute(widget)
+            elif widget.widget_type == 'histogram':
+                data = self._execute_histogram_query(widget, limit)
+            elif widget.widget_type == 'box_plot':
+                data = self._execute_boxplot_query(widget, limit)
+            elif widget.widget_type == 'scatter_plot':
+                data = self._execute_scatter_query(widget, limit)
+            elif widget.widget_type == 'stat_summary':
+                data = self._execute_stat_summary_query(widget, limit)
+            elif widget.widget_type == 'correlation_heatmap':
+                data = self._execute_correlation_query(widget, limit)
+            elif widget.widget_type == 'data_quality':
+                data = self._execute_data_quality_query(widget, limit)
             else:
                 data = {"error": f"Unknown widget type: {widget.widget_type}"}
 
@@ -455,6 +467,336 @@ class QueryEngine:
             result = self._resolve_calculated_aggs(calc_aggs, {**result, **scalar_context}, queryset=queryset)
 
         return result
+
+    # ------------------------------------------------------------------
+    # Data-science grade query execution methods
+    # ------------------------------------------------------------------
+
+    def _execute_histogram_query(self, widget, limit):
+        """Compute frequency distribution bins + full descriptive stats."""
+        from .models import Record
+        config = widget.query_config or {}
+        field  = config.get('field')
+        n_bins = max(5, min(50, int(config.get('bins', 20))))
+        if not field:
+            return {'error': 'No field configured'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        vals = []
+        for rec in records:
+            if rec and field in rec:
+                try:
+                    v = float(rec[field])
+                    if np.isfinite(v):
+                        vals.append(v)
+                except (TypeError, ValueError):
+                    pass
+        if len(vals) < 2:
+            return {'error': 'Not enough numeric data'}
+        arr    = np.array(vals)
+        counts, edges = np.histogram(arr, bins=n_bins)
+        q1, q3 = np.percentile(arr, [25, 75])
+        mean   = float(np.mean(arr))
+        std    = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+        skewness = kurtosis = 0.0
+        if std > 0:
+            z = (arr - mean) / std
+            skewness = float(np.mean(z ** 3))
+            kurtosis = float(np.mean(z ** 4)) - 3
+        return {
+            'field':  field,
+            'bins':   [round(float(e), 4) for e in edges],
+            'counts': [int(c) for c in counts],
+            'stats': {
+                'count':    len(vals),
+                'mean':     round(mean, 4),
+                'median':   round(float(np.median(arr)), 4),
+                'std':      round(std, 4),
+                'min':      round(float(arr.min()), 4),
+                'max':      round(float(arr.max()), 4),
+                'q1':       round(float(q1), 4),
+                'q3':       round(float(q3), 4),
+                'iqr':      round(float(q3 - q1), 4),
+                'skewness': round(skewness, 4),
+                'kurtosis': round(kurtosis, 4),
+            },
+        }
+
+    def _execute_boxplot_query(self, widget, limit):
+        """Compute box-plot statistics (Q1/Q3/IQR/whiskers/outliers) per group."""
+        from .models import Record
+        config   = widget.query_config or {}
+        field    = config.get('field')
+        group_by = config.get('group_by')
+        if not field:
+            return {'error': 'No field configured'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        buckets = {}
+        for rec in records:
+            if not rec or field not in rec:
+                continue
+            try:
+                v = float(rec[field])
+                if not np.isfinite(v):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            label = str(rec.get(group_by, 'All')) if group_by else 'All'
+            buckets.setdefault(label, []).append(v)
+        groups = []
+        for name, vals in buckets.items():
+            if len(vals) < 2:
+                continue
+            arr = np.array(vals)
+            q1, median, q3 = np.percentile(arr, [25, 50, 75])
+            iqr = float(q3 - q1)
+            wl  = float(max(arr.min(), q1 - 1.5 * iqr))
+            wh  = float(min(arr.max(), q3 + 1.5 * iqr))
+            groups.append({
+                'name':         name,
+                'count':        len(vals),
+                'mean':         round(float(np.mean(arr)), 4),
+                'median':       round(float(median), 4),
+                'q1':           round(float(q1), 4),
+                'q3':           round(float(q3), 4),
+                'iqr':          round(iqr, 4),
+                'whisker_low':  round(wl, 4),
+                'whisker_high': round(wh, 4),
+                'outliers':     [round(float(v), 4)
+                                 for v in arr if v < wl or v > wh][:50],
+            })
+        if not groups:
+            return {'error': 'Not enough numeric data'}
+        return {'field': field, 'groups': groups}
+
+    def _execute_scatter_query(self, widget, limit):
+        """Scatter plot data: paired x/y values + Pearson r + linear regression."""
+        from .models import Record
+        config  = widget.query_config or {}
+        x_field = config.get('x_field')
+        y_field = config.get('y_field')
+        if not x_field or not y_field:
+            return {'error': 'Both x_field and y_field required'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        xs, ys = [], []
+        for rec in records:
+            if not rec:
+                continue
+            try:
+                x = float(rec.get(x_field, ''))
+                y = float(rec.get(y_field, ''))
+                if np.isfinite(x) and np.isfinite(y):
+                    xs.append(x); ys.append(y)
+            except (TypeError, ValueError):
+                pass
+        if len(xs) < 3:
+            return {'error': 'Not enough data pairs'}
+        xa, ya   = np.array(xs), np.array(ys)
+        r        = float(np.corrcoef(xa, ya)[0, 1])
+        coeffs   = np.polyfit(xa, ya, 1)
+        slope, intercept = float(coeffs[0]), float(coeffs[1])
+        x_min, x_max = float(xa.min()), float(xa.max())
+        max_pts  = 500
+        if len(xs) > max_pts:
+            idx = np.random.choice(len(xs), max_pts, replace=False)
+            x_out = [round(float(xa[i]), 4) for i in idx]
+            y_out = [round(float(ya[i]), 4) for i in idx]
+        else:
+            x_out = [round(float(v), 4) for v in xs]
+            y_out = [round(float(v), 4) for v in ys]
+        return {
+            'x_field':   x_field,
+            'y_field':   y_field,
+            'x':         x_out,
+            'y':         y_out,
+            'count':     len(xs),
+            'r':         round(r, 4),
+            'r_squared': round(r * r, 4),
+            'regression': {
+                'slope':     round(slope, 6),
+                'intercept': round(intercept, 6),
+                'line_x':    [x_min, x_max],
+                'line_y':    [round(slope * x_min + intercept, 4),
+                              round(slope * x_max + intercept, 4)],
+            },
+        }
+
+    def _execute_stat_summary_query(self, widget, limit):
+        """Full descriptive stats: mean/median/std/percentiles/skewness/kurtosis/outliers."""
+        from .models import Record
+        config = widget.query_config or {}
+        fields = config.get('fields', [])
+        if not fields and widget.table and widget.table.schema:
+            _num = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+            fields = [f['name'] for f in widget.table.schema if f.get('type') in _num]
+        if not fields:
+            return {'error': 'No numeric fields found'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        total = len(records)
+        result_fields = []
+        for field in fields[:12]:
+            vals, null_n = [], 0
+            for rec in records:
+                raw = rec.get(field) if rec else None
+                if raw is None or str(raw).strip() in ('', 'None', 'nan', 'null'):
+                    null_n += 1; continue
+                try:
+                    v = float(raw)
+                    if np.isfinite(v):
+                        vals.append(v)
+                    else:
+                        null_n += 1
+                except (TypeError, ValueError):
+                    null_n += 1
+            if len(vals) < 2:
+                continue
+            arr  = np.array(vals)
+            q1, q3 = np.percentile(arr, [25, 75])
+            iqr    = float(q3 - q1)
+            mean   = float(np.mean(arr))
+            std    = float(np.std(arr, ddof=1))
+            skewness = kurtosis = 0.0
+            if std > 0:
+                z = (arr - mean) / std
+                skewness = float(np.mean(z ** 3))
+                kurtosis = float(np.mean(z ** 4)) - 3
+            outlier_n = int(np.sum((arr < q1 - 1.5 * iqr) | (arr > q3 + 1.5 * iqr)))
+            result_fields.append({
+                'name':          field,
+                'count':         len(vals),
+                'null_pct':      round(null_n / total * 100, 1) if total else 0,
+                'mean':          round(mean, 4),
+                'median':        round(float(np.median(arr)), 4),
+                'std':           round(std, 4),
+                'min':           round(float(arr.min()), 4),
+                'max':           round(float(arr.max()), 4),
+                'q1':            round(float(q1), 4),
+                'q3':            round(float(q3), 4),
+                'iqr':           round(iqr, 4),
+                'skewness':      round(skewness, 4),
+                'kurtosis':      round(kurtosis, 4),
+                'outlier_count': outlier_n,
+            })
+        if not result_fields:
+            return {'error': 'Not enough numeric data'}
+        return {'total_records': total, 'fields': result_fields}
+
+    def _execute_correlation_query(self, widget, limit):
+        """Full numeric correlation matrix (Pearson)."""
+        from .models import Record
+        config = widget.query_config or {}
+        fields = config.get('fields', [])
+        if not fields and widget.table and widget.table.schema:
+            _num = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+            fields = [f['name'] for f in widget.table.schema if f.get('type') in _num]
+        if len(fields) < 2:
+            return {'error': 'Need at least 2 numeric fields for correlation'}
+        fields = fields[:10]
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        rows = []
+        for rec in records:
+            if not rec:
+                continue
+            row, ok = [], True
+            for f in fields:
+                try:
+                    v = float(rec.get(f, ''))
+                    if not np.isfinite(v):
+                        ok = False; break
+                    row.append(v)
+                except (TypeError, ValueError):
+                    ok = False; break
+            if ok:
+                rows.append(row)
+        if len(rows) < 3:
+            return {'error': 'Not enough complete rows for correlation'}
+        arr  = np.array(rows)
+        corr = np.corrcoef(arr.T)
+        return {
+            'fields': fields,
+            'matrix': [[round(float(v), 3) for v in row] for row in corr],
+            'count':  len(rows),
+        }
+
+    def _execute_data_quality_query(self, widget, limit):
+        """Null%, cardinality, duplicates, and composite quality score for every field."""
+        from .models import Record
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        total = len(records)
+        if total == 0:
+            return {'error': 'No records found'}
+        schema = widget.table.schema or [] if widget.table else []
+        fields = [f['name'] for f in schema]
+        if not fields:
+            return {'error': 'No schema defined'}
+        _EMPTY = {'', 'None', 'nan', 'null', 'n/a', 'na', 'undefined'}
+        field_stats, completeness_scores = [], []
+        for field in fields:
+            null_n, seen = 0, set()
+            for rec in records:
+                val = rec.get(field) if rec else None
+                if val is None or str(val).strip().lower() in _EMPTY:
+                    null_n += 1
+                else:
+                    seen.add(str(val))
+            null_pct     = round(null_n / total * 100, 1)
+            unique_count = len(seen)
+            completeness_scores.append(100 - null_pct)
+            issues = []
+            if null_pct > 20:
+                issues.append(f'{null_pct}% missing values')
+            if unique_count == 1:
+                issues.append('constant value — no variance')
+            if unique_count == total and total > 10:
+                issues.append('all unique — possible ID/key field')
+            field_stats.append({
+                'name':         field,
+                'null_pct':     null_pct,
+                'unique_count': unique_count,
+                'data_type':    next((f.get('type', 'unknown') for f in schema if f['name'] == field), 'unknown'),
+                'issues':       issues,
+            })
+        # Duplicate detection (compare full record dicts)
+        seen_keys, dup_n = set(), 0
+        for rec in records:
+            key = str(sorted(rec.items()) if rec else [])
+            if key in seen_keys:
+                dup_n += 1
+            else:
+                seen_keys.add(key)
+        complete_n = sum(
+            1 for rec in records
+            if rec and all(
+                str(rec.get(f, '')).strip().lower() not in _EMPTY | {''}
+                for f in fields
+            )
+        )
+        avg_comp = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
+        dup_penalty = min(20, dup_n / total * 100) if total else 0
+        return {
+            'total_records':    total,
+            'complete_records': complete_n,
+            'duplicate_count':  dup_n,
+            'score':            round(max(0, avg_comp - dup_penalty), 1),
+            'fields':           field_stats,
+        }
 
     # ------------------------------------------------------------------
     # Calculated field resolution
@@ -2039,6 +2381,134 @@ class WorkspaceInsightService:
                         ),
                     },
                 })
+
+        # ════════════════════════════════════════════════════════════════
+        #  DATA QUALITY SCORECARD (always — gives users confidence in data)
+        # ════════════════════════════════════════════════════════════════
+        insights.append({
+            'type': 'data_quality',
+            'title': f'{self._clean_display_name(domain.title())} Data Quality',
+            'width': 12, 'height': 4,
+            'query_config': {},
+            'viz_config': {
+                'description': (
+                    'Automated data quality assessment: completeness, cardinality, '
+                    'duplicates, and field-level issues. Fix flagged problems before '
+                    'drawing conclusions from this data.'
+                ),
+            },
+        })
+
+        # ════════════════════════════════════════════════════════════════
+        #  STATISTICAL SUMMARY — full descriptive stats for numeric fields
+        # ════════════════════════════════════════════════════════════════
+        if valid_numeric:
+            insights.append({
+                'type': 'stat_summary',
+                'title': 'Numeric Field Statistics',
+                'width': 12, 'height': 5,
+                'query_config': {'fields': valid_numeric[:8]},
+                'viz_config': {
+                    'description': (
+                        'Descriptive statistics for every numeric field: '
+                        'mean, median, standard deviation, quartiles, '
+                        'skewness, kurtosis, and IQR-based outlier count. '
+                        'Skewness > 1 or < −1 signals a non-normal distribution.'
+                    ),
+                },
+            })
+
+        # ════════════════════════════════════════════════════════════════
+        #  DISTRIBUTION HISTOGRAMS — up to 3 highest-scoring numeric fields
+        # ════════════════════════════════════════════════════════════════
+        for field in valid_numeric[:3]:
+            display_f = self._clean_display_name(field)
+            insights.append({
+                'type': 'histogram',
+                'title': f'{display_f} Distribution',
+                'width': 6, 'height': 4,
+                'query_config': {'field': field, 'bins': 20},
+                'viz_config': {
+                    'description': (
+                        f"Frequency distribution of {display_f.lower()}. "
+                        f"Each bar shows how many {record_noun} fall in that range. "
+                        f"Look at skewness and kurtosis to understand the shape of the data."
+                    ),
+                },
+            })
+
+        # ════════════════════════════════════════════════════════════════
+        #  BOX & WHISKER PLOTS — outlier-robust comparison
+        # ════════════════════════════════════════════════════════════════
+        if valid_numeric:
+            best_cat = all_categorical[0] if all_categorical else None
+            for field in valid_numeric[:2]:
+                display_f = self._clean_display_name(field)
+                spec = {
+                    'type': 'box_plot',
+                    'title': f'{display_f} Box Plot',
+                    'width': 6, 'height': 4,
+                    'query_config': {'field': field},
+                    'viz_config': {
+                        'description': (
+                            f"Box plot for {display_f.lower()}: median (centre line), "
+                            f"IQR (box), whiskers (1.5×IQR), and outliers (dots). "
+                            f"Outliers may indicate data entry errors or genuine extremes."
+                        ),
+                    },
+                }
+                if best_cat:
+                    spec['query_config']['group_by'] = best_cat
+                    display_cat = self._clean_display_name(best_cat)
+                    spec['title'] = f'{display_f} by {display_cat}'
+                    spec['viz_config']['description'] = (
+                        f"Distribution of {display_f.lower()} across {display_cat.lower()} groups. "
+                        f"Compare medians and spread to identify which group performs best or "
+                        f"has the most variability."
+                    )
+                insights.append(spec)
+
+        # ════════════════════════════════════════════════════════════════
+        #  SCATTER + REGRESSION — top numeric pairs
+        # ════════════════════════════════════════════════════════════════
+        if len(valid_numeric) >= 2:
+            x_f = valid_numeric[0]
+            for y_f in valid_numeric[1:3]:
+                dx = self._clean_display_name(x_f)
+                dy = self._clean_display_name(y_f)
+                insights.append({
+                    'type': 'scatter_plot',
+                    'title': f'{dy} vs {dx}',
+                    'width': 6, 'height': 4,
+                    'query_config': {'x_field': x_f, 'y_field': y_f},
+                    'viz_config': {
+                        'description': (
+                            f"Scatter plot of {dy.lower()} against {dx.lower()}. "
+                            f"The regression line shows the linear trend; r² indicates "
+                            f"how much variance in {dy.lower()} is explained by {dx.lower()}. "
+                            f"r² > 0.7 suggests a strong relationship worth investigating."
+                        ),
+                    },
+                })
+
+        # ════════════════════════════════════════════════════════════════
+        #  CORRELATION HEATMAP — reveals hidden relationships
+        # ════════════════════════════════════════════════════════════════
+        if len(valid_numeric) >= 2:
+            insights.append({
+                'type': 'correlation_heatmap',
+                'title': 'Numeric Feature Correlations',
+                'width': 6, 'height': 5,
+                'query_config': {'fields': valid_numeric[:8]},
+                'viz_config': {
+                    'description': (
+                        'Pearson correlation matrix for all numeric fields. '
+                        'Values near +1 indicate a strong positive relationship; '
+                        'near −1 a strong inverse relationship; near 0 means no linear relationship. '
+                        'Red cells flag multicollinearity if you are building predictive models.'
+                    ),
+                },
+            })
 
         return insights
 
