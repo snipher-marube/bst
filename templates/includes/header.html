@@ -1,159 +1,126 @@
 {% load static %}
-<!-- Header/Navbar -->
 <header class="sticky top-0 z-50 w-full bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm">
     <nav class="container mx-auto px-4 sm:px-6 lg:px-8" aria-label="Main navigation">
         <div class="flex items-center justify-between h-16 md:h-20">
-            <!-- Logo -->
+
+            {# Logo #}
             <div class="flex-shrink-0">
-                <a href="{% url 'core:home' %}" class="flex items-center space-x-2 group" aria-label="Business Sight Technologies Home">
-                    <img src="{% static 'images/logo.png' %}" alt="Business Sight Technologies Logo" class="h-12 w-auto md:h-14 transition-transform duration-300 group-hover:scale-105">
+                <a href="{% url 'core:home' %}" class="flex items-center gap-2 group" aria-label="MetaAnalytics — home">
+                    <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center" aria-hidden="true">
+                        <span class="text-white font-bold text-base leading-none">M</span>
+                    </div>
+                    <span class="text-[#03466e] font-bold text-lg hidden sm:inline">etaAnalytics</span>
                 </a>
             </div>
-            
-            <!-- Desktop Navigation -->
-            <div class="hidden md:flex md:items-center md:space-x-1">
+
+            {# Desktop nav links #}
+            <div class="hidden md:flex md:items-center md:gap-1">
                 {% for item in main_nav %}
-                <a href="{{ item.url }}" 
-                   class="px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 
-                          {% if item.active %}
-                          text-[#f68712] bg-orange-50
-                          {% else %}
-                          text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50
-                          {% endif %}"
+                <a href="{{ item.url }}"
+                   class="px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                          {% if item.active %}text-[#f68712] bg-orange-50{% else %}text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50{% endif %}"
                    {% if item.active %}aria-current="page"{% endif %}>
                     {{ item.title }}
                 </a>
                 {% endfor %}
                 {% if user.is_authenticated and insights_dashboard %}
                 <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
-                   class="px-3 py-2 text-sm font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all">
-                    <i class="fas fa-magic mr-1"></i> Insights
+                   class="px-3 py-2 text-sm font-semibold text-[#03466e] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors">
+                    <i class="fas fa-wand-magic-sparkles mr-1 text-xs" aria-hidden="true"></i>Insights
                 </a>
                 {% endif %}
             </div>
-            
-            <!-- Desktop Right Navigation -->
-            <div class="hidden md:flex md:items-center md:space-x-3">
+
+            {# Desktop right actions #}
+            <div class="hidden md:flex md:items-center md:gap-3">
                 {% if user.is_authenticated %}
                     <a href="{% url 'dashboard:home' %}"
-                       class="px-4 py-2 text-sm font-medium text-[#03466e] hover:text-[#f68712] transition-colors duration-200 rounded-lg hover:bg-orange-50">
-                        <i class="fas fa-chart-pie mr-2"></i>Dashboard
+                       class="px-3 py-2 text-sm font-medium text-[#03466e] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors">
+                        <i class="fas fa-chart-pie mr-1.5 text-xs" aria-hidden="true"></i>Dashboard
                     </a>
 
-                    <!-- Notification Bell -->
+                    {# Notification bell #}
                     <a href="{% url 'dashboard:activity' %}"
-                       class="relative p-2 rounded-lg text-gray-500 hover:text-[#03466e] hover:bg-gray-100 transition-colors duration-200"
-                       title="Activity & Notifications">
-                        <i class="fas fa-bell text-lg"></i>
+                       class="relative p-2 rounded-lg text-gray-500 hover:text-[#03466e] hover:bg-gray-100 transition-colors"
+                       title="Activity &amp; Notifications" aria-label="Notifications">
+                        <i class="fas fa-bell text-lg" aria-hidden="true"></i>
                         {% if unread_notifications_count > 0 %}
-                        <span class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white px-1"
-                              style="background:#f68712">
-                            {{ unread_notifications_count|stringformat:"d" }}
+                        <span class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white px-1 bg-[#f68712]"
+                              aria-label="{{ unread_notifications_count }} unread">
+                            {{ unread_notifications_count }}
                         </span>
                         {% endif %}
                     </a>
 
-                    <!-- User Menu -->
+                    {# User dropdown #}
                     <div class="relative" x-data="{ open: false }">
-                        <button @click="open = !open" 
-                                class="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] rounded-lg hover:bg-orange-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#f68712] focus:ring-offset-2"
-                                :aria-expanded="open.toString()"
-                                aria-haspopup="true"
-                                aria-label="User menu">
-                            <div class="w-8 h-8 bg-gradient-to-br from-[#03466e] to-[#f68712] rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                        <button @click="open = !open"
+                                class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] rounded-lg hover:bg-orange-50 transition-colors focus:outline-none focus:ring-2 focus:ring-[#f68712] focus:ring-offset-2"
+                                :aria-expanded="open.toString()" aria-haspopup="true">
+                            <div class="w-8 h-8 bg-gradient-to-br from-[#03466e] to-[#f68712] rounded-full flex items-center justify-center text-white font-semibold text-sm" aria-hidden="true">
                                 {{ user.email|first|upper }}
                             </div>
-                            <span class="hidden lg:inline">{{ user.email|truncatechars:20 }}</span>
-                            <i class="fas fa-chevron-down text-xs transition-transform duration-200" 
-                               :class="{ 'rotate-180': open }"></i>
+                            <span class="hidden lg:inline max-w-[140px] truncate">{{ user.email }}</span>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-200" :class="{ 'rotate-180': open }" aria-hidden="true"></i>
                         </button>
-                        
-                        <!-- Dropdown Menu -->
-                        <div x-show="open" 
-                             @click.away="open = false" 
+
+                        <div x-show="open" @click.away="open = false"
                              x-transition:enter="transition ease-out duration-100"
-                             x-transition:enter-start="transform opacity-0 scale-95"
-                             x-transition:enter-end="transform opacity-100 scale-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
                              x-transition:leave="transition ease-in duration-75"
-                             x-transition:leave-start="transform opacity-100 scale-100"
-                             x-transition:leave-end="transform opacity-0 scale-95"
-                             class="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg py-2 border border-gray-100"
-                             style="display: none;"
-                             role="menu"
-                             aria-orientation="vertical">
-                            
-                            <div class="px-4 py-3 border-b border-gray-100">
-                                <p class="text-xs text-gray-500">Signed in as</p>
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             class="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg py-2 border border-gray-100 z-50"
+                             style="display:none;" role="menu" aria-orientation="vertical">
+
+                            <div class="px-4 py-2.5 border-b border-gray-100">
+                                <p class="text-xs text-gray-400">Signed in as</p>
                                 <p class="text-sm font-semibold text-[#03466e] truncate">{{ user.email }}</p>
                             </div>
-                            
-                            <a href="{% url 'dashboard:profile' %}"
-                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
-                               role="menuitem">
-                                <i class="fas fa-user w-5 text-gray-400"></i>
-                                <span class="ml-2">Profile</span>
+
+                            <a href="{% url 'dashboard:profile' %}" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors" role="menuitem">
+                                <i class="fas fa-user w-4 text-gray-400 mr-2" aria-hidden="true"></i>Profile
                             </a>
-                            
-                            <a href="{% url 'account_email' %}" 
-                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
-                               role="menuitem">
-                                <i class="fas fa-envelope w-5 text-gray-400"></i>
-                                <span class="ml-2">Email Settings</span>
+                            <a href="{% url 'account_email' %}" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors" role="menuitem">
+                                <i class="fas fa-envelope w-4 text-gray-400 mr-2" aria-hidden="true"></i>Email Settings
                             </a>
-                            
-                            <a href="{% url 'account_change_password' %}" 
-                               class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors duration-200"
-                               role="menuitem">
-                                <i class="fas fa-lock w-5 text-gray-400"></i>
-                                <span class="ml-2">Change Password</span>
+                            <a href="{% url 'account_change_password' %}" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f68712] transition-colors" role="menuitem">
+                                <i class="fas fa-lock w-4 text-gray-400 mr-2" aria-hidden="true"></i>Change Password
                             </a>
-                            
                             <div class="border-t border-gray-100 my-1"></div>
-                            
-                            <a href="{% url 'account_logout' %}" 
-                               class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
-                               role="menuitem">
-                                <i class="fas fa-sign-out-alt w-5"></i>
-                                <span class="ml-2">Sign out</span>
+                            <a href="{% url 'account_logout' %}" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors" role="menuitem">
+                                <i class="fas fa-arrow-right-from-bracket w-4 mr-2" aria-hidden="true"></i>Sign out
                             </a>
                         </div>
                     </div>
                 {% else %}
-                    <a href="{% url 'account_login' %}" 
-                       class="px-4 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] transition-colors duration-200 rounded-lg hover:bg-orange-50">
+                    <a href="{% url 'account_login' %}"
+                       class="px-4 py-2 text-sm font-medium text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 rounded-lg transition-colors">
                         Sign in
                     </a>
-                    
                     <a href="{% url 'account_signup' %}"
-                       class="inline-flex items-center px-5 py-2 border-2 border-[#f68712] text-sm font-medium rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] hover:border-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f68712] transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5">
-                        <i class="fas fa-rocket mr-2"></i>
-                        Start Free Trial
+                       class="inline-flex items-center px-5 py-2 text-sm font-semibold rounded-lg text-white bg-[#f68712] hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f68712] transition-colors shadow-sm">
+                        <i class="fas fa-rocket mr-1.5 text-xs" aria-hidden="true"></i>Get started
                     </a>
                 {% endif %}
 
-                <!-- Dark mode toggle -->
-                <button id="theme-toggle-btn"
-                        onclick="AMTheme.toggle()"
-                        class="theme-toggle ml-1"
-                        aria-label="Toggle dark mode"
-                        title="Toggle dark mode">
-                  <i id="theme-icon" class="fas fa-moon text-sm"></i>
+                {# Dark mode toggle #}
+                <button id="theme-toggle-btn" onclick="AMTheme.toggle()"
+                        class="p-2 rounded-lg text-gray-500 hover:text-[#03466e] hover:bg-gray-100 transition-colors ml-1"
+                        aria-label="Toggle dark mode" title="Toggle dark mode">
+                    <i id="theme-icon" class="fas fa-moon text-sm" aria-hidden="true"></i>
                 </button>
             </div>
-            
-            <!-- Mobile menu button -->
+
+            {# Mobile menu toggle #}
             <div class="flex md:hidden">
-                <button type="button" 
-                        class="mobile-menu-button inline-flex items-center justify-center p-2 rounded-lg text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#f68712] transition-colors duration-200"
-                        aria-expanded="false"
-                        aria-label="Toggle navigation menu">
-                    <span class="sr-only">Open main menu</span>
-                    <i class="fas fa-bars text-2xl"></i>
+                <button type="button"
+                        class="mobile-menu-button inline-flex items-center justify-center p-2 rounded-lg text-[#2b2b2b] hover:text-[#f68712] hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#f68712] transition-colors"
+                        aria-expanded="false" aria-label="Open navigation menu">
+                    <i class="fas fa-bars text-xl" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
     </nav>
 </header>
-
-<!-- Add Alpine.js if not already included -->
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>

@@ -1,14 +1,26 @@
-{% extends "allauth/layouts/entrance.html" %}
+{% extends "account/_base_auth.html" %}
 {% load i18n %}
-{% load allauth %}
-{% block head_title %}
-    {% translate "Account Inactive" %}
-{% endblock head_title %}
-{% block content %}
-    {% element h1 %}
-        {% translate "Account Inactive" %}
-    {% endelement %}
-    {% element p %}
-        {% translate "This account is inactive." %}
-    {% endelement %}
-{% endblock content %}
+
+{% block title %}{% trans "Account Inactive" %} | {{ block.super }}{% endblock %}
+
+{% block auth_content %}
+<div class="text-center">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4" aria-hidden="true">
+        <i class="fas fa-ban text-3xl text-amber-500"></i>
+    </div>
+    <h1 class="auth-heading">{% trans "Account inactive" %}</h1>
+    <p class="text-sm text-gray-500 mt-1 mb-5">
+        {% trans "This account is currently inactive. Contact support if you believe this is an error." %}
+    </p>
+    <div class="flex flex-col gap-2">
+        <a href="{% url 'core:contact' %}" class="auth-btn auth-btn-primary w-full">
+            <i class="fas fa-headset text-sm" aria-hidden="true"></i>
+            {% trans "Contact support" %}
+        </a>
+        <a href="/" class="auth-btn auth-btn-secondary w-full">
+            <i class="fas fa-house text-sm" aria-hidden="true"></i>
+            {% trans "Go to home" %}
+        </a>
+    </div>
+</div>
+{% endblock %}

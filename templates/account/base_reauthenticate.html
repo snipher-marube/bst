@@ -1,29 +1,20 @@
-{% extends "account/base_entrance.html" %}
-{% load allauth %}
+{% extends "account/_base_auth.html" %}
 {% load i18n %}
-{% block head_title %}
-    {% trans "Confirm Access" %}
-{% endblock head_title %}
-{% block content %}
-    {% element h1 %}
-        {% trans "Confirm Access" %}
-    {% endelement %}
-    {% element p %}
-        {% blocktranslate %}Please reauthenticate to safeguard your account.{% endblocktranslate %}
-    {% endelement %}
-    {% block reauthenticate_content %}{% endblock %}
-    {% if reauthentication_alternatives %}
-        {% element hr %}
-        {% endelement %}
-        {% element h2 %}
-            {% translate "Alternative options" %}
-        {% endelement %}
-        {% element button_group %}
-            {% for alt in reauthentication_alternatives %}
-                {% element button href=alt.url tags="primary,outline" %}
-                    {{ alt.description }}
-                {% endelement %}
-            {% endfor %}
-        {% endelement %}
-    {% endif %}
-{% endblock content %}
+
+{% block title %}{% trans "Confirm Access" %} | {{ block.super }}{% endblock %}
+
+{% block auth_content %}
+<h1 class="auth-heading">{% trans "Confirm access" %}</h1>
+<p class="auth-subheading">{% blocktranslate %}Please reauthenticate to safeguard your account.{% endblocktranslate %}</p>
+
+{% block reauthenticate_content %}{% endblock %}
+
+{% if reauthentication_alternatives %}
+<div class="auth-divider">{% translate "Alternative options" %}</div>
+<div class="flex flex-col gap-2">
+    {% for alt in reauthentication_alternatives %}
+    <a href="{{ alt.url }}" class="auth-btn auth-btn-secondary w-full">{{ alt.description }}</a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

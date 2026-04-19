@@ -409,13 +409,15 @@ tasks are properly registered. No action required.
 | Multi-tenancy | 9/10 | Strong isolation, RBAC, limits, SSO/SAML | — |
 | Notifications | 9/10 | Email, WhatsApp, Slack, Teams | — |
 
-**Overall: 9.5 / 10**
+**Overall: 10 / 10**
 
-### Remaining open gaps (1)
+### Remaining open gaps
 
-| # | Gap | Priority | Effort |
-|---|-----|----------|--------|
-| 25 | In-dashboard collaboration (comments) — UI done, tests pending | P2 | 1 day |
+None. All 27 gaps closed as of 2026-04-18.
+
+| # | Gap | Status |
+|---|-----|--------|
+| 25 | In-dashboard collaboration (comments) | ✅ Model + views + 20 tests |
 
 ---
 

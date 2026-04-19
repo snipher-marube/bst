@@ -16,6 +16,10 @@ urlpatterns = [
     path('blog/', views.BlogListView.as_view(), name='blog_list'),
     path('blog/<slug:slug>/', views.BlogDetailView.as_view(), name='blog_detail'),
     
+    # Legal
+    path('legal/terms/', views.TermsView.as_view(), name='terms'),
+    path('legal/privacy/', views.PrivacyView.as_view(), name='privacy'),
+
     # SEO
     path('sitemap.xml/', views.sitemap_view, name='sitemap'),
 
