@@ -556,6 +556,24 @@ class ContactView(TemplateView):
         return self.render_to_response(context)
 
 
+class TermsView(TemplateView):
+    template_name = 'core/terms.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['meta_title'] = 'Terms of Service - MetaAnalytics'
+        return context
+
+
+class PrivacyView(TemplateView):
+    template_name = 'core/privacy.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['meta_title'] = 'Privacy Policy - MetaAnalytics'
+        return context
+
+
 class BlogListView(ListView):
     """
     Blog listing page

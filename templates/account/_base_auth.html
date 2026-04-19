@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{# Suppress chrome that doesn't belong on auth pages #}
+{% block navbar %}{% endblock %}
+{% block site_footer %}{% endblock %}
+{% block mobile_menu %}{% endblock %}
+{% block cookie_banner %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/auth.css' %}">
+{% endblock %}
+
+{% block main_class %}min-h-screen bg-[#f8fafc] flex items-center justify-center py-12 px-4{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+
+    {# ── Logo ─────────────────────────────────────────────── #}
+    <div class="text-center mb-7">
+        <a href="/" aria-label="{% trans 'MetaAnalytics — go to homepage' %}">
+            {% if site_settings and site_settings.logo %}
+                <img src="{{ site_settings.logo.url }}" alt="{{ site_name }}"
+                     class="h-9 w-auto mx-auto" loading="lazy">
+            {% else %}
+                <div class="inline-flex items-center gap-2">
+                    <div class="w-9 h-9 bg-[#f68712] rounded-lg flex items-center justify-center" aria-hidden="true">
+                        <span class="text-white font-bold text-lg leading-none">M</span>
+                    </div>
+                    <span class="text-[#03466e] font-bold text-xl tracking-tight">etaAnalytics</span>
+                </div>
+            {% endif %}
+        </a>
+    </div>
+
+    {# ── Flash messages ───────────────────────────────────── #}
+    {% if messages %}
+        {% for message in messages %}
+            <div class="auth-alert auth-alert-{{ message.tags }}" role="alert" aria-live="polite">
+                <i class="fas {% if 'error' in message.tags %}fa-circle-xmark{% elif 'success' in message.tags %}fa-circle-check{% elif 'warning' in message.tags %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}" aria-hidden="true"></i>
+                <span>{{ message }}</span>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {# ── Card ─────────────────────────────────────────────── #}
+    <div class="auth-card">
+        <div class="auth-card-accent" aria-hidden="true"></div>
+        <div class="auth-card-body">
+            {% block auth_content %}{% endblock %}
+        </div>
+    </div>
+
+    {# ── Below-card footer (sign-in / sign-up link, etc.) ── #}
+    {% block auth_footer %}{% endblock %}
+
+    {# ── Minimal brand footer ─────────────────────────────── #}
+    <p class="text-center text-xs text-gray-400 mt-8">
+        &copy; {% now "Y" %} MetaAnalytics &middot;
+        <a href="{% url 'core:privacy' %}" class="hover:text-[#f68712] transition-colors">Privacy</a> &middot;
+        <a href="{% url 'core:terms' %}" class="hover:text-[#f68712] transition-colors">Terms</a>
+    </p>
+</div>
+{% endblock %}

@@ -1439,8 +1439,14 @@ class WorkspaceInsightService:
         )
 
         if not created:
-            # Regenerate: wipe previously auto-generated widgets
-            dashboard.widgets.filter(title__startswith='[Auto]').delete()  # type: ignore[attr-defined]
+            # Regenerate: wipe previously auto-generated widgets.
+            # Suppress the empty-dashboard signal so the dashboard itself isn't deleted.
+            from .models import _skip_dashboard_cleanup
+            _skip_dashboard_cleanup.active = True
+            try:
+                dashboard.widgets.filter(title__startswith='[Auto]').delete()  # type: ignore[attr-defined]
+            finally:
+                _skip_dashboard_cleanup.active = False
 
         from django.db.models import Exists, OuterRef
         _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)

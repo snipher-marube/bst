@@ -1,96 +1,93 @@
-{% extends "account/base_entrance.html" %}
-{% load i18n %}
-{% load allauth account %}
-{% block content %}
-    {% setvar title_ %}
-        {% block title %}{% endblock %}
-    {% endsetvar %}
-    {% setvar action_url %}
-        {% block action_url %}{% endblock %}
-    {% endsetvar %}
-    {% setvar extra_tags %}
-        {% block extra_tags %}{% endblock %}
-    {% endsetvar %}
-    {% setvar form_tags %}
-        entrance,{{ extra_tags }}
-    {% endsetvar %}
-    {% setvar submit_button_tags %}
-        confirm,{{ extra_tags }}
-    {% endsetvar %}
-    {% setvar recipient %}
-        {% block recipient %}{% endblock %}
-    {% endsetvar %}
-    {% element h1 %}
-        {{ title_ }}
-    {% endelement %}
-    {% element p %}
-        {% blocktranslate %}We've sent a code to {{ recipient }}. The code expires shortly, so please enter it soon.{% endblocktranslate %}
-    {% endelement %}
-    {% element form form=verify_form method="post" action=action_url tags=form_tags %}
-        {% slot body %}
+{% extends "account/_base_auth.html" %}
+{% load i18n allauth account %}
+
+{% block auth_content %}
+{% block title %}{% endblock %}
+{% block action_url %}{% endblock %}
+
+<h1 class="auth-heading">{% block heading %}{% translate "Enter code" %}{% endblock %}</h1>
+{% block recipient %}{% endblock %}
+
+<form method="post" action="{% block form_action %}{% endblock %}" novalidate>
+    {% csrf_token %}
+    {% if verify_form.non_field_errors %}
+    <div class="auth-alert auth-alert-error mb-4" role="alert">
+        <i class="fas fa-circle-exclamation" aria-hidden="true"></i>
+        <span>{{ verify_form.non_field_errors.0 }}</span>
+    </div>
+    {% endif %}
+
+    {% for field in verify_form %}
+    <div class="auth-field">
+        <label for="{{ field.auto_id }}" class="auth-label sr-only">{{ field.label }}</label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-hashtag auth-input-icon" aria-hidden="true"></i>
+            {{ field }}
+        </div>
+        {% if field.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>{{ field.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {{ redirect_field }}
+
+    <div class="flex flex-col gap-2">
+        <button type="submit" class="auth-btn auth-btn-primary">
+            <i class="fas fa-circle-check text-sm" aria-hidden="true"></i>
+            {% translate "Confirm" %}
+        </button>
+        {% if can_resend %}
+        <button type="submit" form="resend" class="auth-btn auth-btn-secondary">
+            <i class="fas fa-rotate-right text-sm" aria-hidden="true"></i>
+            {% translate "Request new code" %}
+        </button>
+        {% endif %}
+        {% if cancel_url %}
+        <a href="{{ cancel_url }}" class="auth-btn auth-btn-secondary">{% translate "Cancel" %}</a>
+        {% else %}
+        <button type="submit" form="logout-from-stage" class="auth-btn auth-btn-secondary">
+            {% translate "Cancel" %}
+        </button>
+        {% endif %}
+    </div>
+</form>
+
+<form id="resend" method="post" action="">
+    <input type="hidden" name="action" value="resend">
+    {{ redirect_field }}
+    {% csrf_token %}
+</form>
+
+{% if not cancel_url %}
+<form id="logout-from-stage" method="post" action="{% url 'account_logout' %}">
+    <input type="hidden" name="next" value="{% url 'account_login' %}">
+    {% csrf_token %}
+</form>
+{% endif %}
+
+{% if can_change %}
+<details class="mt-4 border border-gray-200 rounded-lg" {% if change_form.errors %}open{% endif %}>
+    <summary class="px-4 py-2 text-sm text-[#03466e] cursor-pointer">
+        {% block change_title %}{% translate "Update" %}{% endblock %}
+    </summary>
+    <div class="px-4 pb-4 pt-2">
+        <form method="post" action="">
             {% csrf_token %}
-            {% element fields form=verify_form unlabeled=True %}
-            {% endelement %}
+            {% for field in change_form %}
+            <div class="auth-field">
+                <label for="{{ field.auto_id }}" class="auth-label">{{ field.label }}</label>
+                <div class="auth-input-wrap">{{ field }}</div>
+                {% if field.errors %}<p class="auth-error-msg"><i class="fas fa-circle-exclamation"></i>{{ field.errors.0 }}</p>{% endif %}
+            </div>
+            {% endfor %}
             {{ redirect_field }}
-        {% endslot %}
-        {% slot actions %}
-            {% element button_group %}
-                {% element button type="submit" tags=submit_button_tags %}
-                    {% translate "Confirm" %}
-                {% endelement %}
-                {% if can_resend %}
-                    {% element button form="resend" tags="outline,resend" %}
-                        {% translate "Request new code" %}
-                    {% endelement %}
-                {% endif %}
-                {% if cancel_url %}
-                    {% element button href=cancel_url tags="outline,cancel" %}
-                        {% translate "Cancel" %}
-                    {% endelement %}
-                {% else %}
-                    {% element button type="submit" form="logout-from-stage" tags="outline,cancel" %}
-                        {% translate "Cancel" %}
-                    {% endelement %}
-                {% endif %}
-            {% endelement %}
-        {% endslot %}
-    {% endelement %}
-    <form id="resend" method="post" action="{{ action_url }}">
-        <input type="hidden" name="action" value="resend">
-        {{ redirect_field }}
-        {% csrf_token %}
-    </form>
-    {% if not cancel_url %}
-        <form id="logout-from-stage"
-              method="post"
-              action="{% url 'account_logout' %}">
-            <input type="hidden" name="next" value="{% url 'account_login' %}">
-            {% csrf_token %}
+            <button type="submit" name="action" value="change" class="auth-btn auth-btn-secondary text-sm py-2 px-4">
+                {% translate "Change" %}
+            </button>
         </form>
-    {% endif %}
-    {% setvar summary_ %}
-        {% block change_title %}{% endblock %}
-    {% endsetvar %}
-    {% if can_change %}
-        {% element details open=change_form.errors %}
-            {% slot summary %}
-                {{ summary_ }}
-            {% endslot %}
-            {% slot body %}
-                {% element form form=change_form method="post" action=action_url %}
-                    {% slot body %}
-                        {% csrf_token %}
-                        {% element fields form=change_form unlabeled=True %}
-                        {% endelement %}
-                        {{ redirect_field }}
-                    {% endslot %}
-                    {% slot actions %}
-                        {% element button name="action" value="change" type="submit" %}
-                            Change
-                        {% endelement %}
-                    {% endslot %}
-                {% endelement %}
-            {% endslot %}
-        {% endelement %}
-    {% endif %}
-{% endblock content %}
+    </div>
+</details>
+{% endif %}
+{% endblock %}

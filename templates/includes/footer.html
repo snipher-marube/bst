@@ -1,409 +1,213 @@
-{% load static %}
-<!-- Footer -->
+{% load static i18n %}
 <footer class="bg-[#2b2b2b] text-gray-300" aria-label="Site footer">
-    <!-- Newsletter Section with Orange Accent -->
-<div class="bg-[#03466e] py-16 relative overflow-hidden">
-    <!-- Decorative pattern -->
-    <div class="absolute inset-0 opacity-10">
-        <svg class="absolute left-0 top-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <pattern id="footer-grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                    <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
-                </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#footer-grid)"/>
-        </svg>
-    </div>
-    
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <div class="max-w-3xl mx-auto text-center">
-            <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Newsletter</span>
-            <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Stay Updated</h2>
-            <p class="text-blue-200 mb-8 text-lg">Get the latest features, tips, and insights delivered to your inbox.</p>
-            
-            <!-- Newsletter Form - Compact Design -->
-            <form class="newsletter-form max-w-xl mx-auto" action="{% url 'newsletter:api_subscribe' %}" method="POST">
-                {% csrf_token %}
-                
-                <!-- Hidden field with the Analytics List ID -->
-                {% if analytics_list_id %}
-                <input type="hidden" name="list_id" value="{{ analytics_list_id }}">
-                {% endif %}
-                
-                <!-- Glass morphism card -->
-                <div class="bg-white/5 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-                    <!-- Email Input with floating label effect -->
-                    <div class="relative mb-3">
-                        <input type="email" 
-                               name="email" 
-                               id="newsletter-email"
-                               required
-                               placeholder=" "
-                               class="peer w-full px-4 pt-6 pb-2 text-white bg-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent transition-all duration-200 placeholder-transparent">
-                        <label for="newsletter-email" 
-                               class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm peer-focus:text-xs peer-focus:-translate-y-6 peer-focus:text-[#f68712] peer-valid:text-xs peer-valid:-translate-y-6 transition-all duration-200">
-                            Email address <span class="text-red-400">*</span>
-                        </label>
-                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
-                            <svg class="w-5 h-5 text-gray-400 peer-focus:text-[#f68712] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                            </svg>
-                        </div>
-                    </div>
-                    
-                    <!-- First Name Input with floating label -->
-                    <div class="relative mb-4">
-                        <input type="text" 
-                               name="first_name" 
-                               id="first-name"
-                               placeholder=" "
-                               class="peer w-full px-4 pt-6 pb-2 text-white bg-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f68712] border-2 border-transparent transition-all duration-200 placeholder-transparent">
-                        <label for="first-name" 
-                               class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm peer-focus:text-xs peer-focus:-translate-y-6 peer-focus:text-[#f68712] peer-valid:text-xs peer-valid:-translate-y-6 transition-all duration-200">
-                            First name <span class="text-gray-500 text-xs">(optional)</span>
-                        </label>
-                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
-                            <svg class="w-5 h-5 text-gray-400 peer-focus:text-[#f68712] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                            </svg>
-                        </div>
-                    </div>
-                    
-                    <!-- Consent and Submit Row -->
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div class="flex items-center space-x-3">
-                            <input type="checkbox" 
-                                   name="consent" 
-                                   id="consent" 
-                                   required
-                                   class="w-5 h-5 rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
-                            <label for="consent" class="text-sm text-blue-200">
-                                I agree to the <a href="/privacy/" class="text-white hover:text-[#f68712] underline">privacy policy</a>
-                            </label>
-                        </div>
-                        
-                        <button type="submit" 
-                                class="px-8 py-3 bg-[#f68712] text-white font-semibold rounded-xl hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#03466e] focus:ring-[#f68712] transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center space-x-2 group">
-                            <span>Subscribe</span>
-                            <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-                            </svg>
+
+    {# ── Newsletter band ──────────────────────────────────────── #}
+    <div class="bg-[#03466e] py-14 relative overflow-hidden">
+        <div class="absolute inset-0 opacity-10" aria-hidden="true">
+            <svg class="h-full w-full" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <pattern id="footer-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                        <path d="M0 0 L32 0 L32 32 L0 32 Z" fill="none" stroke="white" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#footer-grid)"/>
+            </svg>
+        </div>
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative">
+            <div class="max-w-xl mx-auto text-center">
+                <span class="text-[#f68712] font-semibold text-sm uppercase tracking-wider mb-2 block">Newsletter</span>
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-3">Stay updated</h2>
+                <p class="text-blue-200 mb-6 text-sm">Get the latest features, tips, and insights delivered to your inbox.</p>
+
+                <form class="newsletter-form" action="{% url 'newsletter:api_subscribe' %}" method="POST">
+                    {% csrf_token %}
+                    {% if analytics_list_id %}
+                    <input type="hidden" name="list_id" value="{{ analytics_list_id }}">
+                    {% endif %}
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <input type="email" name="email" id="newsletter-email" required
+                               placeholder="you@company.com"
+                               class="flex-1 px-4 py-2.5 rounded-lg text-sm text-white bg-white/10 border border-white/20 placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-[#f68712] focus:border-transparent">
+                        <button type="submit"
+                                class="px-6 py-2.5 bg-[#f68712] text-white text-sm font-semibold rounded-lg hover:bg-[#e07810] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#03466e] focus:ring-[#f68712] transition-colors whitespace-nowrap">
+                            Subscribe
+                            <i class="fas fa-arrow-right ml-1 text-xs" aria-hidden="true"></i>
                         </button>
                     </div>
-                </div>
-                
-                <!-- Privacy Note -->
-                <p class="text-xs text-blue-300 mt-4 flex items-center justify-center space-x-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                    </svg>
-                    <span>We respect your privacy. Unsubscribe at any time.</span>
-                </p>
-            </form>
+                    <label class="flex items-center gap-2 mt-3 justify-center text-xs text-blue-200 cursor-pointer">
+                        <input type="checkbox" name="consent" required
+                               class="w-4 h-4 rounded border-gray-300 text-[#f68712] focus:ring-[#f68712]">
+                        I agree to the
+                        <a href="{% url 'core:privacy' %}" class="text-white hover:text-[#f68712] underline">Privacy Policy</a>
+                    </label>
+                </form>
+            </div>
         </div>
     </div>
-</div>
-    
-    <!-- Main Footer -->
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
+
+    {# ── Main footer grid ─────────────────────────────────────── #}
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-14">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12">
-            <!-- Company Info -->
+
+            {# Brand column #}
             <div class="lg:col-span-1">
-                {% if footer_logo %}
-                <img src="{% static 'images/logo.png' %}" alt="Business Sight Technologies" class="h-8 w-auto mb-4">
-                {% else %}
-                <div class="flex items-center space-x-2 mb-4">
-                    <div class="w-12 h-8 bg-[#f68712] rounded-lg flex items-center justify-center">
-                        <span class="text-white font-bold text-xl">BST</span>
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-8 h-8 bg-[#f68712] rounded-lg flex items-center justify-center" aria-hidden="true">
+                        <span class="text-white font-bold text-base leading-none">M</span>
                     </div>
-                    <span class="text-white font-bold text-xl">Business Sight Technologies</span>
+                    <span class="text-white font-bold text-lg">etaAnalytics</span>
                 </div>
-                {% endif %}
-                <p class="text-sm text-gray-400 mb-4 leading-relaxed">
-                    Empowering SMEs with customizable, no-code analytics. Track what matters, your way.
+                <p class="text-sm text-gray-400 mb-5 leading-relaxed">
+                    Empowering SMEs with no-code business intelligence. Track what matters, your way.
                 </p>
-                <div class="flex space-x-4">
-                    <a href="{{ social_media.twitter }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="Twitter">
-                        <i class="fab fa-twitter text-xl"></i>
+                <div class="flex gap-4">
+                    {% if social_media.twitter %}
+                    <a href="{{ social_media.twitter }}" class="text-gray-400 hover:text-[#f68712] transition-colors" aria-label="Twitter / X">
+                        <i class="fab fa-x-twitter text-lg"></i>
                     </a>
-                    <a href="{{ social_media.linkedin }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="LinkedIn">
-                        <i class="fab fa-linkedin text-xl"></i>
+                    {% endif %}
+                    {% if social_media.linkedin %}
+                    <a href="{{ social_media.linkedin }}" class="text-gray-400 hover:text-[#f68712] transition-colors" aria-label="LinkedIn">
+                        <i class="fab fa-linkedin text-lg"></i>
                     </a>
-                    <a href="{{ social_media.github }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="GitHub">
-                        <i class="fab fa-github text-xl"></i>
+                    {% endif %}
+                    {% if social_media.github %}
+                    <a href="{{ social_media.github }}" class="text-gray-400 hover:text-[#f68712] transition-colors" aria-label="GitHub">
+                        <i class="fab fa-github text-lg"></i>
                     </a>
-                    <a href="{{ social_media.youtube }}" class="text-gray-400 hover:text-[#f68712] transition-all duration-200 transform hover:scale-110" aria-label="YouTube">
-                        <i class="fab fa-youtube text-xl"></i>
+                    {% endif %}
+                    {% if social_media.youtube %}
+                    <a href="{{ social_media.youtube }}" class="text-gray-400 hover:text-[#f68712] transition-colors" aria-label="YouTube">
+                        <i class="fab fa-youtube text-lg"></i>
                     </a>
+                    {% endif %}
                 </div>
             </div>
-            
-            <!-- Footer Navigation Columns -->
+
+            {# Nav columns #}
             <div>
-                <h3 class="text-white font-semibold mb-4 relative inline-block">
-                    Product
-                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
-                </h3>
-                <ul class="space-y-3 mt-6">
+                <h3 class="text-white font-semibold mb-4 text-sm uppercase tracking-wider">Product</h3>
+                <ul class="space-y-2.5">
                     {% for item in footer_nav.product %}
-                    <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
-                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ item.title }}
-                        </a>
-                    </li>
+                    <li><a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors flex items-center gap-1.5 group"><i class="fas fa-chevron-right text-[0.5rem] text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"></i>{{ item.title }}</a></li>
                     {% endfor %}
                 </ul>
             </div>
-            
             <div>
-                <h3 class="text-white font-semibold mb-4 relative inline-block">
-                    Solutions
-                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
-                </h3>
-                <ul class="space-y-3 mt-6">
+                <h3 class="text-white font-semibold mb-4 text-sm uppercase tracking-wider">Solutions</h3>
+                <ul class="space-y-2.5">
                     {% for item in footer_nav.solutions %}
-                    <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
-                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ item.title }}
-                        </a>
-                    </li>
+                    <li><a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors flex items-center gap-1.5 group"><i class="fas fa-chevron-right text-[0.5rem] text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"></i>{{ item.title }}</a></li>
                     {% endfor %}
                 </ul>
             </div>
-            
             <div>
-                <h3 class="text-white font-semibold mb-4 relative inline-block">
-                    Resources
-                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
-                </h3>
-                <ul class="space-y-3 mt-6">
+                <h3 class="text-white font-semibold mb-4 text-sm uppercase tracking-wider">Resources</h3>
+                <ul class="space-y-2.5">
                     {% for item in footer_nav.resources %}
-                    <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
-                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ item.title }}
-                        </a>
-                    </li>
+                    <li><a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors flex items-center gap-1.5 group"><i class="fas fa-chevron-right text-[0.5rem] text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"></i>{{ item.title }}</a></li>
                     {% endfor %}
                 </ul>
             </div>
-            
             <div>
-                <h3 class="text-white font-semibold mb-4 relative inline-block">
-                    Company
-                    <span class="absolute bottom-0 left-0 w-12 h-0.5 bg-[#f68712] -mb-2"></span>
-                </h3>
-                <ul class="space-y-3 mt-6">
+                <h3 class="text-white font-semibold mb-4 text-sm uppercase tracking-wider">Company</h3>
+                <ul class="space-y-2.5">
                     {% for item in footer_nav.company %}
-                    <li>
-                        <a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 flex items-center group">
-                            <svg class="w-3 h-3 mr-2 text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ item.title }}
-                        </a>
-                    </li>
+                    <li><a href="{{ item.url }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors flex items-center gap-1.5 group"><i class="fas fa-chevron-right text-[0.5rem] text-[#f68712] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"></i>{{ item.title }}</a></li>
                     {% endfor %}
                 </ul>
             </div>
         </div>
-        
-        <!-- Contact Info with Orange Icons -->
+
+        {# Contact bar #}
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 pt-8 border-t border-gray-800">
-            <div class="flex items-center space-x-4 group">
-                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
-                    <i class="fas fa-envelope text-white"></i>
+            {% if support_email %}
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <i class="fas fa-envelope text-white text-sm"></i>
                 </div>
                 <div>
-                    <p class="text-xs text-gray-500">Email</p>
-                    <a href="mailto:{{ support_email }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200">
-                        {{ support_email }}
-                    </a>
+                    <p class="text-xs text-gray-500 mb-0.5">Email</p>
+                    <a href="mailto:{{ support_email }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors">{{ support_email }}</a>
                 </div>
             </div>
-            <div class="flex items-center space-x-4 group">
-                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
-                    <i class="fas fa-phone text-white"></i>
+            {% endif %}
+            {% if phone_number %}
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <i class="fas fa-phone text-white text-sm"></i>
                 </div>
                 <div>
-                    <p class="text-xs text-gray-500">Phone</p>
-                    <a href="tel:{{ phone_number }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200">
-                        {{ phone_number }}
-                    </a>
+                    <p class="text-xs text-gray-500 mb-0.5">Phone</p>
+                    <a href="tel:{{ phone_number }}" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors">{{ phone_number }}</a>
                 </div>
             </div>
-            <div class="flex items-center space-x-4 group">
-                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center group-hover:bg-[#f68712] transition-colors duration-200">
-                    <i class="fas fa-map-marker-alt text-white"></i>
+            {% endif %}
+            {% if address %}
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-[#03466e] rounded-lg flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <i class="fas fa-location-dot text-white text-sm"></i>
                 </div>
                 <div>
-                    <p class="text-xs text-gray-500">Address</p>
+                    <p class="text-xs text-gray-500 mb-0.5">Address</p>
                     <span class="text-sm text-gray-400">{{ address }}</span>
                 </div>
             </div>
+            {% endif %}
         </div>
-        
-        <!-- Bottom Bar -->
-        <div class="mt-12 pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center">
-            <p class="text-sm text-gray-400 order-2 md:order-1 mt-4 md:mt-0">
-                &copy; {% now "Y" %} Business Sight Technologies. 
-                <span class="text-[#f68712]">All rights reserved.</span>
+
+        {# Bottom bar #}
+        <div class="mt-10 pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p class="text-xs text-gray-500 order-2 md:order-1">
+                &copy; {% now "Y" %} MetaAnalytics &middot; All rights reserved.
             </p>
-            <div class="flex space-x-8 order-1 md:order-2">
-                <a href="/privacy/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
-                    Privacy Policy
-                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
-                </a>
-                <a href="/terms/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
-                    Terms of Service
-                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
-                </a>
-                <a href="/cookies/" class="text-sm text-gray-400 hover:text-[#f68712] transition-colors duration-200 relative group">
-                    Cookie Policy
-                    <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f68712] group-hover:w-full transition-all duration-200"></span>
-                </a>
-            </div>
+            <nav class="flex gap-6 order-1 md:order-2" aria-label="Legal">
+                <a href="{% url 'core:privacy' %}" class="text-xs text-gray-400 hover:text-[#f68712] transition-colors">Privacy Policy</a>
+                <a href="{% url 'core:terms' %}" class="text-xs text-gray-400 hover:text-[#f68712] transition-colors">Terms of Service</a>
+                <a href="{% url 'core:contact' %}" class="text-xs text-gray-400 hover:text-[#f68712] transition-colors">Contact</a>
+            </nav>
         </div>
     </div>
 </footer>
 
-<!-- Newsletter Form Handling with Toast Notifications -->
-<style>
-    .toast-notification {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 1rem 1.5rem;
-        border-radius: 0.5rem;
-        color: white;
-        font-weight: 500;
-        z-index: 9999;
-        animation: slideIn 0.3s ease-out;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-    
-    .toast-success {
-        background-color: #10b981;
-        border-left: 4px solid #059669;
-    }
-    
-    .toast-error {
-        background-color: #ef4444;
-        border-left: 4px solid #dc2626;
-    }
-    
-    @keyframes slideIn {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    .toast-notification.fade-out {
-        animation: fadeOut 0.3s ease-out forwards;
-    }
-    
-    @keyframes fadeOut {
-        to {
-            opacity: 0;
-            transform: translateY(100%);
-        }
-    }
-</style>
-
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const newsletterForm = document.querySelector('.newsletter-form');
-    if (!newsletterForm) return;
+(function () {
+    var form = document.querySelector('.newsletter-form');
+    if (!form) return;
 
-    // Create toast container
-    const toastContainer = document.createElement('div');
-    toastContainer.id = 'toast-container';
-    toastContainer.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
-    document.body.appendChild(toastContainer);
+    function showToast(msg, ok) {
+        var t = document.createElement('div');
+        t.textContent = msg;
+        t.style.cssText = [
+            'position:fixed;bottom:20px;right:20px;z-index:9999;',
+            'padding:.75rem 1.25rem;border-radius:.5rem;color:#fff;font-size:.875rem;',
+            'box-shadow:0 4px 6px rgba(0,0,0,.15);',
+            ok ? 'background:#10b981;border-left:4px solid #059669'
+               : 'background:#ef4444;border-left:4px solid #dc2626'
+        ].join('');
+        document.body.appendChild(t);
+        setTimeout(function () { t.remove(); }, 4500);
+    }
 
-    const showToast = (message, type = 'success') => {
-        const toast = document.createElement('div');
-        toast.className = `toast-notification toast-${type}`;
-        toast.textContent = message;
-        toast.style.cssText = `
-            padding: 1rem 1.5rem; border-radius: 0.5rem; color: white;
-            font-weight: 500; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            animation: slideIn 0.3s ease-out; background-color: ${type === 'success' ? '#10b981' : '#ef4444'};
-            border-left: 4px solid ${type === 'success' ? '#059669' : '#dc2626'};
-        `;
-        toastContainer.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
-    };
-
-    newsletterForm.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', async function (e) {
         e.preventDefault();
-        
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
-        
-        // Show loading state
-        submitBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⏳</span> Subscribing...';
-        submitBtn.disabled = true;
+        var btn = form.querySelector('button[type="submit"]');
+        var orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.textContent = 'Subscribing…';
 
-        // Collect form data
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
-
+        var fd = new FormData(form);
         try {
-            const response = await fetch(e.target.action, {
+            var r = await fetch(form.action, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': data.csrfmiddlewaretoken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify({
-                    email: data.email,
-                    first_name: data.first_name || '',
-                    consent: data.consent === 'on',
-                    list_id: data.list_id
-                })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': fd.get('csrfmiddlewaretoken'), 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ email: fd.get('email'), first_name: fd.get('first_name') || '', consent: fd.get('consent') === 'on', list_id: fd.get('list_id') })
             });
-
-            const result = await response.json();
-            
-            if (response.ok && result.success) {
-                showToast('✅ Successfully subscribed! Check your email.', 'success');
-                e.target.reset();
-            } else {
-                showToast(result.error || 'Subscription failed', 'error');
-            }
-        } catch (error) {
-            showToast('Network error. Please try again.', 'error');
-        } finally {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        }
+            var j = await r.json();
+            if (r.ok && j.success) { showToast('Subscribed! Check your inbox.', true); form.reset(); }
+            else { showToast(j.error || 'Subscription failed.', false); }
+        } catch (_) { showToast('Network error — please try again.', false); }
+        finally { btn.innerHTML = orig; btn.disabled = false; }
     });
-});
-
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    .animate-spin { animation: spin 1s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-`;
-document.head.appendChild(style);
+})();
 </script>
-
-<!-- Optional: Add Alpine.js for interactive elements if needed -->
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>

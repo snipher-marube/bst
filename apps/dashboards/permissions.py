@@ -83,7 +83,7 @@ class CanEditData(permissions.BasePermission):
             
             if workspace_id:
                 try:
-                    membership = WorkspaceMembership.objects.get(
+                    membership = WorkspaceMembership.objects.select_related('workspace').get(
                         workspace_id=workspace_id,
                         user=request.user
                     )
@@ -112,7 +112,7 @@ class CanEditData(permissions.BasePermission):
                 return False
             
             # Check role
-            membership = WorkspaceMembership.objects.get(
+            membership = WorkspaceMembership.objects.select_related('workspace').get(
                 workspace=workspace,
                 user=request.user
             )
@@ -144,7 +144,7 @@ class CanManageWorkspace(permissions.BasePermission):
         if not workspace_id:
             return False
         try:
-            membership = WorkspaceMembership.objects.get(
+            membership = WorkspaceMembership.objects.select_related('workspace').get(
                 workspace_id=workspace_id,
                 user=request.user
             )

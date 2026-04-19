@@ -1,655 +1,207 @@
-{% extends "base.html" %}
+{% extends "account/_base_auth.html" %}
 {% load static allauth i18n socialaccount %}
 
 {% block title %}{% trans "Create Account" %} | {{ block.super }}{% endblock %}
 
+{% block auth_content %}
+<h1 class="auth-heading">{% trans "Create your account" %}</h1>
+<p class="auth-subheading">{% trans "Start tracking your business analytics in minutes" %}</p>
 
-{% block content %}
-<style>
-    /* Brand color variables */
-    :root {
-        --primary-dark: #03466e;
-        --primary-orange: #f68712;
-        --dark-gray: #2b2b2b;
-        --light-bg: #f8fafc;
-        --focus-ring: 0 0 0 3px rgba(246, 135, 18, 0.3);
-    }
-
-    /* Gradient backgrounds */
-    .gradient-brand {
-        background: linear-gradient(135deg, var(--primary-dark) 0%, #022b44 100%);
-    }
-    
-    .gradient-cta {
-        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
-    }
-
-    /* Form input styles */
-    .form-input {
-        width: 100%;
-        padding: 0.75rem 1rem 0.75rem 2.5rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        font-size: 1rem;
-        transition: all 0.2s ease;
-        background-color: #f9fafb;
-    }
-    
-    .form-input:hover {
-        background-color: #ffffff;
-        border-color: #d1d5db;
-    }
-    
-    .form-input:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        background-color: #ffffff;
-        box-shadow: var(--focus-ring);
-    }
-    
-    .form-input.error {
-        border-color: #ef4444;
-        background-color: #fef2f2;
-    }
-    
-    .form-input.error:focus {
-        border-color: #ef4444;
-        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
-    }
-
-    /* Input icon positioning */
-    .input-icon {
-        position: absolute;
-        left: 1rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #9ca3af;
-        transition: color 0.2s ease;
-        pointer-events: none;
-    }
-    
-    .form-input:focus + .input-icon,
-    .input-wrapper:focus-within .input-icon {
-        color: var(--primary-orange);
-    }
-
-    /* Social login buttons */
-    .social-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        padding: 0.875rem 1.5rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        font-weight: 500;
-        color: var(--dark-gray);
-        background-color: white;
-        transition: all 0.2s ease;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .social-btn:hover {
-        border-color: var(--primary-orange);
-        background-color: #fff5e6;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-    
-    .social-btn:focus {
-        outline: none;
-        border-color: var(--primary-orange);
-        box-shadow: var(--focus-ring);
-    }
-    
-    .social-btn:active {
-        transform: translateY(0);
-    }
-
-    /* Google specific */
-    .social-btn.google:hover .fa-google {
-        color: #ea4335;
-    }
-    
-    /* LinkedIn specific */
-    .social-btn.linkedin:hover .fa-linkedin {
-        color: #0077b5;
-    }
-
-    /* Submit button */
-    .submit-btn {
-        width: 100%;
-        padding: 0.875rem 1.5rem;
-        background: linear-gradient(135deg, var(--primary-orange) 0%, #e07810 100%);
-        color: white;
-        font-weight: 600;
-        border: none;
-        border-radius: 0.75rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    
-    .submit-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(246, 135, 18, 0.3);
-    }
-    
-    .submit-btn:focus {
-        outline: none;
-        box-shadow: var(--focus-ring);
-    }
-    
-    .submit-btn:active {
-        transform: translateY(0);
-    }
-    
-    .submit-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-    }
-
-    /* Loading spinner */
-    .spinner {
-        display: inline-block;
-        width: 1.5rem;
-        height: 1.5rem;
-        border: 3px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
-    }
-    
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    /* Password strength indicator */
-    .strength-meter {
-        height: 4px;
-        background-color: #e5e7eb;
-        border-radius: 2px;
-        margin-top: 0.5rem;
-        overflow: hidden;
-    }
-    
-    .strength-meter-fill {
-        height: 100%;
-        width: 0;
-        transition: width 0.3s ease, background-color 0.3s ease;
-    }
-    
-    .strength-weak { background-color: #ef4444; }
-    .strength-fair { background-color: #f59e0b; }
-    .strength-good { background-color: #10b981; }
-    .strength-strong { background-color: #059669; }
-
-    /* Accessibility focus styles */
-    *:focus-visible {
-        outline: 2px solid var(--primary-orange);
-        outline-offset: 2px;
-    }
-
-    /* Error messages */
-    .error-message {
-        color: #ef4444;
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    /* Success messages */
-    .success-message {
-        color: #10b981;
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 640px) {
-        .social-btn {
-            padding: 0.75rem 1rem;
-        }
-        
-        .form-input {
-            padding: 0.625rem 1rem 0.625rem 2.25rem;
-        }
-    }
-</style>
-
-<main class="min-h-screen bg-gray-50 py-8 sm:py-12 lg:py-16" id="main-content">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="max-w-md mx-auto">
-            
-            <!-- Skip to form link for keyboard users -->
-            <a href="#signup-form" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-[#03466e] text-white px-4 py-2 rounded-lg z-50">
-                Skip to signup form
-            </a>
-
-            <!-- Brand Header -->
-            <header class="text-center mb-8">
-                {% if site_settings and site_settings.logo %}
-                <img src="{{ site_settings.logo.url }}" 
-                     alt="{{ site_name }} - Go to homepage" 
-                     class="h-16 w-auto mx-auto mb-4 hover:scale-105 transition-transform duration-300"
-                     loading="lazy">
+{# ── Social buttons ───────────────────────────────────────── #}
+{% if SOCIALACCOUNT_ENABLED %}
+    {% get_providers as providers %}
+    {% if providers %}
+    <div class="auth-social-row mb-4">
+        {% for provider in providers %}
+            <a href="{% provider_login_url provider.id process='login' %}"
+               class="auth-social-btn"
+               rel="nofollow noopener"
+               aria-label="{% blocktrans %}Sign up with {{ provider.name }}{% endblocktrans %}">
+                {% if provider.id == "google" %}
+                    <i class="fab fa-google text-[#ea4335]" aria-hidden="true"></i>
+                {% elif provider.id == "linkedin" or provider.id == "linkedin_oidc" %}
+                    <i class="fab fa-linkedin text-[#0a66c2]" aria-hidden="true"></i>
+                {% elif provider.id == "github" %}
+                    <i class="fab fa-github text-[#24292e]" aria-hidden="true"></i>
                 {% else %}
-                <a href="/" class="inline-block" aria-label="Go to homepage">
-                    <div class="flex items-center justify-center space-x-3 mb-4">
-                        <div class="w-12 h-12 bg-[#f68712] rounded-xl flex items-center justify-center shadow-lg transform hover:rotate-6 transition-transform duration-300" 
-                             aria-hidden="true">
-                            <span class="text-white font-bold text-2xl">B</span>
-                        </div>
-                        <span class="text-[#03466e] font-bold text-3xl tracking-tight">usiness Sight Technologies</span>
-                    </div>
-                </a>
+                    <i class="fas fa-globe text-[#03466e]" aria-hidden="true"></i>
                 {% endif %}
-                
-                <h1 class="text-3xl font-bold text-[#03466e] mt-4" id="signup-heading">
-                    {% trans "Create your account" %}
-                </h1>
-                <p class="text-[#2b2b2b]/70 mt-2 text-lg">
-                    {% trans "Join thousands of businesses tracking their success" %}
-                </p>
-            </header>
-
-            <!-- Signup Card -->
-            <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                <!-- Card Header with Brand Accent -->
-                <div class="h-2 bg-gradient-to-r from-[#f68712] to-[#ff9f3d]" role="presentation"></div>
-                
-                <div class="p-6 sm:p-8">
-                    <!-- Email/Password Signup Form -->
-                    {% if not SOCIALACCOUNT_ONLY %}
-                        {% url 'account_signup' as action_url %}
-                        
-                        <form id="signup-form" 
-                              method="post" 
-                              action="{{ action_url }}" 
-                              class="space-y-5"
-                              novalidate>
-                            {% csrf_token %}
-                            
-                            <!-- Non-field errors -->
-                            {% if form.non_field_errors %}
-                            <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-lg" 
-                                 role="alert"
-                                 aria-live="assertive">
-                                <div class="flex">
-                                    <div class="flex-shrink-0" aria-hidden="true">
-                                        <svg class="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        {{ form.non_field_errors }}
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            <!-- Email Field -->
-                            <div class="space-y-1">
-                                <label for="id_email" class="block text-sm font-semibold text-[#2b2b2b]">
-                                    {% trans "Email address" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
-                                    <span class="sr-only">required</span>
-                                </label>
-                                <div class="input-wrapper relative">
-                                    <i class="fas fa-envelope input-icon" aria-hidden="true"></i>
-                                    <input type="email" 
-                                           name="email" 
-                                           id="id_email" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="email-format email-error"
-                                           class="form-input {% if form.email.errors %}error{% endif %}"
-                                           placeholder="you@company.com"
-                                           value="{{ form.email.value|default:'' }}">
-                                </div>
-                                
-                                <div id="email-format" class="text-xs text-gray-500 mt-1">
-                                    {% trans "We'll never share your email with anyone else." %}
-                                </div>
-                                
-                                {% if form.email.errors %}
-                                <div id="email-error" class="error-message" role="alert">
-                                    <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
-                                    {{ form.email.errors.0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Password Field -->
-                            <div class="space-y-1">
-                                <label for="id_password1" class="block text-sm font-semibold text-[#2b2b2b]">
-                                    {% trans "Password" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
-                                    <span class="sr-only">required</span>
-                                </label>
-                                <div class="input-wrapper relative">
-                                    <i class="fas fa-lock input-icon" aria-hidden="true"></i>
-                                    <input type="password" 
-                                           name="password1" 
-                                           id="id_password1" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="password-requirements password1-error"
-                                           class="form-input {% if form.password1.errors %}error{% endif %}"
-                                           placeholder="••••••••"
-                                           autocomplete="new-password">
-                                    <button type="button" 
-                                            class="absolute inset-y-0 right-0 pr-3 flex items-center toggle-password"
-                                            data-target="id_password1"
-                                            aria-label="Toggle password visibility">
-                                        <i class="fas fa-eye text-gray-400 hover:text-[#f68712] transition-colors" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                
-                                <!-- Password strength indicator -->
-                                <div class="strength-meter" role="presentation">
-                                    <div class="strength-meter-fill" id="password-strength-fill"></div>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-1" id="password-strength-text"></p>
-                                
-                                <!-- Password requirements -->
-                                <div id="password-requirements" class="text-xs text-gray-500 mt-2 bg-gray-50 p-3 rounded-lg">
-                                    <p class="font-semibold mb-1 text-[#2b2b2b]">{% trans "Password requirements:" %}</p>
-                                    <ul class="list-disc list-inside space-y-1">
-                                        <li class="password-requirement" data-requirement="length">{% trans "At least 8 characters long" %}</li>
-                                        <li class="password-requirement" data-requirement="letter">{% trans "Contains at least one letter" %}</li>
-                                        <li class="password-requirement" data-requirement="number">{% trans "Contains at least one number" %}</li>
-                                    </ul>
-                                </div>
-                                
-                                {% if form.password1.errors %}
-                                <div id="password1-error" class="error-message" role="alert">
-                                    <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
-                                    {{ form.password1.errors.0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Confirm Password Field -->
-                            <div class="space-y-1">
-                                <label for="id_password2" class="block text-sm font-semibold text-[#2b2b2b]">
-                                    {% trans "Confirm password" %} <span class="text-[#f68712]" aria-hidden="true">*</span>
-                                    <span class="sr-only">required</span>
-                                </label>
-                                <div class="input-wrapper relative">
-                                    <i class="fas fa-lock input-icon" aria-hidden="true"></i>
-                                    <input type="password" 
-                                           name="password2" 
-                                           id="id_password2" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="password-match password2-error"
-                                           class="form-input {% if form.password2.errors %}error{% endif %}"
-                                           placeholder="••••••••"
-                                           autocomplete="new-password">
-                                    <button type="button" 
-                                            class="absolute inset-y-0 right-0 pr-3 flex items-center toggle-password"
-                                            data-target="id_password2"
-                                            aria-label="Toggle password visibility">
-                                        <i class="fas fa-eye text-gray-400 hover:text-[#f68712] transition-colors" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                
-                                <div id="password-match" class="text-xs text-gray-500 mt-1">
-                                    {% trans "Enter the same password as above" %}
-                                </div>
-                                
-                                {% if form.password2.errors %}
-                                <div id="password2-error" class="error-message" role="alert">
-                                    <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
-                                    {{ form.password2.errors.0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            {{ redirect_field }}
-
-                            <!-- Terms Agreement -->
-                            <div class="flex items-start mt-6">
-                                <div class="flex items-center h-5">
-                                    <input type="checkbox" 
-                                           name="terms" 
-                                           id="terms" 
-                                           required
-                                           aria-required="true"
-                                           aria-describedby="terms-error"
-                                           class="h-4 w-4 text-[#f68712] border-gray-300 rounded focus:ring-[#f68712] focus:ring-offset-2">
-                                </div>
-                                <div class="ml-3 text-sm">
-                                    <label for="terms" class="font-medium text-[#2b2b2b]">
-                                        {% trans "I agree to the" %}
-                                        <a href="/terms/" class="text-[#03466e] font-semibold hover:text-[#f68712] transition-colors focus:outline-none focus:underline">
-                                            {% trans "Terms of Service" %}
-                                        </a>
-                                        {% trans "and" %}
-                                        <a href="/privacy/" class="text-[#03466e] font-semibold hover:text-[#f68712] transition-colors focus:outline-none focus:underline">
-                                            {% trans "Privacy Policy" %}
-                                        </a>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Submit Button -->
-                            <button type="submit" 
-                                    class="submit-btn"
-                                    id="signup-submit"
-                                    aria-label="Create your account">
-                                <span>{% trans "Create account" %}</span>
-                                <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform" aria-hidden="true"></i>
-                            </button>
-
-                            <!-- Security Badge -->
-                            <div class="flex items-center justify-center space-x-2 text-xs text-gray-500 mt-4" role="status">
-                                <i class="fas fa-shield-alt text-[#f68712]" aria-hidden="true"></i>
-                                <span>{% trans "256-bit encryption - Your data is secure" %}</span>
-                            </div>
-                        </form>
-                    {% endif %}
-
-                    <!-- Social Login Divider -->
-                    <div class="relative my-8">
-                        <div class="absolute inset-0 flex items-center" aria-hidden="true">
-                            <div class="w-full border-t border-gray-200"></div>
-                        </div>
-                        <div class="relative flex justify-center">
-                            <span class="px-4 bg-white text-sm text-gray-500">
-                                {% trans "Or continue with" %}
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Social Login Buttons -->
-                    <div class="space-y-3">
-                        {% get_providers as socialaccount_providers %}
-                        
-                        {% for provider in socialaccount_providers %}
-                            {% if provider.id == "google" %}
-                                <!-- Google Sign In -->
-                                <a href="{% provider_login_url provider.id process='login' %}" 
-                                   class="social-btn google"
-                                   rel="nofollow noopener"
-                                   aria-label="Sign up with Google">
-                                    <i class="fab fa-google text-xl mr-3" aria-hidden="true"></i>
-                                    <span>{% trans "Sign up with Google" %}</span>
-                                </a>
-                            {% elif provider.id == "linkedin" %}
-                                <!-- LinkedIn Sign In -->
-                                <a href="{% provider_login_url provider.id process='login' %}" 
-                                   class="social-btn linkedin"
-                                   rel="nofollow noopener"
-                                   aria-label="Sign up with LinkedIn">
-                                    <i class="fab fa-linkedin text-xl mr-3" aria-hidden="true"></i>
-                                    <span>{% trans "Sign up with LinkedIn" %}</span>
-                                </a>
-                            {% else %}
-                                <!-- Fallback for other providers -->
-                                <a href="{% provider_login_url provider.id process='login' %}" 
-                                   class="social-btn"
-                                   rel="nofollow noopener"
-                                   aria-label="Sign up with {{ provider.name }}">
-                                    <i class="fas fa-globe text-xl mr-3" aria-hidden="true"></i>
-                                    <span>{% trans "Sign up with" %} {{ provider.name }}</span>
-                                </a>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-
-                    <!-- Sign In Link -->
-                    <p class="text-center text-sm text-[#2b2b2b]/70 mt-8">
-                        {% blocktranslate %}Already have an account?{% endblocktranslate %}
-                        <a href="{{ login_url }}" 
-                           class="font-semibold text-[#03466e] hover:text-[#f68712] transition-colors focus:outline-none focus:underline ml-1">
-                            {% trans "Sign in" %}
-                            <span class="sr-only">to your account</span>
-                            <i class="fas fa-arrow-right ml-1 text-xs" aria-hidden="true"></i>
-                        </a>
-                    </p>
-                </div>
-            </div>
-
-            <!-- Trust Indicators -->
-            <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                <div class="group focus-within:outline-none focus-within:ring-2 focus-within:ring-[#f68712] focus-within:ring-offset-2 rounded-lg p-2">
-                    <div class="w-10 h-10 bg-[#03466e]/10 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-[#f68712]/10 transition-colors" aria-hidden="true">
-                        <i class="fas fa-lock text-[#03466e] group-hover:text-[#f68712] transition-colors"></i>
-                    </div>
-                    <p class="text-xs text-[#2b2b2b]/60">{% trans "Secure Encryption" %}</p>
-                </div>
-                <div class="group focus-within:outline-none focus-within:ring-2 focus-within:ring-[#f68712] focus-within:ring-offset-2 rounded-lg p-2">
-                    <div class="w-10 h-10 bg-[#03466e]/10 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-[#f68712]/10 transition-colors" aria-hidden="true">
-                        <i class="fas fa-clock text-[#03466e] group-hover:text-[#f68712] transition-colors"></i>
-                    </div>
-                    <p class="text-xs text-[#2b2b2b]/60">{% trans "24/7 Support" %}</p>
-                </div>
-                <div class="group focus-within:outline-none focus-within:ring-2 focus-within:ring-[#f68712] focus-within:ring-offset-2 rounded-lg p-2">
-                    <div class="w-10 h-10 bg-[#03466e]/10 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-[#f68712]/10 transition-colors" aria-hidden="true">
-                        <i class="fas fa-shield-alt text-[#03466e] group-hover:text-[#f68712] transition-colors"></i>
-                    </div>
-                    <p class="text-xs text-[#2b2b2b]/60">{% trans "Privacy Protected" %}</p>
-                </div>
-            </div>
-        </div>
+                <span>{{ provider.name }}</span>
+            </a>
+        {% endfor %}
     </div>
-</main>
+    <div class="auth-divider">{% trans "or sign up with email" %}</div>
+    {% endif %}
+{% endif %}
 
-<!-- JavaScript for enhanced UX -->
+{# ── Non-field errors ─────────────────────────────────────── #}
+{% if form.non_field_errors %}
+<div class="auth-alert auth-alert-error" role="alert" aria-live="assertive">
+    <i class="fas fa-circle-xmark" aria-hidden="true"></i>
+    <span>{{ form.non_field_errors.0 }}</span>
+</div>
+{% endif %}
+
+{% if not SOCIALACCOUNT_ONLY %}
+<form id="signup-form" method="post" action="{% url 'account_signup' %}" novalidate>
+    {% csrf_token %}
+
+    {# Email #}
+    <div class="auth-field">
+        <label for="id_email" class="auth-label">
+            {% trans "Work email" %}<span class="auth-label-required" aria-hidden="true">*</span>
+        </label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-envelope auth-input-icon" aria-hidden="true"></i>
+            <input type="email" name="email" id="id_email"
+                   class="auth-input {% if form.email.errors %}is-error{% endif %}"
+                   value="{{ form.email.value|default:'' }}"
+                   placeholder="you@company.com"
+                   autocomplete="email"
+                   aria-required="true"
+                   autofocus>
+        </div>
+        {% if form.email.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>{{ form.email.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# Password #}
+    <div class="auth-field">
+        <label for="id_password1" class="auth-label">
+            {% trans "Password" %}<span class="auth-label-required" aria-hidden="true">*</span>
+        </label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-lock auth-input-icon" aria-hidden="true"></i>
+            <input type="password" name="password1" id="id_password1"
+                   class="auth-input {% if form.password1.errors %}is-error{% endif %}"
+                   placeholder="••••••••"
+                   autocomplete="new-password"
+                   aria-required="true"
+                   aria-describedby="pw-strength-text">
+            <button type="button" class="auth-pw-toggle" data-target="id_password1"
+                    aria-label="{% trans 'Show password' %}">
+                <i class="fas fa-eye" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="strength-bar" role="presentation">
+            <div class="strength-fill" id="strength-fill"></div>
+        </div>
+        <p class="auth-hint" id="pw-strength-text" aria-live="polite"></p>
+        {% if form.password1.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>{{ form.password1.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# Confirm password #}
+    <div class="auth-field">
+        <label for="id_password2" class="auth-label">
+            {% trans "Confirm password" %}<span class="auth-label-required" aria-hidden="true">*</span>
+        </label>
+        <div class="auth-input-wrap">
+            <i class="fas fa-lock auth-input-icon" aria-hidden="true"></i>
+            <input type="password" name="password2" id="id_password2"
+                   class="auth-input {% if form.password2.errors %}is-error{% endif %}"
+                   placeholder="••••••••"
+                   autocomplete="new-password"
+                   aria-required="true">
+            <button type="button" class="auth-pw-toggle" data-target="id_password2"
+                    aria-label="{% trans 'Show password' %}">
+                <i class="fas fa-eye" aria-hidden="true"></i>
+            </button>
+        </div>
+        {% if form.password2.errors %}
+        <p class="auth-error-msg" role="alert">
+            <i class="fas fa-circle-exclamation" aria-hidden="true"></i>{{ form.password2.errors.0 }}
+        </p>
+        {% endif %}
+    </div>
+
+    {# Terms #}
+    <label class="flex items-start gap-2.5 cursor-pointer mb-5 text-sm text-[#2b2b2b]">
+        <input type="checkbox" name="terms" id="id_terms" class="auth-check mt-0.5" required>
+        <span>
+            {% trans "I agree to the" %}
+            <a href="{% url 'core:terms' %}" class="auth-link font-semibold">{% trans "Terms" %}</a>
+            {% trans "and" %}
+            <a href="{% url 'core:privacy' %}" class="auth-link font-semibold">{% trans "Privacy Policy" %}</a>
+        </span>
+    </label>
+
+    {{ redirect_field }}
+
+    <button type="submit" id="signup-submit" class="auth-btn auth-btn-primary">
+        <span>{% trans "Create account" %}</span>
+        <i class="fas fa-arrow-right text-sm" aria-hidden="true"></i>
+    </button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block auth_footer %}
+<p class="text-center text-sm text-gray-500 mt-5">
+    {% trans "Already have an account?" %}
+    <a href="{{ login_url }}" class="auth-link font-semibold ml-1">{% trans "Sign in" %}</a>
+</p>
+{% endblock %}
+
+{% block extra_scripts %}
 <script>
-(function() {
+(function () {
     'use strict';
 
     // Password visibility toggle
-    const toggleButtons = document.querySelectorAll('.toggle-password');
-    toggleButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const targetId = this.dataset.target;
-            const input = document.getElementById(targetId);
-            const icon = this.querySelector('i');
-            
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-                this.setAttribute('aria-label', 'Hide password');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-                this.setAttribute('aria-label', 'Show password');
-            }
+    document.querySelectorAll('.auth-pw-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const input = document.getElementById(btn.dataset.target);
+            const icon  = btn.querySelector('i');
+            const show  = input.type === 'password';
+            input.type  = show ? 'text' : 'password';
+            icon.classList.toggle('fa-eye',       !show);
+            icon.classList.toggle('fa-eye-slash',  show);
+            btn.setAttribute('aria-label', show ? '{% trans "Hide password" %}' : '{% trans "Show password" %}');
         });
     });
 
-    // Password strength checker
-    const passwordInput = document.getElementById('id_password1');
-    const strengthFill = document.getElementById('password-strength-fill');
-    const strengthText = document.getElementById('password-strength-text');
-    
-    if (passwordInput && strengthFill && strengthText) {
-        passwordInput.addEventListener('input', function() {
-            const password = this.value;
-            let strength = 0;
-            let feedback = '';
-            
-            // Check length
-            if (password.length >= 8) strength += 33;
-            
-            // Check for letters
-            if (/[a-zA-Z]/.test(password)) strength += 33;
-            
-            // Check for numbers
-            if (/[0-9]/.test(password)) strength += 34;
-            
-            // Update visual indicator
-            strengthFill.style.width = strength + '%';
-            
-            // Update color based on strength
-            if (strength < 33) {
-                strengthFill.className = 'strength-meter-fill strength-weak';
-                feedback = '{% trans "Weak password" %}';
-            } else if (strength < 66) {
-                strengthFill.className = 'strength-meter-fill strength-fair';
-                feedback = '{% trans "Fair password" %}';
-            } else if (strength < 100) {
-                strengthFill.className = 'strength-meter-fill strength-good';
-                feedback = '{% trans "Good password" %}';
-            } else {
-                strengthFill.className = 'strength-meter-fill strength-strong';
-                feedback = '{% trans "Strong password" %}';
-            }
-            
-            strengthText.textContent = feedback;
-            strengthText.className = 'text-xs mt-1 ' + 
-                (strength < 33 ? 'text-red-600' : 
-                 strength < 66 ? 'text-yellow-600' : 
-                 strength < 100 ? 'text-green-600' : 'text-green-700');
+    // Password strength
+    const pw1   = document.getElementById('id_password1');
+    const fill  = document.getElementById('strength-fill');
+    const label = document.getElementById('pw-strength-text');
+    if (pw1 && fill && label) {
+        pw1.addEventListener('input', () => {
+            const v = pw1.value;
+            let score = 0;
+            if (v.length >= 8)          score++;
+            if (/[a-zA-Z]/.test(v))     score++;
+            if (/[0-9]/.test(v))        score++;
+            if (/[^a-zA-Z0-9]/.test(v)) score++;
+            const levels = [
+                {pct: 0,   cls: '',              text: ''},
+                {pct: 25,  cls: 'strength-weak',   text: '{% trans "Weak" %}'},
+                {pct: 50,  cls: 'strength-fair',   text: '{% trans "Fair" %}'},
+                {pct: 75,  cls: 'strength-good',   text: '{% trans "Good" %}'},
+                {pct: 100, cls: 'strength-strong',  text: '{% trans "Strong" %}'},
+            ];
+            const l = levels[score];
+            fill.style.width = l.pct + '%';
+            fill.className   = 'strength-fill ' + l.cls;
+            label.textContent = l.text;
         });
     }
 
-    // Form validation
-    const signupForm = document.getElementById('signup-form');
-    if (signupForm) {
-        signupForm.addEventListener('submit', function(e) {
-            const password1 = document.getElementById('id_password1');
-            const password2 = document.getElementById('id_password2');
-            const terms = document.getElementById('terms');
-            
-            if (password1.value !== password2.value) {
-                e.preventDefault();
-                const errorDiv = document.getElementById('password2-error');
-                if (errorDiv) {
-                    errorDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> {% trans "Passwords do not match" %}';
-                    errorDiv.style.display = 'flex';
-                }
-            }
+    // Loading state
+    const form = document.getElementById('signup-form');
+    const btn  = document.getElementById('signup-submit');
+    if (form && btn) {
+        form.addEventListener('submit', () => {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="auth-spinner"></span><span class="sr-only">{% trans "Creating account…" %}</span>';
         });
     }
-
-    // Loading state on submit
-    const submitBtn = document.getElementById('signup-submit');
-    if (submitBtn && signupForm) {
-        signupForm.addEventListener('submit', function() {
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<div class="spinner" role="status" aria-label="Loading"></div><span class="sr-only">Creating account...</span>';
-        });
-    }
-
-    // Announcements for screen readers
-    const errorMessages = document.querySelectorAll('[role="alert"]');
-    errorMessages.forEach(error => {
-        error.setAttribute('aria-live', 'assertive');
-    });
-
 })();
 </script>
 {% endblock %}

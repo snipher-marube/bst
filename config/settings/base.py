@@ -44,9 +44,12 @@ INSTALLED_APPS = [
     # Allauth apps
     'allauth',
     'allauth.account',
+    'allauth.mfa',           # TOTP two-factor authentication
+    'allauth.usersessions',  # Active session management
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.linkedin_oauth2',
+    'allauth.socialaccount.providers.github',
     'rest_framework',
     'rest_framework.authtoken',
     'drf_spectacular',
@@ -77,6 +80,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    'allauth.usersessions.middleware.UserSessionsMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -223,7 +227,7 @@ ACCOUNT_LOGIN_METHODS = {'email'}  # Login with email only
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # "mandatory", "optional", or "none"
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
-ACCOUNT_EMAIL_SUBJECT_PREFIX = "Business Sight Technologies - "
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "MetaAnalytics - "
 
 # Password settings
 ACCOUNT_SIGNUP_PASSWORD_VERIFICATION = True  # Verify password confirmation
@@ -243,9 +247,30 @@ ACCOUNT_PASSKEY_LOGIN_ENABLED = True  # Passkey support
 # Security
 ACCOUNT_PREVENT_ENUMERATION = True  # Prevent account enumeration attacks
 ACCOUNT_RATE_LIMITS = {
-    'login_failed': '5/5m',  # 5 attempts per 5 minutes
-    'signup': '5/5m',
+    'login_failed':          '5/5m',
+    'signup':                '5/5m',
+    'send_mail':             '3/5m',
+    'password_reset':        '3/5m',
+    'change_password':       '3/5m',
+    'manage_email':          '10/5m',
+    'request_login_code':    '3/5m',
+    'confirm_login_code':    '5/5m',
+    'confirm_signup_passkey':'5/5m',
 }
+
+# ============================================================================
+# MFA — TOTP two-factor authentication
+# ============================================================================
+MFA_TOTP_PERIOD  = 30
+MFA_TOTP_DIGITS  = 6
+MFA_TOTP_ISSUER  = "MetaAnalytics"
+MFA_RECOVERY_CODE_COUNT   = 10
+MFA_RECOVERY_CODE_LENGTH  = 10
+
+# ============================================================================
+# USER SESSIONS — active session tracking and management
+# ============================================================================
+USERSESSIONS_TRACK_ACTIVITY = True
 
 # ============================================================================
 # SOCIAL ACCOUNT CONFIGURATION
@@ -289,8 +314,15 @@ SOCIALACCOUNT_PROVIDERS = {
                 },
             }
         ]
-    }
-    
+    },
+    'github': {
+        'APP': {
+            'client_id': config('GITHUB_CLIENT_ID', default=''),
+            'secret':    config('GITHUB_CLIENT_SECRET', default=''),
+        },
+        'SCOPE': ['user:email'],
+        'VERIFIED_EMAIL': True,
+    },
 }
 
 # Sending email settings

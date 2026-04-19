@@ -1,6 +1,7 @@
 import uuid
 import json
 import re
+import threading
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -9,6 +10,8 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 import logging
+
+_skip_dashboard_cleanup = threading.local()
 from apps.insights.tasks import broadcast_widget_update, notify_table_change
 from apps.workspaces.models import Workspace
 
@@ -1189,8 +1192,13 @@ def delete_empty_dashboard(sender, instance, **kwargs):
     remaining widgets.  This fires both for manual widget deletion and for the
     CASCADE delete triggered when a DataTable is deleted.
     """
+    if getattr(_skip_dashboard_cleanup, 'active', False):
+        return
+    dashboard_id = instance.dashboard_id
+    if not dashboard_id:
+        return
     try:
-        dashboard = instance.dashboard
+        dashboard = Dashboard.objects.get(pk=dashboard_id)
         if not dashboard.widgets.exists():
             dashboard.delete()
     except Dashboard.DoesNotExist:

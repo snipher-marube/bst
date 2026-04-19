@@ -1,54 +1,67 @@
-{% extends "socialaccount/base_manage.html" %}
-{% load i18n %}
-{% load allauth %}
-{% block head_title %}
-    {% trans "Account Connections" %}
-{% endblock head_title %}
-{% block content %}
-    {% element h1 %}
-        {% trans "Account Connections" %}
-    {% endelement %}
-    {% if form.accounts %}
-        {% element p %}
-            {% blocktrans %}You can sign in to your account using any of the following third-party accounts:{% endblocktrans %}
-        {% endelement %}
-        {% url 'socialaccount_connections' as action_url %}
-        {% element form form=form method="post" action=action_url %}
-            {% slot body %}
-                {% csrf_token %}
-                {% for acc in form.fields.account.choices %}
-                    {% with account=acc.0.instance.get_provider_account %}
-                        {% setvar radio_id %}
-                            id_account_{{ account.account.pk }}
-                        {% endsetvar %}
-                        {% setvar tags %}
-                            socialaccount,{{ account.account.provider }}
-                        {% endsetvar %}
-                        {% element field id=radio_id type="radio" name="account" value=account.account.pk %}
-                            {% slot label %}
-                                {{ account }}
-                                {% element badge tags=tags %}
-                                    {{ account.get_brand.name }}
-                                {% endelement %}
-                            {% endslot %}
-                        {% endelement %}
-                    {% endwith %}
-                {% endfor %}
-            {% endslot %}
-            {% slot actions %}
-                {% element button tags="delete,danger" type="submit" %}
-                    {% trans 'Remove' %}
-                {% endelement %}
-            {% endslot %}
-        {% endelement %}
-    {% else %}
-        {% element p %}
-            {% trans 'You currently have no third-party accounts connected to this account.' %}
-        {% endelement %}
-    {% endif %}
-    {% element h2 %}
-        {% trans 'Add a Third-Party Account' %}
-    {% endelement %}
-    {% include "socialaccount/snippets/provider_list.html" with process="connect" %}
-    {% include "socialaccount/snippets/login_extra.html" %}
-{% endblock content %}
+{% extends "account/_base_auth.html" %}
+{% load i18n allauth %}
+
+{% block title %}{% trans "Account Connections" %} | {{ block.super }}{% endblock %}
+
+{% block auth_content %}
+<h1 class="auth-heading">{% trans "Account connections" %}</h1>
+<p class="auth-subheading">{% trans "Manage social accounts linked to your profile." %}</p>
+
+{% if form.accounts %}
+<form method="post" action="{% url 'socialaccount_connections' %}">
+    {% csrf_token %}
+    <div class="mb-4 space-y-2" role="radiogroup" aria-label="{% trans 'Connected accounts' %}">
+        {% for acc in form.fields.account.choices %}
+        {% with account=acc.0.instance.get_provider_account %}
+        {% with brand=account.get_brand %}
+        <label class="auth-email-item">
+            <input type="radio" name="account" value="{{ account.account.pk }}"
+                   class="h-4 w-4 text-[#f68712] focus:ring-[#f68712] border-gray-300 flex-shrink-0">
+            <div class="flex-1 flex items-center gap-3 min-w-0">
+                <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-[#03466e] text-white text-sm flex-shrink-0" aria-hidden="true">
+                    {% if account.account.provider == 'google' %}<i class="fab fa-google text-xs"></i>
+                    {% elif account.account.provider == 'github' %}<i class="fab fa-github text-xs"></i>
+                    {% elif account.account.provider == 'linkedin_oauth2' %}<i class="fab fa-linkedin-in text-xs"></i>
+                    {% else %}<i class="fas fa-link text-xs"></i>{% endif %}
+                </span>
+                <div class="min-w-0">
+                    <span class="block text-sm font-medium text-[#03466e] truncate">{{ account }}</span>
+                    <span class="auth-badge auth-badge-primary">{{ brand.name }}</span>
+                </div>
+            </div>
+        </label>
+        {% endwith %}
+        {% endwith %}
+        {% endfor %}
+    </div>
+    <button type="submit" name="action_remove"
+            class="auth-btn auth-btn-secondary text-sm text-red-600 hover:border-red-400 hover:bg-red-50"
+            onclick="return confirm('{% trans "Remove this social account connection?" %}')">
+        <i class="fas fa-trash-can text-xs" aria-hidden="true"></i>
+        {% trans "Remove connection" %}
+    </button>
+</form>
+
+<hr class="border-gray-100 my-5">
+{% else %}
+<div class="auth-alert auth-alert-info mb-5">
+    <i class="fas fa-circle-info" aria-hidden="true"></i>
+    <span>{% trans "No social accounts connected yet." %}</span>
+</div>
+{% endif %}
+
+<h2 class="text-sm font-semibold text-[#03466e] mb-3">
+    <i class="fas fa-plus text-[#f68712] mr-1 text-xs" aria-hidden="true"></i>
+    {% trans "Connect a social account" %}
+</h2>
+{% include "socialaccount/snippets/provider_list.html" with process="connect" %}
+{% include "socialaccount/snippets/login_extra.html" %}
+{% endblock %}
+
+{% block auth_footer %}
+<p class="text-center text-sm text-gray-500 mt-5">
+    <a href="/dashboard/analytics/" class="auth-link">
+        <i class="fas fa-arrow-left text-xs mr-1" aria-hidden="true"></i>{% trans "Back to dashboard" %}
+    </a>
+</p>
+{% endblock %}

@@ -823,6 +823,12 @@ class WebhookEndpointListCreateAPIView(APIView):
     def get(self, request, workspace_id):
         ws = get_object_or_404(Workspace, pk=workspace_id, members=request.user)
         qs = WebhookEndpoint.objects.filter(workspace=ws).order_by('-created_at')
+        if 'is_active' in request.GET:
+            qs = qs.filter(is_active=request.GET['is_active'].lower() == 'true')
+        if request.GET.get('table_id'):
+            qs = qs.filter(table_id=request.GET['table_id'])
+        if request.GET.get('search'):
+            qs = qs.filter(name__icontains=request.GET['search'])
         return Response(WebhookEndpointSerializer(qs, many=True, context={'request': request}).data)
 
     def post(self, request, workspace_id):
