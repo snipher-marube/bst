@@ -319,14 +319,6 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
         finally:
             _skip_dashboard_cleanup.active = False
 
-<<<<<<< HEAD
-        # For each affected dashboard, hard-delete it if it now has no remaining widgets.
-        deleted_dash_count = 0
-        for dash_id in affected_dashboard_ids:
-            if not Widget.objects.filter(dashboard_id=dash_id).exists():
-                Dashboard.objects.filter(pk=dash_id).delete()
-                deleted_dash_count += 1
-=======
         # Soft-delete each now-empty dashboard (consistent with DashboardDeleteView).
         # Only auto-generated dashboards are touched; manually-created ones are preserved.
         deleted_dash_count = 0
@@ -336,7 +328,6 @@ class TableDeleteView(LoginRequiredMixin, DeleteView):
                     pk=dash_id, is_active=True,
                 ).update(is_active=False, deleted_at=now)
                 deleted_dash_count += updated
->>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
 
         # Soft-delete the table itself
         table.is_active = False
