@@ -2,7 +2,7 @@ anthropic>=0.40.0
 amqp==5.3.1
 asgiref==3.11.1
 asttokens==3.0.1
-attrs==25.4.0
+attrs==26.1.0
 autobahn==25.12.2
 automat==25.4.16
 billiard==4.2.4
@@ -34,7 +34,7 @@ django-extensions==4.1
 prometheus-client>=0.20.0
 django-ratelimit==4.1.0
 djangorestframework==3.17.1
-drf-spectacular==0.28.0
+drf-spectacular==0.29.0
 et-xmlfile==2.0.0
 executing==2.2.1
 factory-boy==3.3.3
@@ -63,7 +63,7 @@ parso==0.8.6
 pathspec==1.0.4
 pexpect==4.9.0
 pillow==12.2.0
-platformdirs==4.9.4
+platformdirs==4.9.6
 pluggy==1.6.0
 prompt-toolkit==3.0.52
 psutil==7.2.2
