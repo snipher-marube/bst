@@ -139,6 +139,18 @@ class QueryEngine:
                 data = CohortAnalysisEngine().execute(widget)
             elif widget.widget_type == 'funnel':
                 data = FunnelAnalysisEngine().execute(widget)
+            elif widget.widget_type == 'histogram':
+                data = self._execute_histogram_query(widget, limit)
+            elif widget.widget_type == 'box_plot':
+                data = self._execute_boxplot_query(widget, limit)
+            elif widget.widget_type == 'scatter_plot':
+                data = self._execute_scatter_query(widget, limit)
+            elif widget.widget_type == 'stat_summary':
+                data = self._execute_stat_summary_query(widget, limit)
+            elif widget.widget_type == 'correlation_heatmap':
+                data = self._execute_correlation_query(widget, limit)
+            elif widget.widget_type == 'data_quality':
+                data = self._execute_data_quality_query(widget, limit)
             else:
                 data = {"error": f"Unknown widget type: {widget.widget_type}"}
 
@@ -455,6 +467,336 @@ class QueryEngine:
             result = self._resolve_calculated_aggs(calc_aggs, {**result, **scalar_context}, queryset=queryset)
 
         return result
+
+    # ------------------------------------------------------------------
+    # Data-science grade query execution methods
+    # ------------------------------------------------------------------
+
+    def _execute_histogram_query(self, widget, limit):
+        """Compute frequency distribution bins + full descriptive stats."""
+        from .models import Record
+        config = widget.query_config or {}
+        field  = config.get('field')
+        n_bins = max(5, min(50, int(config.get('bins', 20))))
+        if not field:
+            return {'error': 'No field configured'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        vals = []
+        for rec in records:
+            if rec and field in rec:
+                try:
+                    v = float(rec[field])
+                    if np.isfinite(v):
+                        vals.append(v)
+                except (TypeError, ValueError):
+                    pass
+        if len(vals) < 2:
+            return {'error': 'Not enough numeric data'}
+        arr    = np.array(vals)
+        counts, edges = np.histogram(arr, bins=n_bins)
+        q1, q3 = np.percentile(arr, [25, 75])
+        mean   = float(np.mean(arr))
+        std    = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+        skewness = kurtosis = 0.0
+        if std > 0:
+            z = (arr - mean) / std
+            skewness = float(np.mean(z ** 3))
+            kurtosis = float(np.mean(z ** 4)) - 3
+        return {
+            'field':  field,
+            'bins':   [round(float(e), 4) for e in edges],
+            'counts': [int(c) for c in counts],
+            'stats': {
+                'count':    len(vals),
+                'mean':     round(mean, 4),
+                'median':   round(float(np.median(arr)), 4),
+                'std':      round(std, 4),
+                'min':      round(float(arr.min()), 4),
+                'max':      round(float(arr.max()), 4),
+                'q1':       round(float(q1), 4),
+                'q3':       round(float(q3), 4),
+                'iqr':      round(float(q3 - q1), 4),
+                'skewness': round(skewness, 4),
+                'kurtosis': round(kurtosis, 4),
+            },
+        }
+
+    def _execute_boxplot_query(self, widget, limit):
+        """Compute box-plot statistics (Q1/Q3/IQR/whiskers/outliers) per group."""
+        from .models import Record
+        config   = widget.query_config or {}
+        field    = config.get('field')
+        group_by = config.get('group_by')
+        if not field:
+            return {'error': 'No field configured'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        buckets = {}
+        for rec in records:
+            if not rec or field not in rec:
+                continue
+            try:
+                v = float(rec[field])
+                if not np.isfinite(v):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            label = str(rec.get(group_by, 'All')) if group_by else 'All'
+            buckets.setdefault(label, []).append(v)
+        groups = []
+        for name, vals in buckets.items():
+            if len(vals) < 2:
+                continue
+            arr = np.array(vals)
+            q1, median, q3 = np.percentile(arr, [25, 50, 75])
+            iqr = float(q3 - q1)
+            wl  = float(max(arr.min(), q1 - 1.5 * iqr))
+            wh  = float(min(arr.max(), q3 + 1.5 * iqr))
+            groups.append({
+                'name':         name,
+                'count':        len(vals),
+                'mean':         round(float(np.mean(arr)), 4),
+                'median':       round(float(median), 4),
+                'q1':           round(float(q1), 4),
+                'q3':           round(float(q3), 4),
+                'iqr':          round(iqr, 4),
+                'whisker_low':  round(wl, 4),
+                'whisker_high': round(wh, 4),
+                'outliers':     [round(float(v), 4)
+                                 for v in arr if v < wl or v > wh][:50],
+            })
+        if not groups:
+            return {'error': 'Not enough numeric data'}
+        return {'field': field, 'groups': groups}
+
+    def _execute_scatter_query(self, widget, limit):
+        """Scatter plot data: paired x/y values + Pearson r + linear regression."""
+        from .models import Record
+        config  = widget.query_config or {}
+        x_field = config.get('x_field')
+        y_field = config.get('y_field')
+        if not x_field or not y_field:
+            return {'error': 'Both x_field and y_field required'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        xs, ys = [], []
+        for rec in records:
+            if not rec:
+                continue
+            try:
+                x = float(rec.get(x_field, ''))
+                y = float(rec.get(y_field, ''))
+                if np.isfinite(x) and np.isfinite(y):
+                    xs.append(x); ys.append(y)
+            except (TypeError, ValueError):
+                pass
+        if len(xs) < 3:
+            return {'error': 'Not enough data pairs'}
+        xa, ya   = np.array(xs), np.array(ys)
+        r        = float(np.corrcoef(xa, ya)[0, 1])
+        coeffs   = np.polyfit(xa, ya, 1)
+        slope, intercept = float(coeffs[0]), float(coeffs[1])
+        x_min, x_max = float(xa.min()), float(xa.max())
+        max_pts  = 500
+        if len(xs) > max_pts:
+            idx = np.random.choice(len(xs), max_pts, replace=False)
+            x_out = [round(float(xa[i]), 4) for i in idx]
+            y_out = [round(float(ya[i]), 4) for i in idx]
+        else:
+            x_out = [round(float(v), 4) for v in xs]
+            y_out = [round(float(v), 4) for v in ys]
+        return {
+            'x_field':   x_field,
+            'y_field':   y_field,
+            'x':         x_out,
+            'y':         y_out,
+            'count':     len(xs),
+            'r':         round(r, 4),
+            'r_squared': round(r * r, 4),
+            'regression': {
+                'slope':     round(slope, 6),
+                'intercept': round(intercept, 6),
+                'line_x':    [x_min, x_max],
+                'line_y':    [round(slope * x_min + intercept, 4),
+                              round(slope * x_max + intercept, 4)],
+            },
+        }
+
+    def _execute_stat_summary_query(self, widget, limit):
+        """Full descriptive stats: mean/median/std/percentiles/skewness/kurtosis/outliers."""
+        from .models import Record
+        config = widget.query_config or {}
+        fields = config.get('fields', [])
+        if not fields and widget.table and widget.table.schema:
+            _num = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+            fields = [f['name'] for f in widget.table.schema if f.get('type') in _num]
+        if not fields:
+            return {'error': 'No numeric fields found'}
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        total = len(records)
+        result_fields = []
+        for field in fields[:12]:
+            vals, null_n = [], 0
+            for rec in records:
+                raw = rec.get(field) if rec else None
+                if raw is None or str(raw).strip() in ('', 'None', 'nan', 'null'):
+                    null_n += 1; continue
+                try:
+                    v = float(raw)
+                    if np.isfinite(v):
+                        vals.append(v)
+                    else:
+                        null_n += 1
+                except (TypeError, ValueError):
+                    null_n += 1
+            if len(vals) < 2:
+                continue
+            arr  = np.array(vals)
+            q1, q3 = np.percentile(arr, [25, 75])
+            iqr    = float(q3 - q1)
+            mean   = float(np.mean(arr))
+            std    = float(np.std(arr, ddof=1))
+            skewness = kurtosis = 0.0
+            if std > 0:
+                z = (arr - mean) / std
+                skewness = float(np.mean(z ** 3))
+                kurtosis = float(np.mean(z ** 4)) - 3
+            outlier_n = int(np.sum((arr < q1 - 1.5 * iqr) | (arr > q3 + 1.5 * iqr)))
+            result_fields.append({
+                'name':          field,
+                'count':         len(vals),
+                'null_pct':      round(null_n / total * 100, 1) if total else 0,
+                'mean':          round(mean, 4),
+                'median':        round(float(np.median(arr)), 4),
+                'std':           round(std, 4),
+                'min':           round(float(arr.min()), 4),
+                'max':           round(float(arr.max()), 4),
+                'q1':            round(float(q1), 4),
+                'q3':            round(float(q3), 4),
+                'iqr':           round(iqr, 4),
+                'skewness':      round(skewness, 4),
+                'kurtosis':      round(kurtosis, 4),
+                'outlier_count': outlier_n,
+            })
+        if not result_fields:
+            return {'error': 'Not enough numeric data'}
+        return {'total_records': total, 'fields': result_fields}
+
+    def _execute_correlation_query(self, widget, limit):
+        """Full numeric correlation matrix (Pearson)."""
+        from .models import Record
+        config = widget.query_config or {}
+        fields = config.get('fields', [])
+        if not fields and widget.table and widget.table.schema:
+            _num = {'number', 'currency', 'percentage', 'integer', 'float', 'decimal'}
+            fields = [f['name'] for f in widget.table.schema if f.get('type') in _num]
+        if len(fields) < 2:
+            return {'error': 'Need at least 2 numeric fields for correlation'}
+        fields = fields[:10]
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        rows = []
+        for rec in records:
+            if not rec:
+                continue
+            row, ok = [], True
+            for f in fields:
+                try:
+                    v = float(rec.get(f, ''))
+                    if not np.isfinite(v):
+                        ok = False; break
+                    row.append(v)
+                except (TypeError, ValueError):
+                    ok = False; break
+            if ok:
+                rows.append(row)
+        if len(rows) < 3:
+            return {'error': 'Not enough complete rows for correlation'}
+        arr  = np.array(rows)
+        corr = np.corrcoef(arr.T)
+        return {
+            'fields': fields,
+            'matrix': [[round(float(v), 3) for v in row] for row in corr],
+            'count':  len(rows),
+        }
+
+    def _execute_data_quality_query(self, widget, limit):
+        """Null%, cardinality, duplicates, and composite quality score for every field."""
+        from .models import Record
+        records = list(
+            Record.objects.filter(table=widget.table, is_active=True)
+            .values_list('data', flat=True)[:limit]
+        )
+        total = len(records)
+        if total == 0:
+            return {'error': 'No records found'}
+        schema = widget.table.schema or [] if widget.table else []
+        fields = [f['name'] for f in schema]
+        if not fields:
+            return {'error': 'No schema defined'}
+        _EMPTY = {'', 'none', 'nan', 'null', 'n/a', 'na', 'undefined'}
+        field_stats, completeness_scores = [], []
+        for field in fields:
+            null_n, seen = 0, set()
+            for rec in records:
+                val = rec.get(field) if rec else None
+                if val is None or str(val).strip().lower() in _EMPTY:
+                    null_n += 1
+                else:
+                    seen.add(str(val))
+            null_pct     = round(null_n / total * 100, 1)
+            unique_count = len(seen)
+            completeness_scores.append(100 - null_pct)
+            issues = []
+            if null_pct > 20:
+                issues.append(f'{null_pct}% missing values')
+            if unique_count == 1:
+                issues.append('constant value — no variance')
+            if unique_count == total and total > 10:
+                issues.append('all unique — possible ID/key field')
+            field_stats.append({
+                'name':         field,
+                'null_pct':     null_pct,
+                'unique_count': unique_count,
+                'data_type':    next((f.get('type', 'unknown') for f in schema if f['name'] == field), 'unknown'),
+                'issues':       issues,
+            })
+        # Duplicate detection (compare full record dicts)
+        seen_keys, dup_n = set(), 0
+        for rec in records:
+            key = str(sorted(rec.items()) if rec else [])
+            if key in seen_keys:
+                dup_n += 1
+            else:
+                seen_keys.add(key)
+        complete_n = sum(
+            1 for rec in records
+            if rec and all(
+                str(rec.get(f, '')).strip().lower() not in _EMPTY | {''}
+                for f in fields
+            )
+        )
+        avg_comp = sum(completeness_scores) / len(completeness_scores) if completeness_scores else 0
+        dup_penalty = min(20, dup_n / total * 100) if total else 0
+        return {
+            'total_records':    total,
+            'complete_records': complete_n,
+            'duplicate_count':  dup_n,
+            'score':            round(max(0, avg_comp - dup_penalty), 1),
+            'fields':           field_stats,
+        }
 
     # ------------------------------------------------------------------
     # Calculated field resolution
@@ -1422,7 +1764,16 @@ class WorkspaceInsightService:
     # ------------------------------------------------------------------ #
     #  Public entry point
     # ------------------------------------------------------------------ #
-    def generate_workspace_overview(self, workspace, user):
+    def generate_workspace_overview(self, workspace, user, on_widget_created=None):
+        """Build / update the workspace overview dashboard.
+
+        Args:
+            workspace: Workspace instance.
+            user: User triggering generation (used as created_by).
+            on_widget_created: Optional callable(widget, source_name) invoked
+                after each widget is persisted. Used by the Celery task to
+                stream fine-grained progress events via WebSocket.
+        """
         from .models import Dashboard, Widget
 
         logger.info(f"Generating workspace insights for workspace {workspace.id}")
@@ -1434,19 +1785,17 @@ class WorkspaceInsightService:
                 'name': 'Workspace Insights',
                 'description': 'Auto-generated insights from all your data',
                 'created_by': user,
+                'is_active': True,
                 'layout_config': {"columns": 12, "rowHeight": 100, "compact": True},
             }
         )
 
-        if not created:
-            # Regenerate: wipe previously auto-generated widgets.
-            # Suppress the empty-dashboard signal so the dashboard itself isn't deleted.
-            from .models import _skip_dashboard_cleanup
-            _skip_dashboard_cleanup.active = True
-            try:
-                dashboard.widgets.filter(title__startswith='[Auto]').delete()  # type: ignore[attr-defined]
-            finally:
-                _skip_dashboard_cleanup.active = False
+        # If the dashboard was previously soft-deleted, reactivate it.
+        if not dashboard.is_active:
+            dashboard.is_active = True
+            dashboard.deleted_at = None
+            dashboard.save(update_fields=['is_active', 'deleted_at'])
+            created = True  # treat as fresh so we regenerate widgets
 
         from django.db.models import Exists, OuterRef
         _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
@@ -1456,8 +1805,46 @@ class WorkspaceInsightService:
             .annotate(_has_data=Exists(_has_records))
             .filter(_has_data=True)
         )
-        current_y   = 0
+
+        if not created:
+            # Incremental update: only act on tables that have changed.
+            # 1. Remove widgets for tables that were deleted/deactivated.
+            active_table_ids = set(tables.values_list('id', flat=True))
+            existing_table_ids = set(
+                Widget.objects.filter(dashboard=dashboard, title__startswith='[Auto]')
+                .exclude(table=None)
+                .values_list('table_id', flat=True)
+                .distinct()
+            )
+            stale_ids = existing_table_ids - active_table_ids
+            if stale_ids:
+                from .models import _skip_dashboard_cleanup
+                _skip_dashboard_cleanup.active = True
+                try:
+                    Widget.objects.filter(dashboard=dashboard, table_id__in=stale_ids).delete()
+                finally:
+                    _skip_dashboard_cleanup.active = False
+
+            # 2. Skip tables that already have [Auto] widgets — don't touch them.
+            tables = tables.exclude(id__in=existing_table_ids - stale_ids)
+
+        # Determine the next free vertical slot below all existing widgets.
+        # position is a JSONField so we compute the max in Python (avoids
+        # DB-driver differences with JSON key path aggregation).
+        if not created:
+            _positions = list(
+                Widget.objects.filter(dashboard=dashboard)
+                .values_list('position', flat=True)
+            )
+            _max_y = max(
+                (int(p.get('y', 0)) + int(p.get('h', 4)) for p in _positions if p),
+                default=0,
+            )
+            current_y = _max_y + 1
+        else:
+            current_y = 0
         total_count = 0
+        dashboard._new_tables_added = 0
 
         for table in tables:
             logger.info(f"  Profiling table: {table.name} ({table.record_count} records)")
@@ -1477,7 +1864,7 @@ class WorkspaceInsightService:
                 if kpi_x + w > 12:
                     kpi_x  = 0
                     kpi_y += kpi_row_h
-                Widget.objects.create(
+                _w = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type=spec['type'],
                     title=f"[Auto] {spec['title']}",
@@ -1486,6 +1873,8 @@ class WorkspaceInsightService:
                     viz_config=spec.get('viz_config', {}),
                     position={'x': kpi_x, 'y': kpi_y, 'w': w, 'h': kpi_row_h},
                 )
+                if on_widget_created:
+                    on_widget_created(_w, table.name)
                 kpi_x    += w
                 total_count += 1
 
@@ -1498,7 +1887,7 @@ class WorkspaceInsightService:
                 if chart_x + w > 12:
                     chart_x  = 0
                     chart_y += h
-                Widget.objects.create(
+                _w = Widget.objects.create(
                     dashboard=dashboard,
                     widget_type=spec['type'],
                     title=f"[Auto] {spec['title']}",
@@ -1507,13 +1896,15 @@ class WorkspaceInsightService:
                     viz_config=spec.get('viz_config', {}),
                     position={'x': chart_x, 'y': chart_y, 'w': w, 'h': h},
                 )
+                if on_widget_created:
+                    on_widget_created(_w, table.name)
                 chart_x     += w
                 total_count += 1
 
             # ── Data table preview at full width ───────────────────────
             last_chart_h = charts[-1]['height'] if charts else 0
             table_y = (chart_y + last_chart_h) if charts else chart_start_y
-            Widget.objects.create(
+            _w = Widget.objects.create(
                 dashboard=dashboard,
                 widget_type='table',
                 title=f"[Auto] {table.name} Records",
@@ -1522,7 +1913,10 @@ class WorkspaceInsightService:
                 viz_config={},
                 position={'x': 0, 'y': table_y, 'w': 12, 'h': 5},
             )
+            if on_widget_created:
+                on_widget_created(_w, table.name)
             total_count += 1
+            dashboard._new_tables_added = getattr(dashboard, '_new_tables_added', 0) + 1
 
             # Leave a 1-unit gap before the next table's section
             current_y = table_y + 5 + 1
@@ -2039,6 +2433,134 @@ class WorkspaceInsightService:
                         ),
                     },
                 })
+
+        # ════════════════════════════════════════════════════════════════
+        #  DATA QUALITY SCORECARD (always — gives users confidence in data)
+        # ════════════════════════════════════════════════════════════════
+        insights.append({
+            'type': 'data_quality',
+            'title': f'{self._clean_display_name(domain.title())} Data Quality',
+            'width': 12, 'height': 4,
+            'query_config': {},
+            'viz_config': {
+                'description': (
+                    'Automated data quality assessment: completeness, cardinality, '
+                    'duplicates, and field-level issues. Fix flagged problems before '
+                    'drawing conclusions from this data.'
+                ),
+            },
+        })
+
+        # ════════════════════════════════════════════════════════════════
+        #  STATISTICAL SUMMARY — full descriptive stats for numeric fields
+        # ════════════════════════════════════════════════════════════════
+        if valid_numeric:
+            insights.append({
+                'type': 'stat_summary',
+                'title': 'Numeric Field Statistics',
+                'width': 12, 'height': 5,
+                'query_config': {'fields': valid_numeric[:8]},
+                'viz_config': {
+                    'description': (
+                        'Descriptive statistics for every numeric field: '
+                        'mean, median, standard deviation, quartiles, '
+                        'skewness, kurtosis, and IQR-based outlier count. '
+                        'Skewness > 1 or < −1 signals a non-normal distribution.'
+                    ),
+                },
+            })
+
+        # ════════════════════════════════════════════════════════════════
+        #  DISTRIBUTION HISTOGRAMS — up to 3 highest-scoring numeric fields
+        # ════════════════════════════════════════════════════════════════
+        for field in valid_numeric[:3]:
+            display_f = self._clean_display_name(field)
+            insights.append({
+                'type': 'histogram',
+                'title': f'{display_f} Distribution',
+                'width': 6, 'height': 4,
+                'query_config': {'field': field, 'bins': 20},
+                'viz_config': {
+                    'description': (
+                        f"Frequency distribution of {display_f.lower()}. "
+                        f"Each bar shows how many {record_noun} fall in that range. "
+                        f"Look at skewness and kurtosis to understand the shape of the data."
+                    ),
+                },
+            })
+
+        # ════════════════════════════════════════════════════════════════
+        #  BOX & WHISKER PLOTS — outlier-robust comparison
+        # ════════════════════════════════════════════════════════════════
+        if valid_numeric:
+            best_cat = all_categorical[0] if all_categorical else None
+            for field in valid_numeric[:2]:
+                display_f = self._clean_display_name(field)
+                spec = {
+                    'type': 'box_plot',
+                    'title': f'{display_f} Box Plot',
+                    'width': 6, 'height': 4,
+                    'query_config': {'field': field},
+                    'viz_config': {
+                        'description': (
+                            f"Box plot for {display_f.lower()}: median (centre line), "
+                            f"IQR (box), whiskers (1.5×IQR), and outliers (dots). "
+                            f"Outliers may indicate data entry errors or genuine extremes."
+                        ),
+                    },
+                }
+                if best_cat:
+                    spec['query_config']['group_by'] = best_cat
+                    display_cat = self._clean_display_name(best_cat)
+                    spec['title'] = f'{display_f} by {display_cat}'
+                    spec['viz_config']['description'] = (
+                        f"Distribution of {display_f.lower()} across {display_cat.lower()} groups. "
+                        f"Compare medians and spread to identify which group performs best or "
+                        f"has the most variability."
+                    )
+                insights.append(spec)
+
+        # ════════════════════════════════════════════════════════════════
+        #  SCATTER + REGRESSION — top numeric pairs
+        # ════════════════════════════════════════════════════════════════
+        if len(valid_numeric) >= 2:
+            x_f = valid_numeric[0]
+            for y_f in valid_numeric[1:3]:
+                dx = self._clean_display_name(x_f)
+                dy = self._clean_display_name(y_f)
+                insights.append({
+                    'type': 'scatter_plot',
+                    'title': f'{dy} vs {dx}',
+                    'width': 6, 'height': 4,
+                    'query_config': {'x_field': x_f, 'y_field': y_f},
+                    'viz_config': {
+                        'description': (
+                            f"Scatter plot of {dy.lower()} against {dx.lower()}. "
+                            f"The regression line shows the linear trend; r² indicates "
+                            f"how much variance in {dy.lower()} is explained by {dx.lower()}. "
+                            f"r² > 0.7 suggests a strong relationship worth investigating."
+                        ),
+                    },
+                })
+
+        # ════════════════════════════════════════════════════════════════
+        #  CORRELATION HEATMAP — reveals hidden relationships
+        # ════════════════════════════════════════════════════════════════
+        if len(valid_numeric) >= 2:
+            insights.append({
+                'type': 'correlation_heatmap',
+                'title': 'Numeric Feature Correlations',
+                'width': 6, 'height': 5,
+                'query_config': {'fields': valid_numeric[:8]},
+                'viz_config': {
+                    'description': (
+                        'Pearson correlation matrix for all numeric fields. '
+                        'Values near +1 indicate a strong positive relationship; '
+                        'near −1 a strong inverse relationship; near 0 means no linear relationship. '
+                        'Red cells flag multicollinearity if you are building predictive models.'
+                    ),
+                },
+            })
 
         return insights
 
@@ -2788,7 +3310,15 @@ class GoogleSheetsQueryEngine:
             'https://www.googleapis.com/auth/drive.readonly',
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        return gspread.authorize(creds)
+        client = gspread.authorize(creds)
+        try:
+            from requests.adapters import HTTPAdapter
+            # No retries — DNS failures fail fast instead of spamming 3 retries per widget.
+            client.session.mount('https://', HTTPAdapter(max_retries=0))
+            client.session.timeout = 10
+        except AttributeError:
+            pass
+        return client
 
     def _open_spreadsheet(self):
         client = self._get_client()
@@ -2827,6 +3357,27 @@ class GoogleSheetsQueryEngine:
             return []
         return [{'name': col, 'type': self._infer_column_type(df[col])} for col in df.columns]
 
+    # ── circuit breaker (DNS / network failures) ────────────────────────────
+    # Key: spreadsheet_id → (error_message, expiry_timestamp)
+    _circuit: dict = {}
+    _CIRCUIT_TTL = 30  # seconds before retrying after a network failure
+
+    def _check_circuit(self):
+        """Raise RuntimeError immediately if we recently failed on this spreadsheet."""
+        import time
+        entry = self.__class__._circuit.get(self.data_source.google_spreadsheet_id)
+        if entry:
+            msg, expiry = entry
+            if time.monotonic() < expiry:
+                raise RuntimeError(f"Google Sheets unavailable (circuit open): {msg}")
+            del self.__class__._circuit[self.data_source.google_spreadsheet_id]
+
+    def _trip_circuit(self, exc):
+        import time
+        self.__class__._circuit[self.data_source.google_spreadsheet_id] = (
+            str(exc), time.monotonic() + self._CIRCUIT_TTL
+        )
+
     # ── widget query ────────────────────────────────────────────────────────
 
     def execute_widget_query(self, widget, limit=1000, extra_filters=None):
@@ -2841,9 +3392,15 @@ class GoogleSheetsQueryEngine:
             return {'error': 'No sheet name configured on this widget.'}
 
         try:
+            self._check_circuit()
             df = self._sheet_to_df(sheet_name)
         except Exception as exc:
-            logger.error("GoogleSheetsQueryEngine sheet read error: %s", exc)
+            is_network = 'NameResolution' in type(exc).__name__ or 'NameResolution' in str(exc)
+            if is_network:
+                self._trip_circuit(exc)
+                logger.error("GoogleSheetsQueryEngine network unreachable (circuit tripped 30s): %s", exc)
+            else:
+                logger.error("GoogleSheetsQueryEngine sheet read error: %s", exc)
             return {'error': str(exc)}
 
         if df.empty:
@@ -2924,17 +3481,28 @@ class GoogleSheetsQueryEngine:
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
+    _SHEET_TIMEOUT = 20  # seconds; prevents hanging the Django worker
+
     def _sheet_to_df(self, sheet_name: str, max_rows: int | None = None):
         """Read a worksheet into a pandas DataFrame (first row = headers)."""
         import pandas as pd
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _Timeout
 
-        ss = self._open_spreadsheet()
-        ws = ss.worksheet(sheet_name)
-        # get_all_records() returns a list of dicts using the first row as keys.
-        cap     = max_rows or self.MAX_ROWS
-        records = ws.get_all_records(numericise_ignore=['all'])   # keep raw strings
-        if len(records) > cap:
-            records = records[:cap]
+        def _fetch():
+            ss = self._open_spreadsheet()
+            ws = ss.worksheet(sheet_name)
+            cap     = max_rows or self.MAX_ROWS
+            records = ws.get_all_records(numericise_ignore=['all'])
+            return records[:cap] if len(records) > cap else records
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                records = pool.submit(_fetch).result(timeout=self._SHEET_TIMEOUT)
+        except _Timeout:
+            raise RuntimeError(
+                f"Google Sheets read timed out after {self._SHEET_TIMEOUT}s "
+                f"(sheet={sheet_name!r})"
+            )
         return pd.DataFrame(records) if records else pd.DataFrame()
 
     @staticmethod

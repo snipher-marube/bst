@@ -216,7 +216,11 @@
       </div>
     </div>
 
+<<<<<<< HEAD
     <a href="{% url 'dashboard:tables' %}"
+=======
+    <a href="{% url 'dashboard:dashboards' %}"
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md hover:border-purple-100 transition group">
       <div class="flex items-center justify-between mb-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Dashboards</span>
@@ -255,12 +259,21 @@
           <i class="fas fa-magic text-[10px]"></i> AI-Powered Insights
         </div>
         <h2 class="text-xl font-bold mb-1">
+<<<<<<< HEAD
           {% if insights_dashboard %}Refresh Workspace Insights{% else %}Generate Workspace Insights{% endif %}
         </h2>
         <p class="text-sm text-white/70 max-w-lg">
           {% if insights_dashboard %}
             Your automated dashboard was last updated {{ insights_dashboard.updated_at|timesince }} ago.
             Regenerate to include the latest data.
+=======
+          {% if insights_dashboard %}Workspace Insights Dashboard{% else %}Generate Workspace Insights{% endif %}
+        </h2>
+        <p class="text-sm text-white/70 max-w-lg">
+          {% if insights_dashboard %}
+            Auto-generated from all your tables. Last updated {{ insights_dashboard.updated_at|timesince }} ago.
+            Data updates in real time — no need to refresh manually.
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
           {% else %}
             Let AI scan all your tables, detect trends and anomalies, and build a complete dashboard automatically.
           {% endif %}
@@ -268,24 +281,55 @@
       </div>
       <div class="flex items-center gap-3 shrink-0">
         {% if insights_dashboard %}
+<<<<<<< HEAD
         <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
            class="px-4 py-2.5 rounded-xl border border-white/30 text-sm font-medium text-white hover:bg-white/10 transition">
           <i class="fas fa-eye mr-1.5"></i> View
         </a>
         {% endif %}
+=======
+        {# Primary CTA: go to the dashboard — no regeneration needed #}
+        <a href="{% url 'dashboard:dashboard_detail' pk=insights_dashboard.id %}"
+           class="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition flex items-center gap-2"
+           style="background:#f68712">
+          <i class="fas fa-chart-pie mr-1.5"></i> Open Dashboard
+        </a>
+        {# Secondary: add widgets for any new tables imported since last generation #}
+        <form method="post" action="{% url 'dashboard:generate_insights' %}" @submit="generating = true">
+          {% csrf_token %}
+          <button type="submit" :disabled="generating"
+                  class="px-4 py-2.5 rounded-xl border border-white/30 text-sm font-medium text-white hover:bg-white/10 transition disabled:opacity-60 flex items-center gap-2">
+            <template x-if="!generating">
+              <span><i class="fas fa-sync-alt mr-1.5"></i>Add New Tables</span>
+            </template>
+            <template x-if="generating">
+              <span><i class="fas fa-circle-notch fa-spin mr-1.5"></i>Updating…</span>
+            </template>
+          </button>
+        </form>
+        {% else %}
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
         <form method="post" action="{% url 'dashboard:generate_insights' %}" @submit="generating = true">
           {% csrf_token %}
           <button type="submit" :disabled="generating"
                   class="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition disabled:opacity-60 flex items-center gap-2"
                   style="background:#f68712">
             <template x-if="!generating">
+<<<<<<< HEAD
               <span><i class="fas fa-magic mr-1.5"></i>{% if insights_dashboard %}Refresh{% else %}Generate{% endif %}</span>
+=======
+              <span><i class="fas fa-magic mr-1.5"></i>Generate</span>
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
             </template>
             <template x-if="generating">
               <span><i class="fas fa-circle-notch fa-spin mr-1.5"></i>Analyzing…</span>
             </template>
           </button>
         </form>
+<<<<<<< HEAD
+=======
+        {% endif %}
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
       </div>
     </div>
   </div>
@@ -301,7 +345,11 @@
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
           <h2 class="text-sm font-semibold text-gray-800">Recent Dashboards</h2>
+<<<<<<< HEAD
           <a href="{% url 'dashboard:tables' %}" class="text-xs font-medium text-[#f68712] hover:underline">View all →</a>
+=======
+          <a href="{% url 'dashboard:dashboards' %}" class="text-xs font-medium text-[#f68712] hover:underline">View all →</a>
+>>>>>>> 80c5916a372a2470a919a84e2d8688d600602fb8
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-50">
           {% for dash in recent_dashboards|slice:":4" %}

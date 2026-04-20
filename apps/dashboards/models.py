@@ -361,23 +361,21 @@ class Record(models.Model):
         self._trigger_updates('deleted')
     
     def _trigger_updates(self, action):
-        """Trigger real-time updates"""
+        """Trigger real-time updates with per-table debouncing.
+
+        Fires a single ``notify_table_change`` task per table within a 5-second
+        window so that bulk imports (many records saved in quick succession) do
+        not flood the Celery broker with hundreds of individual tasks.
+        The ``table_update`` WebSocket event pushed by that task tells every
+        open dashboard to refresh its own widgets — no per-widget server push
+        needed here.
+        """
         try:
-            # Get all dashboards that use this table
-            from .models import Widget
-            
-            affected_widgets = Widget.objects.filter(
-                table=self.table,
-                dashboard__is_active=True
-            ).values_list('id', 'dashboard_id')
-            
-            # Queue updates for each widget
-            for widget_id, dashboard_id in affected_widgets:
-                broadcast_widget_update.delay(str(widget_id), str(dashboard_id))
-            
-            # Notify workspace
-            notify_table_change.delay(str(self.table.id), action)
-            
+            from django.core.cache import cache as _cache
+            debounce_key = f'tbl_upd_debounce:{self.table_id}'
+            if not _cache.add(debounce_key, '1', timeout=5):
+                return  # another task already queued within the debounce window
+            notify_table_change.delay(str(self.table_id), action)
         except Exception as e:
             logger.error(f"Failed to trigger updates: {str(e)}")
 
@@ -460,6 +458,13 @@ class Widget(models.Model):
         ('scatter', 'Scatter Plot'),
         ('cohort', 'Cohort Retention'),
         ('funnel', 'Funnel Analysis'),
+        # Data-science grade widgets
+        ('histogram', 'Distribution Histogram'),
+        ('box_plot', 'Box & Whisker Plot'),
+        ('scatter_plot', 'Scatter + Regression'),
+        ('stat_summary', 'Statistical Summary'),
+        ('correlation_heatmap', 'Correlation Matrix'),
+        ('data_quality', 'Data Quality Card'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -517,7 +522,11 @@ class Widget(models.Model):
         return f"{self.title} ({self.widget_type})"
 
     # Widget types that use their own query_config schema (not aggregations-based).
-    _ANALYSIS_WIDGET_TYPES = {'cohort', 'funnel'}
+    _ANALYSIS_WIDGET_TYPES = {
+        'cohort', 'funnel',
+        'histogram', 'box_plot', 'scatter_plot',
+        'stat_summary', 'correlation_heatmap', 'data_quality',
+    }
 
     def clean(self):
         """Validate query_config so malformed or oversized configs are rejected

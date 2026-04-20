@@ -41,6 +41,53 @@ def _release_lock(key):
 
 
 # ---------------------------------------------------------------------------
+# Generation state management (Redis-backed)
+# ---------------------------------------------------------------------------
+_GEN_STATE_TTL = 7200  # 2 hours
+
+
+def _gen_key(workspace_id: str) -> str:
+    return f'gen_state:{workspace_id}'
+
+
+def _set_gen_state(workspace_id: str, **updates) -> dict:
+    """Atomically patch the generation state stored in Redis and return it."""
+    from django.utils import timezone as _tz
+    key   = _gen_key(str(workspace_id))
+    state = cache.get(key) or {
+        'status':          'idle',
+        'progress':        0,
+        'widgets_created': 0,
+        'tables_done':     0,
+        'tables_total':    0,
+        'message':         '',
+        'dashboard_id':    None,
+        'task_id':         None,
+        'error':           None,
+    }
+    state.update(updates)
+    new_status = state.get('status')
+    if new_status in ('running', 'queued') and 'started_at' not in state:
+        state['started_at'] = _tz.now().isoformat()
+    if new_status in ('complete', 'failed'):
+        state['completed_at'] = _tz.now().isoformat()
+    cache.set(key, state, timeout=_GEN_STATE_TTL)
+    return state
+
+
+def _get_gen_state(workspace_id: str) -> dict:
+    return cache.get(_gen_key(str(workspace_id))) or {
+        'status': 'idle', 'progress': 0, 'widgets_created': 0,
+        'tables_done': 0, 'tables_total': 0, 'message': '',
+    }
+
+
+def _broadcast_gen_progress(workspace_id: str, state: dict) -> None:
+    """Push current generation state to the workspace WebSocket channel."""
+    _broadcast(f'workspace_{workspace_id}', {'type': 'generation_progress', **state})
+
+
+# ---------------------------------------------------------------------------
 # LLM circuit breaker (Redis-backed, no extra dependencies)
 # ---------------------------------------------------------------------------
 _CB_FAIL_KEY    = 'llm_circuit:failures'
@@ -141,16 +188,41 @@ def broadcast_widget_update(self, widget_id, dashboard_id):
 @shared_task(bind=True, max_retries=3, default_retry_delay=10,
              autoretry_for=(Exception,), retry_backoff=True)
 def notify_table_change(self, table_id, action):
-    """Notify the workspace channel that a table's data changed."""
+    """Notify all affected dashboard channels when a table's data changes.
+
+    1. Broadcasts a workspace-level table_update so the index page can update counters.
+    2. For every dashboard that has widgets using this table, broadcasts a table_update
+       to that dashboard's channel so the dashboard page can auto-refresh those widgets.
+    """
     try:
-        from apps.dashboards.models import DataTable
+        from apps.dashboards.models import DataTable, Widget
         table = DataTable.objects.select_related('workspace').get(id=table_id)
+
+        # 1. Workspace-level notification (for the overview / index page)
         _broadcast(f'workspace_{table.workspace_id}', {
             'type':     'table_update',
             'table_id': table_id,
             'action':   action,
         })
-        logger.info('Table change broadcast ok table=%s action=%s', table_id, action)
+
+        # 2. Per-dashboard notifications — find every dashboard that has widgets
+        #    backed by this table and push a table_update to its channel so the
+        #    open dashboard page can refresh the affected widgets without a reload.
+        dashboard_ids = (
+            Widget.objects
+            .filter(table_id=table_id)
+            .values_list('dashboard_id', flat=True)
+            .distinct()
+        )
+        for dash_id in dashboard_ids:
+            _broadcast(f'dashboard_{dash_id}', {
+                'type':     'table_update',
+                'table_id': table_id,
+                'action':   action,
+            })
+
+        logger.info('Table change broadcast ok table=%s action=%s dashboards=%s',
+                    table_id, action, list(dashboard_ids))
     except Exception as exc:
         logger.exception('notify_table_change failed table=%s', table_id)
         raise self.retry(exc=exc)
@@ -267,12 +339,19 @@ def analyze_workspace_tables(self, workspace_id):
     lock_key = f'insights_gen:{workspace_id}'
 
     if not _acquire_lock(lock_key):
+        current = _get_gen_state(workspace_id)
         logger.info('Insights already running for workspace=%s — skipping', workspace_id)
-        return {'status': 'skipped', 'reason': 'already_running'}
+        return {'status': 'skipped', 'reason': 'already_running', **current}
+
+    _set_gen_state(workspace_id, status='running', progress=2, message='Starting…',
+                   task_id=self.request.id or '')
 
     try:
         return _run_insight_generation(workspace_id, self)
     except Exception as exc:
+        err = str(exc)
+        _set_gen_state(workspace_id, status='failed', error=err)
+        _broadcast(f'workspace_{workspace_id}', {'type': 'generation_error', 'message': err})
         logger.exception('analyze_workspace_tables failed workspace=%s', workspace_id)
         raise self.retry(exc=exc)
     finally:
@@ -280,43 +359,51 @@ def analyze_workspace_tables(self, workspace_id):
 
 
 def _run_insight_generation(workspace_id, task_self):
-    from apps.dashboards.models import DataTable
+    """
+    Full generation pipeline with fine-grained WebSocket progress streaming.
+
+    Progress is tracked in Redis (gen_state:{workspace_id}) so any page can
+    poll the REST status endpoint as a fallback if the WebSocket is unavailable.
+
+    Phases:
+      1. Discover tables (5 %)
+      2. Build / update dashboard widgets  (5 → 40 %)
+      3. Statistical analysis per table    (40 → 90 %)
+      4. Cross-table comparison insights   (90 → 95 %)
+      5. Anomaly notifications + complete  (95 → 100 %)
+    """
+    from django.utils import timezone as _tz
+    from apps.dashboards.models import DataTable, Widget, Record
     from apps.dashboards.services import WorkspaceInsightService
     from apps.workspaces.models import Workspace
     from apps.insights.models import Insight
     from apps.insights.llm import ClaudeInsightGenerator
     from django.db.models import Exists, OuterRef
-    from apps.dashboards.models import Record
 
+    started_at = _tz.now()
+
+    # ── Guard: workspace must exist ───────────────────────────────────────
     try:
         workspace = Workspace.objects.get(id=workspace_id)
     except Workspace.DoesNotExist:
-        logger.warning('analyze_workspace_tables: workspace %s not found — skipping', workspace_id)
+        _set_gen_state(workspace_id, status='failed', error='Workspace not found')
+        logger.warning('_run_insight_generation: workspace %s not found', workspace_id)
         return {'status': 'skipped', 'reason': 'workspace_deleted'}
-    owner     = workspace.owner
 
-    # Initialise LLM generator and budget (budget lazily created if LLM available)
+    owner = workspace.owner
+
+    # ── Phase 0: initialise state & LLM ──────────────────────────────────
     llm_gen = ClaudeInsightGenerator()
     budget  = _get_or_create_budget(workspace) if llm_gen.is_available() else None
 
-    _broadcast(f'workspace_{workspace_id}', {
-        'type':    'insights_generation_progress',
-        'stage':   'started',
-        'message': 'Building dashboard widgets…',
-    })
+    state = _set_gen_state(workspace_id,
+        status='running', progress=5,
+        message='Discovering tables…',
+        started_at=started_at.isoformat(),
+    )
+    _broadcast_gen_progress(workspace_id, state)
 
-    # ── Phase 1: build/refresh the overview dashboard (existing logic) ────
-    service   = WorkspaceInsightService()
-    dashboard = service.generate_workspace_overview(workspace, owner)
-
-    _broadcast(f'workspace_{workspace_id}', {
-        'type':    'insights_generation_progress',
-        'stage':   'widgets_done',
-        'message': 'Widgets ready. Running statistical analysis…',
-        'dashboard_id': str(dashboard.id),
-    })
-
-    # ── Phase 2: statistical insights ────────────────────────────────────
+    # ── Phase 1: discover tables ──────────────────────────────────────────
     _has_records = Record.objects.filter(table=OuterRef('pk'), is_active=True)
     tables = list(
         workspace.tables
@@ -325,18 +412,80 @@ def _run_insight_generation(workspace_id, task_self):
         .filter(_has_data=True)
         .order_by('name')
     )
+    total_tables  = len(tables)
+    widgets_count = [0]  # mutable counter updated via callback
 
-    # Delete stale Insight records for this workspace before regenerating
+    state = _set_gen_state(workspace_id,
+        tables_total=total_tables,
+        progress=8,
+        message=f'Found {total_tables} table(s). Building widgets…',
+    )
+    _broadcast_gen_progress(workspace_id, state)
+
+    # ── Phase 2: build / refresh overview dashboard ───────────────────────
+    def _on_widget_created(widget, source_name):
+        widgets_count[0] += 1
+        # Throttle broadcasts: send every 3 widgets to avoid flooding.
+        if widgets_count[0] % 3 == 0:
+            s = _set_gen_state(workspace_id,
+                widgets_created=widgets_count[0],
+                message=f'Created widget #{widgets_count[0]} — {source_name}',
+            )
+            _broadcast(f'workspace_{workspace_id}', {
+                'type':        'generation_progress',
+                'stage':       'widget_created',
+                'widget_id':   str(widget.id),
+                'widget_type': widget.widget_type,
+                'source_name': source_name,
+                **s,
+            })
+
+    service   = WorkspaceInsightService()
+    try:
+        dashboard = service.generate_workspace_overview(
+            workspace, owner, on_widget_created=_on_widget_created
+        )
+    except Exception as exc:
+        error_msg = f'Widget generation failed: {exc}'
+        _set_gen_state(workspace_id, status='failed', error=error_msg)
+        _broadcast(f'workspace_{workspace_id}', {
+            'type': 'generation_error', 'message': error_msg,
+        })
+        logger.exception('generate_workspace_overview failed workspace=%s', workspace_id)
+        raise
+
+    widgets_count[0] = Widget.objects.filter(dashboard=dashboard).count()
+    state = _set_gen_state(workspace_id,
+        dashboard_id=str(dashboard.id),
+        progress=40,
+        widgets_created=widgets_count[0],
+        message=f'{widgets_count[0]} widgets ready. Running statistical analysis…',
+    )
+    _broadcast_gen_progress(workspace_id, state)
+
+    # ── Phase 3: per-table statistical analysis ───────────────────────────
     Insight.objects.filter(workspace=workspace).delete()
-
     created_insights = []
-    numeric_by_table = {}   # table.id → { field: [values] } for cross-table comparison
+    numeric_by_table = {}
 
-    total = len(tables)
     for idx, table in enumerate(tables):
+        # Progress: 40 % → 90 % spread across tables
+        pct_start = 40 + int(50 * idx       / max(total_tables, 1))
+        pct_end   = 40 + int(50 * (idx + 1) / max(total_tables, 1))
+
+        state = _set_gen_state(workspace_id,
+            progress=pct_start,
+            tables_done=idx,
+            message=f'Analysing "{table.name}" ({table.record_count:,} records)…',
+        )
+        _broadcast(f'workspace_{workspace_id}', {
+            'type': 'generation_progress', 'stage': 'analysing_table',
+            'table_name': table.name, **state,
+        })
+
         try:
             new_insights, field_values = _analyse_table(
-                table, workspace, owner, llm_gen=llm_gen, budget=budget
+                table, workspace, owner, llm_gen=llm_gen, budget=budget,
             )
             created_insights.extend(new_insights)
             if field_values:
@@ -344,37 +493,74 @@ def _run_insight_generation(workspace_id, task_self):
         except Exception:
             logger.exception('Insight analysis failed table=%s', table.id)
 
+        state = _set_gen_state(workspace_id,
+            progress=pct_end,
+            tables_done=idx + 1,
+            message=f'"{table.name}" analysed — {len(created_insights)} insights so far',
+        )
         _broadcast(f'workspace_{workspace_id}', {
-            'type':     'insights_generation_progress',
-            'stage':    'table_done',
-            'table':    table.name,
-            'progress': round((idx + 1) / max(total, 1) * 100),
+            'type': 'generation_progress', 'stage': 'table_done',
+            'table_name': table.name, **state,
         })
 
-    # ── Phase 3: cross-table comparison insights ──────────────────────────
+    # ── Phase 4: cross-table comparison ──────────────────────────────────
+    state = _set_gen_state(workspace_id, progress=92,
+                           message='Building cross-table comparisons…')
+    _broadcast_gen_progress(workspace_id, state)
+
     _create_comparison_insights(
         tables, numeric_by_table, workspace, owner, created_insights,
         llm_gen=llm_gen, budget=budget,
     )
 
-    # ── Phase 4: notify workspace members of new anomaly findings ────────
+    # ── Phase 5: anomaly notifications ───────────────────────────────────
     anomaly_insights = [i for i in created_insights if i.insight_type == 'anomaly']
     if anomaly_insights:
         _notify_anomaly_insights(workspace, anomaly_insights)
 
     # ── Done ──────────────────────────────────────────────────────────────
+    duration     = (_tz.now() - started_at).total_seconds()
+    widget_count = Widget.objects.filter(dashboard=dashboard).count()
+
+    final_state = _set_gen_state(workspace_id,
+        status='complete',
+        progress=100,
+        widgets_created=widget_count,
+        tables_done=total_tables,
+        message=f'Done — {widget_count} widgets, {len(created_insights)} insights ({duration:.0f}s)',
+    )
+
+    # Emit both the new 'generation_complete' and the legacy 'insights_complete'
+    # so any open dashboard detail page also receives the signal.
+    completion_payload = {
+        'dashboard_id':   str(dashboard.id),
+        'widget_count':   widget_count,
+        'insight_count':  len(created_insights),
+        'duration_seconds': round(duration, 1),
+        **final_state,
+    }
     _broadcast(f'workspace_{workspace_id}', {
-        'type':         'insights_complete',
-        'dashboard_id': str(dashboard.id),
-        'insight_count': len(created_insights),
+        'type': 'generation_complete', **completion_payload,
+    })
+    _broadcast(f'workspace_{workspace_id}', {
+        'type': 'insights_complete', **completion_payload,
+    })
+    # Also notify any open dashboard detail page directly
+    _broadcast(f'dashboard_{dashboard.id}', {
+        'type': 'generation_complete', **completion_payload,
     })
 
-    from apps.dashboards.models import Widget
-    widget_count = Widget.objects.filter(dashboard=dashboard).count()
-    logger.info('Insights complete workspace=%s dashboard=%s widgets=%d insights=%d',
-                workspace_id, dashboard.id, widget_count, len(created_insights))
-    return {'status': 'completed', 'dashboard_id': str(dashboard.id),
-            'widget_count': widget_count, 'insight_count': len(created_insights)}
+    logger.info(
+        'Generation complete workspace=%s dashboard=%s widgets=%d insights=%d duration=%.1fs',
+        workspace_id, dashboard.id, widget_count, len(created_insights), duration,
+    )
+    return {
+        'status':           'completed',
+        'dashboard_id':     str(dashboard.id),
+        'widget_count':     widget_count,
+        'insight_count':    len(created_insights),
+        'duration_seconds': round(duration, 1),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +774,7 @@ def _analyse_table(table, workspace, owner, llm_gen=None, budget=None):
         }, llm_gen, budget)
         insights.append(_trend_insight)
 
-    # ── Anomaly insights (z-score ≥ 3) ───────────────────────────────────
+    # ── Anomaly insights (z-score ≥ 3 AND IQR-fence) ────────────────────
     for field, vals in field_values.items():
         if len(vals) < 10:
             continue
@@ -633,6 +819,150 @@ def _analyse_table(table, workspace, owner, llm_gen=None, budget=None):
             'pct_outliers':   round(pct_outliers, 2),
         }, llm_gen, budget)
         insights.append(_anomaly_insight)
+
+    # ── Distribution insights (skewness + kurtosis + IQR outliers) ───────
+    try:
+        import numpy as np
+        for field, vals in field_values.items():
+            if len(vals) < 15:
+                continue
+            arr    = np.array(vals)
+            mean_v = float(np.mean(arr))
+            std_v  = float(np.std(arr, ddof=1))
+            if std_v == 0:
+                continue
+            z        = (arr - mean_v) / std_v
+            skewness = float(np.mean(z ** 3))
+            kurtosis = float(np.mean(z ** 4)) - 3
+            q1, q3   = np.percentile(arr, [25, 75])
+            iqr      = float(q3 - q1)
+            iqr_outs = int(np.sum((arr < q1 - 1.5 * iqr) | (arr > q3 + 1.5 * iqr)))
+
+            if abs(skewness) < 0.5 and abs(kurtosis) < 1 and iqr_outs == 0:
+                continue  # normal-ish — not worth flagging
+
+            skew_label = ('heavily right-skewed (long upper tail)' if skewness > 1
+                          else 'moderately right-skewed' if skewness > 0.5
+                          else 'heavily left-skewed (long lower tail)' if skewness < -1
+                          else 'moderately left-skewed' if skewness < -0.5
+                          else 'approximately symmetric')
+            kurt_label = ('heavy-tailed (leptokurtic)' if kurtosis > 1
+                          else 'light-tailed (platykurtic)' if kurtosis < -1
+                          else 'normal-tailed (mesokurtic)')
+            desc_parts = [
+                f'"{field}" in {table.name} is {skew_label} (skewness={skewness:.2f}) '
+                f'and {kurt_label} (excess kurtosis={kurtosis:.2f}).',
+            ]
+            if iqr_outs > 0:
+                desc_parts.append(
+                    f'{iqr_outs} IQR-fence outlier(s) detected '
+                    f'(outside [{q1:.2f} − 1.5×IQR, {q3:.2f} + 1.5×IQR]).'
+                )
+            if abs(skewness) > 1:
+                desc_parts.append(
+                    'Consider log-transforming this field before modelling to improve normality.'
+                )
+            _dist_insight = Insight.objects.create(
+                workspace         = workspace,
+                title             = f'{table.name} — "{field}" distribution shape',
+                description       = ' '.join(desc_parts),
+                insight_type      = 'anomaly',
+                source_table_name = table.name,
+                created_by        = owner,
+                chart_data        = {
+                    'field':        field,
+                    'skewness':     round(skewness, 4),
+                    'kurtosis':     round(kurtosis, 4),
+                    'iqr_outliers': iqr_outs,
+                    'q1':           round(float(q1), 4),
+                    'q3':           round(float(q3), 4),
+                    'iqr':          round(iqr, 4),
+                },
+            )
+            _enrich_with_llm(_dist_insight, 'anomaly', {
+                'table':        table.name,
+                'field':        field,
+                'skewness':     round(skewness, 4),
+                'kurtosis':     round(kurtosis, 4),
+                'iqr_outliers': iqr_outs,
+                'q1':           round(float(q1), 4),
+                'q3':           round(float(q3), 4),
+            }, llm_gen, budget)
+            insights.append(_dist_insight)
+
+        # ── Correlation insight (strongest pair) ──────────────────────────
+        if len(field_values) >= 2:
+            fields_list = list(field_values.keys())
+            max_r, best_pair = 0.0, None
+            for i in range(len(fields_list)):
+                for j in range(i + 1, len(fields_list)):
+                    fa, fb = fields_list[i], fields_list[j]
+                    va, vb = field_values[fa], field_values[fb]
+                    n = min(len(va), len(vb))
+                    if n < 6:
+                        continue
+                    corr_mat = np.corrcoef(np.array(va[:n]), np.array(vb[:n]))
+                    r = float(corr_mat[0, 1])
+                    if math.isnan(r):
+                        continue
+                    if abs(r) > abs(max_r):
+                        max_r, best_pair = r, (fa, fb)
+            if best_pair and abs(max_r) >= 0.4:
+                fa, fb = best_pair
+                strength = ('strong' if abs(max_r) >= 0.7 else 'moderate')
+                direction = 'positive' if max_r > 0 else 'negative'
+                _corr_insight = Insight.objects.create(
+                    workspace         = workspace,
+                    title             = f'{table.name} — {strength} correlation: "{fa}" & "{fb}"',
+                    description       = (
+                        f'"{fa}" and "{fb}" have a {strength} {direction} correlation '
+                        f'(r={max_r:.3f}). '
+                        + ('This relationship may be causal — investigate further.'
+                           if abs(max_r) >= 0.7 else
+                           'Weak to moderate linear relationship — use with caution.')
+                    ),
+                    insight_type      = 'summary',
+                    source_table_name = table.name,
+                    created_by        = owner,
+                    chart_data        = {
+                        'field_a': fa, 'field_b': fb,
+                        'r':       round(max_r, 4),
+                        'r2':      round(max_r ** 2, 4),
+                    },
+                )
+                insights.append(_corr_insight)
+
+        # ── Data-quality insight ───────────────────────────────────────────
+        _EMPTY = {'', 'none', 'nan', 'null', 'n/a', 'na'}
+        schema_fields = list(schema.keys())
+        null_counts = {}
+        for field in schema_fields:
+            null_counts[field] = sum(
+                1 for rec in records
+                if not rec or field not in rec
+                or str(rec.get(field, '')).strip().lower() in _EMPTY
+            )
+        high_null = [(f, null_counts[f] / len(records) * 100)
+                     for f in schema_fields if null_counts[f] / len(records) >= 0.15]
+        if high_null:
+            issues = '; '.join(f'"{f}" {p:.0f}% missing' for f, p in high_null[:5])
+            _dq_insight = Insight.objects.create(
+                workspace         = workspace,
+                title             = f'{table.name} — Data Quality Alert',
+                description       = (
+                    f'Several fields have high missing-value rates: {issues}. '
+                    f'Fix these before drawing conclusions or building models from this data.'
+                ),
+                insight_type      = 'anomaly',
+                source_table_name = table.name,
+                created_by        = owner,
+                chart_data        = {'high_null_fields': [{'field': f, 'null_pct': round(p, 1)}
+                                                           for f, p in high_null]},
+            )
+            insights.append(_dq_insight)
+
+    except Exception as exc:
+        logger.warning('Advanced statistical insights failed for %s: %s', table.name, exc)
 
     return insights, field_values
 

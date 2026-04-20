@@ -400,16 +400,46 @@ class DashboardConsumer(AsyncWebsocketConsumer):
             logger.exception('Error forwarding dashboard_update')
 
     async def insights_generation_progress(self, event):
+        """Legacy event forwarded as generation_progress for backward compatibility."""
         try:
-            await self.send(_dumps({'type': 'insights_generation_progress', **event}))
+            await self.send(_dumps({'type': 'generation_progress', **{
+                k: v for k, v in event.items() if k != 'type'
+            }}))
         except Exception:
             logger.exception('Error forwarding insights_generation_progress')
 
     async def insights_complete(self, event):
+        """Legacy event forwarded as generation_complete."""
         try:
-            await self.send(_dumps({'type': 'insights_complete', **event}))
+            await self.send(_dumps({'type': 'generation_complete', **{
+                k: v for k, v in event.items() if k != 'type'
+            }}))
         except Exception:
             logger.exception('Error forwarding insights_complete')
+
+    async def generation_progress(self, event):
+        try:
+            await self.send(_dumps({'type': 'generation_progress', **{
+                k: v for k, v in event.items() if k != 'type'
+            }}))
+        except Exception:
+            logger.exception('Error forwarding generation_progress')
+
+    async def generation_complete(self, event):
+        try:
+            await self.send(_dumps({'type': 'generation_complete', **{
+                k: v for k, v in event.items() if k != 'type'
+            }}))
+        except Exception:
+            logger.exception('Error forwarding generation_complete')
+
+    async def generation_error(self, event):
+        try:
+            await self.send(_dumps({'type': 'generation_error', **{
+                k: v for k, v in event.items() if k != 'type'
+            }}))
+        except Exception:
+            logger.exception('Error forwarding generation_error')
 
     # ── Heartbeat monitor ──────────────────────────────────────────────────
 
@@ -627,6 +657,8 @@ class WorkspaceConsumer(AsyncWebsocketConsumer):
         'subscribe_table':         {'table_id': (True, str)},
         'unsubscribe_table':       {'table_id': (True, str)},
         'request_import_status':   {'import_job_id': (True, str)},
+        'get_generation_status':   {},
+        'trigger_generation':      {},
     }
 
     async def connect(self):
@@ -693,6 +725,14 @@ class WorkspaceConsumer(AsyncWebsocketConsumer):
             status = await self._get_import_status(data['import_job_id'])
             await self.send(_dumps({'type': 'import_status', **status}))
 
+        elif msg_type == 'get_generation_status':
+            state = await database_sync_to_async(self._read_gen_state)()
+            await self.send(_dumps({'type': 'generation_state', **state}))
+
+        elif msg_type == 'trigger_generation':
+            result = await database_sync_to_async(self._trigger_generation)()
+            await self.send(_dumps({'type': 'generation_triggered', **result}))
+
     # ── Group receivers ────────────────────────────────────────────────────
 
     async def table_update(self, event):
@@ -713,7 +753,46 @@ class WorkspaceConsumer(AsyncWebsocketConsumer):
         await self.send(_dumps({'type': 'import_progress', **event}))
 
     async def insights_complete(self, event):
-        await self.send(_dumps({'type': 'insights_complete', **event}))
+        """Legacy event — forward as generation_complete."""
+        await self.send(_dumps({'type': 'generation_complete', **{
+            k: v for k, v in event.items() if k != 'type'
+        }}))
+
+    async def insights_generation_progress(self, event):
+        """Legacy event — forward as generation_progress."""
+        await self.send(_dumps({'type': 'generation_progress', **{
+            k: v for k, v in event.items() if k != 'type'
+        }}))
+
+    async def generation_progress(self, event):
+        """Fine-grained per-step progress events streamed from the Celery task."""
+        await self.send(_dumps({k: v for k, v in event.items() if k != 'type'} | {'type': 'generation_progress'}))
+
+    async def generation_complete(self, event):
+        await self.send(_dumps({k: v for k, v in event.items() if k != 'type'} | {'type': 'generation_complete'}))
+
+    async def generation_error(self, event):
+        await self.send(_dumps({k: v for k, v in event.items() if k != 'type'} | {'type': 'generation_error'}))
+
+    # ── DB / cache helpers ─────────────────────────────────────────────────
+
+    def _read_gen_state(self):
+        from apps.insights.tasks import _get_gen_state
+        return _get_gen_state(self.workspace_id)
+
+    def _trigger_generation(self):
+        from apps.insights.tasks import analyze_workspace_tables, _get_gen_state, _set_gen_state
+        state = _get_gen_state(self.workspace_id)
+        if state.get('status') == 'running':
+            return {'status': 'already_running', **state}
+        task_id = f'gen:{self.workspace_id}'
+        _set_gen_state(self.workspace_id, status='queued', task_id=task_id, progress=1, message='Queued…')
+        try:
+            analyze_workspace_tables.apply_async(args=[self.workspace_id], task_id=task_id)
+            return {'status': 'queued', 'task_id': task_id}
+        except Exception as exc:
+            _set_gen_state(self.workspace_id, status='failed', error=str(exc))
+            return {'status': 'error', 'message': str(exc)}
 
     # ── Heartbeat ──────────────────────────────────────────────────────────
 
