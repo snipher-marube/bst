@@ -1,0 +1,365 @@
+{% extends 'dashboard/base_dashboard.html' %}
+{% load static humanize %}
+
+{% block title %}Dashboards — {{ workspace.name|default:"AnalyticsMeta" }}{% endblock %}
+{% block page_heading %}Dashboards{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<script>
+/* dashboardsApp must be defined BEFORE Alpine.js walks the DOM */
+function dashboardsApp(workspaceId, generateUrl, statusUrl) {
+  return {
+    workspaceId,
+    generateUrl,
+    statusUrl,
+    gen: {
+      status: 'idle', progress: 0, message: '',
+      widgets_created: 0, tables_done: 0, tables_total: 0,
+      dashboard_id: null, error: null,
+    },
+    btnLoading: false,
+    ws: null,
+    _wsRetry: 0,
+    _redirected: false,
+
+    init() {
+      this.fetchStatus();
+      this.connectWS();
+    },
+
+    fetchStatus() {
+      fetch(this.statusUrl)
+        .then(r => r.json())
+        .then(s => this.applyState(s))
+        .catch(() => {});
+    },
+
+    connectWS() {
+      if (!this.workspaceId) return;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this.ws = new WebSocket(`${proto}://${location.host}/ws/workspace/${this.workspaceId}/`);
+      this.ws.onopen = () => {
+        this._wsRetry = 0;
+        this.ws.send(JSON.stringify({ type: 'get_generation_status' }));
+      };
+      this.ws.onmessage = (e) => {
+        try { this.handleMsg(JSON.parse(e.data)); } catch (_) {}
+      };
+      this.ws.onclose = () => {
+        const delay = Math.min(1000 * Math.pow(2, this._wsRetry++), 30000);
+        setTimeout(() => this.connectWS(), delay);
+      };
+    },
+
+    handleMsg(msg) {
+      if (msg.type === 'generation_state' || msg.type === 'generation_progress') {
+        this.applyState(msg);
+      } else if (msg.type === 'generation_complete') {
+        this.applyState(msg);
+        if (msg.dashboard_id && !this._redirected) {
+          this._redirected = true;
+          setTimeout(() => { location.href = `/dashboard/dashboards/${msg.dashboard_id}/`; }, 2200);
+        }
+      } else if (msg.type === 'generation_error') {
+        this.gen.status  = 'failed';
+        this.gen.error   = msg.message || 'Unknown error';
+        this.gen.message = 'Generation failed';
+      } else if (msg.type === 'generation_triggered') {
+        if (msg.status === 'queued') { this.gen.status = 'queued'; this.gen.message = 'Queued…'; }
+        this.btnLoading = false;
+      }
+    },
+
+    applyState(s) {
+      ['status','progress','message','widgets_created','tables_done','tables_total','dashboard_id','error']
+        .forEach(k => { if (k in s) this.gen[k] = s[k]; });
+    },
+
+    get isActive() {
+      return this.gen.status === 'queued' || this.gen.status === 'running';
+    },
+
+    triggerGeneration() {
+      if (this.isActive || this.btnLoading) return;
+      this.btnLoading = true;
+      this.gen.status  = 'queued';
+      this.gen.message = 'Sending request…';
+      this.gen.progress = 1;
+      this._redirected  = false;
+      const csrf = document.querySelector('[name=csrfmiddlewaretoken]');
+      fetch(this.generateUrl, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': csrf ? csrf.value : '',
+          'Accept': 'application/json',
+        },
+      })
+      .then(r => r.json())
+      .then(d => {
+        this.btnLoading = false;
+        if (d.error) {
+          this.gen.status  = 'failed';
+          this.gen.error   = d.error;
+          this.gen.message = 'Failed to start generation';
+        } else {
+          this.gen.status  = d.status || 'queued';
+          this.gen.message = d.status === 'already_running'
+            ? 'Already running — watch the progress bar'
+            : 'Queued — building your dashboard…';
+        }
+      })
+      .catch(() => {
+        this.btnLoading = false;
+        this.gen.status  = 'failed';
+        this.gen.error   = 'Network error';
+        this.gen.message = 'Could not reach the server';
+      });
+    },
+
+    dismissBanner() {
+      this.gen.status   = 'idle';
+      this.gen.progress = 0;
+      this.gen.message  = '';
+      this.gen.error    = null;
+    },
+  };
+}
+</script>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if has_tables_with_data %}
+<button id="topbar-gen-btn"
+        onclick="document.dispatchEvent(new CustomEvent('dashboard:trigger-gen'))"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+        style="background:#f68712">
+  <i class="fas {% if overview_dashboard %}fa-sync-alt{% else %}fa-magic{% endif %} text-xs"></i>
+  {% if overview_dashboard %}Update Insights{% else %}Generate Insights{% endif %}
+</button>
+{% endif %}
+{% endblock %}
+
+{% block main_content %}
+{% csrf_token %}
+<div class="p-6 space-y-6"
+     x-data="dashboardsApp('{{ workspace.id }}', '{% url 'dashboard:generate_insights' %}', '{% url 'dashboard:generation_status' %}')"
+     x-init="init(); $el.addEventListener('dashboard:trigger-gen', () => triggerGeneration())"
+     x-cloak>
+
+  <div x-cloak
+       x-show="gen.status === 'queued' || gen.status === 'running' || gen.status === 'complete' || gen.status === 'failed'"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 -translate-y-2"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-end="opacity-0"
+       class="rounded-2xl overflow-hidden border shadow-sm"
+       :class="{
+         'bg-blue-50 border-blue-200':   isActive,
+         'bg-green-50 border-green-200': gen.status === 'complete',
+         'bg-red-50   border-red-200':   gen.status === 'failed',
+       }">
+
+    <div class="h-1 bg-gray-100 w-full" x-show="isActive">
+      <div class="h-full transition-all duration-500 ease-out"
+           style="background:#03466e"
+           :style="`width:${Math.max(gen.progress, 2)}%`"></div>
+    </div>
+
+    <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        <div x-show="isActive"
+             class="w-9 h-9 rounded-xl bg-[#03466e]/10 flex items-center justify-center shrink-0">
+          <i class="fas fa-circle-notch fa-spin text-[#03466e]"></i>
+        </div>
+        <div x-show="gen.status === 'complete'"
+             class="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+          <i class="fas fa-check-circle text-green-600"></i>
+        </div>
+        <div x-show="gen.status === 'failed'"
+             class="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+          <i class="fas fa-exclamation-circle text-red-600"></i>
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold"
+             :class="{ 'text-[#03466e]': isActive, 'text-green-800': gen.status==='complete', 'text-red-800': gen.status==='failed' }"
+             x-text="gen.message || 'Processing…'"></p>
+          <div x-show="isActive || gen.status === 'complete'"
+               class="flex items-center gap-3 mt-0.5 flex-wrap">
+            <span x-show="gen.tables_total > 0" class="text-[11px] text-gray-500 flex items-center gap-1">
+              <i class="fas fa-table opacity-60 text-[9px]"></i>
+              <span x-text="`${gen.tables_done||0} / ${gen.tables_total} tables`"></span>
+            </span>
+            <span x-show="gen.widgets_created > 0" class="text-[11px] text-gray-500 flex items-center gap-1">
+              <i class="fas fa-th-large opacity-60 text-[9px]"></i>
+              <span x-text="`${gen.widgets_created} widgets`"></span>
+            </span>
+            <span x-show="gen.progress > 0 && isActive" class="text-[11px] text-[#03466e] font-semibold"
+                  x-text="`${gen.progress}%`"></span>
+          </div>
+          <p x-show="gen.status === 'failed' && gen.error"
+             class="text-xs text-red-600 mt-0.5 truncate" x-text="gen.error"></p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button x-show="gen.status === 'complete' || gen.status === 'failed'"
+                @click="dismissBanner()"
+                class="text-xs text-gray-400 hover:text-gray-600 transition px-2 py-1 rounded-lg hover:bg-gray-100">
+          Dismiss
+        </button>
+        <a x-show="gen.status === 'complete' && gen.dashboard_id"
+           :href="`/dashboard/dashboards/${gen.dashboard_id}/`"
+           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+           style="background:#03466e">
+          <i class="fas fa-external-link-alt text-[10px]"></i> Open Dashboard
+        </a>
+        <button x-show="gen.status === 'failed'"
+                @click="triggerGeneration()"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+                style="background:#f68712">
+          <i class="fas fa-redo text-[10px]"></i> Retry
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {% if dashboards %}
+
+  <div class="relative rounded-2xl overflow-hidden text-white p-6"
+       style="background:linear-gradient(135deg,#03466e 0%,#055a8c 55%,#0a6fa8 100%)">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -right-8 -top-8 w-48 h-48 bg-white/5 rounded-full"></div>
+      <div class="absolute right-28 bottom-0 w-28 h-28 bg-white/5 rounded-full"></div>
+      <div class="absolute -left-6 bottom-0 w-36 h-36 bg-white/5 rounded-full"></div>
+    </div>
+    <div class="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f68712]/25 text-[#ffb347] mb-3">
+          <i class="fas fa-chart-pie text-[10px]"></i> {{ workspace.name }}
+        </div>
+        <h1 class="text-2xl font-bold mb-1">Your Dashboards</h1>
+        <p class="text-sm text-white/70">
+          {{ dashboards|length }} dashboard{{ dashboards|length|pluralize }} · real-time via WebSocket
+        </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3 shrink-0">
+        <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center min-w-[80px]">
+          <div class="text-2xl font-bold">{{ dashboards|length }}</div>
+          <div class="text-[10px] text-white/70 uppercase tracking-wide mt-0.5">Dashboards</div>
+        </div>
+        {% if overview_dashboard %}
+        <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center min-w-[80px]">
+          <div class="text-2xl font-bold">{{ overview_dashboard.widgets.all|length }}</div>
+          <div class="text-[10px] text-white/70 uppercase tracking-wide mt-0.5">Auto Widgets</div>
+        </div>
+        {% endif %}
+        {% if has_tables_with_data %}
+        <div>
+          <button @click="triggerGeneration()"
+                  :disabled="isActive || btnLoading"
+                  class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-[#03466e] bg-white hover:bg-white/90 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
+                  x-show="!isActive">
+            <i class="fas text-sm"
+               :class="btnLoading ? 'fa-circle-notch fa-spin' : '{% if overview_dashboard %}fa-sync-alt{% else %}fa-magic{% endif %}'"></i>
+            <span x-show="!btnLoading">{% if overview_dashboard %}Update Insights{% else %}Generate Insights{% endif %}</span>
+            <span x-show="btnLoading" style="display:none">Starting…</span>
+          </button>
+          <div x-show="isActive"
+               class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-[#03466e] bg-white/80 opacity-70 cursor-not-allowed select-none">
+            <i class="fas fa-circle-notch fa-spin text-sm"></i>
+            <span x-text="`${gen.progress||0}%`"></span>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+    {% for dash in dashboards %}
+      {% if dash.slug == 'workspace-overview' %}
+        {% with accent="#f68712" accent_bg="bg-orange-50" accent_text="text-orange-600" accent_border="border-orange-200" icon="fa-magic" %}
+        {% include "dashboard/_dash_card.html" %}
+        {% endwith %}
+      {% elif forloop.counter|divisibleby:4 %}
+        {% with accent="#8b5cf6" accent_bg="bg-violet-50" accent_text="text-violet-600" accent_border="border-violet-200" icon="fa-chart-bar" %}
+        {% include "dashboard/_dash_card.html" %}
+        {% endwith %}
+      {% elif forloop.counter|divisibleby:3 %}
+        {% with accent="#10b981" accent_bg="bg-emerald-50" accent_text="text-emerald-600" accent_border="border-emerald-200" icon="fa-chart-line" %}
+        {% include "dashboard/_dash_card.html" %}
+        {% endwith %}
+      {% elif forloop.counter|divisibleby:2 %}
+        {% with accent="#0ea5e9" accent_bg="bg-sky-50" accent_text="text-sky-600" accent_border="border-sky-200" icon="fa-chart-area" %}
+        {% include "dashboard/_dash_card.html" %}
+        {% endwith %}
+      {% else %}
+        {% with accent="#03466e" accent_bg="bg-blue-50" accent_text="text-blue-600" accent_border="border-blue-200" icon="fa-chart-pie" %}
+        {% include "dashboard/_dash_card.html" %}
+        {% endwith %}
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% else %}
+
+  <div class="relative rounded-2xl overflow-hidden text-white p-10 text-center"
+       style="background:linear-gradient(135deg,#03466e 0%,#055a8c 55%,#0a6fa8 100%)">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+      <div class="absolute -right-10 -top-10 w-56 h-56 bg-white/5 rounded-full"></div>
+      <div class="absolute -left-10 bottom-0 w-40 h-40 bg-white/5 rounded-full"></div>
+    </div>
+    <div class="relative max-w-md mx-auto">
+      <div class="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mx-auto mb-5">
+        <i class="fas fa-chart-pie text-3xl text-white/80"></i>
+      </div>
+      <h2 class="text-2xl font-bold mb-2">No dashboards yet</h2>
+      {% if has_tables_with_data %}
+      <p class="text-white/70 text-sm mb-6 max-w-sm mx-auto">
+        You have tables with data ready. Generate your first AI-powered dashboard in seconds.
+      </p>
+      <button @click="triggerGeneration()"
+              :disabled="isActive || btnLoading"
+              class="inline-flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-bold text-[#03466e] bg-white hover:bg-white/90 transition disabled:opacity-60 shadow-lg">
+        <i class="fas" :class="isActive || btnLoading ? 'fa-circle-notch fa-spin' : 'fa-magic'"></i>
+        <span x-show="!isActive && !btnLoading">Generate Insights Dashboard</span>
+        <span x-show="btnLoading" style="display:none">Starting…</span>
+        <span x-show="isActive" style="display:none" x-text="`Building… ${gen.progress||0}%`"></span>
+      </button>
+      {% else %}
+      <p class="text-white/70 text-sm mb-6 max-w-sm mx-auto">
+        Import your first dataset and AnalyticsMeta will automatically build charts, KPIs, and statistical summaries.
+      </p>
+      <a href="{% url 'dashboard:table_create_import' %}"
+         class="inline-flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-bold text-[#03466e] bg-white hover:bg-white/90 transition shadow-lg">
+        <i class="fas fa-upload"></i> Import Data
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    {% for step in "123" %}
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex gap-4 items-start">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold text-white
+                  {% if forloop.counter == 1 %}bg-[#03466e]{% elif forloop.counter == 2 %}bg-[#f68712]{% else %}bg-emerald-500{% endif %}">
+        {{ forloop.counter }}
+      </div>
+      <div>
+        {% if forloop.counter == 1 %}<p class="text-sm font-semibold text-gray-800">Import your data</p>
+        <p class="text-xs text-gray-400 mt-0.5">Upload a CSV or connect a data source</p>
+        {% elif forloop.counter == 2 %}<p class="text-sm font-semibold text-gray-800">Generate insights</p>
+        <p class="text-xs text-gray-400 mt-0.5">AI builds charts and KPIs automatically</p>
+        {% else %}<p class="text-sm font-semibold text-gray-800">Explore in real time</p>
+        <p class="text-xs text-gray-400 mt-0.5">Live WebSocket updates as data arrives</p>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}
