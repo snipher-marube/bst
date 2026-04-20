@@ -361,23 +361,21 @@ class Record(models.Model):
         self._trigger_updates('deleted')
     
     def _trigger_updates(self, action):
-        """Trigger real-time updates"""
+        """Trigger real-time updates with per-table debouncing.
+
+        Fires a single ``notify_table_change`` task per table within a 5-second
+        window so that bulk imports (many records saved in quick succession) do
+        not flood the Celery broker with hundreds of individual tasks.
+        The ``table_update`` WebSocket event pushed by that task tells every
+        open dashboard to refresh its own widgets — no per-widget server push
+        needed here.
+        """
         try:
-            # Get all dashboards that use this table
-            from .models import Widget
-            
-            affected_widgets = Widget.objects.filter(
-                table=self.table,
-                dashboard__is_active=True
-            ).values_list('id', 'dashboard_id')
-            
-            # Queue updates for each widget
-            for widget_id, dashboard_id in affected_widgets:
-                broadcast_widget_update.delay(str(widget_id), str(dashboard_id))
-            
-            # Notify workspace
-            notify_table_change.delay(str(self.table.id), action)
-            
+            from django.core.cache import cache as _cache
+            debounce_key = f'tbl_upd_debounce:{self.table_id}'
+            if not _cache.add(debounce_key, '1', timeout=5):
+                return  # another task already queued within the debounce window
+            notify_table_change.delay(str(self.table_id), action)
         except Exception as e:
             logger.error(f"Failed to trigger updates: {str(e)}")
 
