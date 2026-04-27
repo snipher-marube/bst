@@ -264,6 +264,7 @@ class TableDetailView(LoginRequiredMixin, DetailView):
 
         context['cf_api_base']    = f'/api/v1/tables/{self.object.id}/calculated-fields/'
         context['cf_validate_url'] = f'/api/v1/tables/{self.object.id}/calculated-fields/validate/'
+        context['profile_api_url'] = f'/api/v1/tables/{self.object.id}/profile/'
         context['format_choices'] = CalculatedField.FORMAT_CHOICES
         context['fn_list']  = ['sum', 'count', 'avg', 'min', 'max']
         context['op_list']  = ['+', '-', '*', '/', '**']

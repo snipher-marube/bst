@@ -90,6 +90,14 @@
   {# ── Tab bar ── #}
   <div class="bg-white border-b border-gray-100 px-6">
     <nav class="flex gap-0 -mb-px">
+      <button @click="activeTab = 'profile'; loadProfile()"
+              :class="activeTab === 'profile'
+                ? 'border-b-2 border-[#f68712] text-[#03466e] font-semibold'
+                : 'text-gray-400 hover:text-gray-600'"
+              class="px-4 py-3 text-xs transition whitespace-nowrap flex items-center gap-1.5">
+        <i class="fas fa-chart-column text-xs"></i>
+        Profile
+      </button>
       <button @click="activeTab = 'records'"
               :class="activeTab === 'records'
                 ? 'border-b-2 border-[#f68712] text-[#03466e] font-semibold'
@@ -113,6 +121,276 @@
               x-text="cf.fields.length || '{{ cf_count }}'"></span>
       </button>
     </nav>
+  </div>
+
+  <div x-show="activeTab === 'profile'" x-cloak class="p-6 space-y-5">
+    <div class="bg-gradient-to-r from-[#03466e] via-[#0a5d8e] to-[#1172aa] rounded-2xl text-white px-6 py-5 shadow-sm">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div class="space-y-2">
+          <div class="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/70">
+            <i class="fas fa-flask"></i>
+            Table profile
+          </div>
+          <h2 class="text-xl font-semibold">Understand completeness, quality, and column behavior at a glance.</h2>
+          <p class="text-sm text-white/80 max-w-2xl">
+            We summarize the table with record counts, quality score, and field-level statistics so you can spot missing data and odd distributions quickly.
+          </p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button @click="loadProfile(true)"
+                  class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 transition border border-white/15">
+            <i class="fas fa-rotate-right" :class="profile.loading ? 'fa-spin' : ''"></i>
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <template x-if="profile.loading">
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <template x-for="i in [1,2,3,4]" :key="i">
+            <div class="h-28 rounded-2xl border border-gray-200 bg-white animate-pulse"></div>
+          </template>
+        </div>
+        <template x-for="i in [1,2,3]" :key="'col-' + i">
+          <div class="h-40 rounded-2xl border border-gray-200 bg-white animate-pulse"></div>
+        </template>
+      </div>
+    </template>
+
+    <template x-if="!profile.loading && profile.error">
+      <div class="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+        <div class="flex items-start gap-3">
+          <i class="fas fa-triangle-exclamation mt-0.5"></i>
+          <div>
+            <p class="font-semibold">Profile unavailable</p>
+            <p x-text="profile.error"></p>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="!profile.loading && !profile.error && profile.data">
+      <div class="space-y-5">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Quality Score</span>
+              <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
+                    :class="profile.gradeClass(profile.data.quality_grade)"
+                    x-text="'Grade ' + profile.data.quality_grade"></span>
+            </div>
+            <div class="mt-3 flex items-end gap-2">
+              <span class="text-4xl font-semibold text-[#03466e]" x-text="profile.data.quality_score"></span>
+              <span class="pb-1 text-sm text-gray-400">/ 100</span>
+            </div>
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
+              <div class="h-full rounded-full bg-gradient-to-r from-[#f68712] to-[#ffb45a]"
+                   :style="`width:${Math.max(0, Math.min(100, profile.data.quality_score || 0))}%`"></div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Records</span>
+            <div class="mt-3 text-3xl font-semibold text-[#03466e]" x-text="profile.number(profile.data.total_records)"></div>
+            <p class="mt-2 text-sm text-gray-500">
+              <span x-text="profile.number(profile.data.sampled_records)"></span>
+              sampled
+              <span x-show="profile.data.is_sample" class="text-amber-600 font-medium">(sample view)</span>
+            </p>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Columns</span>
+            <div class="mt-3 text-3xl font-semibold text-[#03466e]" x-text="profile.number(profile.data.column_count)"></div>
+            <p class="mt-2 text-sm text-gray-500">Profile generated across the current schema.</p>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Generated</span>
+            <div class="mt-3 text-lg font-semibold text-[#03466e]" x-text="profile.formatDate(profile.data.generated_at)"></div>
+            <p class="mt-2 text-sm text-gray-500">Refresh after imports or data edits for a fresh snapshot.</p>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-800">Column Breakdown</h3>
+              <p class="text-sm text-gray-500">Completeness, uniqueness, and type-specific stats for each field.</p>
+            </div>
+            <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600"
+                  x-text="profile.number(profile.data.columns.length) + ' column' + (profile.data.columns.length === 1 ? '' : 's')"></span>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <template x-for="column in profile.data.columns" :key="column.name">
+              <div class="rounded-2xl border border-gray-200 bg-[#fbfdff] p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <h4 class="text-sm font-semibold text-gray-800" x-text="column.name"></h4>
+                      <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+                            x-text="column.type"></span>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">
+                      <span x-text="profile.number(column.non_null_count)"></span> non-null of
+                      <span x-text="profile.number(column.total_count)"></span>
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-lg font-semibold text-[#03466e]" x-text="profile.percent(column.completeness_pct)"></div>
+                    <div class="text-[11px] uppercase tracking-wide text-gray-400">complete</div>
+                  </div>
+                </div>
+
+                <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
+                  <div class="h-full rounded-full bg-gradient-to-r from-[#03466e] to-[#26a0da]"
+                       :style="`width:${Math.max(0, Math.min(100, column.completeness_pct || 0))}%`"></div>
+                </div>
+
+                <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                    <div class="text-[11px] uppercase tracking-wide text-gray-400">Unique Values</div>
+                    <div class="mt-1 font-semibold text-gray-800" x-text="profile.number(column.unique_count)"></div>
+                  </div>
+                  <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                    <div class="text-[11px] uppercase tracking-wide text-gray-400">Null Values</div>
+                    <div class="mt-1 font-semibold text-gray-800" x-text="profile.number(column.null_count)"></div>
+                  </div>
+                </div>
+
+                <template x-if="profile.isNumeric(column)">
+                  <div class="mt-4 space-y-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <template x-for="stat in profile.numericStats(column)" :key="stat.label">
+                        <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                          <div class="text-[11px] uppercase tracking-wide text-gray-400" x-text="stat.label"></div>
+                          <div class="mt-1 font-semibold text-gray-800" x-text="stat.value"></div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <template x-if="profile.hasHistogram(column)">
+                      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="rounded-2xl bg-white border border-gray-100 p-4">
+                          <div class="flex items-center justify-between gap-3">
+                            <div>
+                              <div class="text-[11px] uppercase tracking-wide text-gray-400">Histogram</div>
+                              <div class="text-sm font-semibold text-gray-800">Distribution across bins</div>
+                            </div>
+                            <div class="text-xs text-gray-400" x-text="profile.histogramLabel(column)"></div>
+                          </div>
+                          <div class="mt-4">
+                            <div class="relative h-24">
+                              <div class="absolute inset-x-0 bottom-0 h-px bg-gray-200"></div>
+                              <div class="absolute inset-0 flex items-end gap-1">
+                                <template x-for="(bin, idx) in column.histogram" :key="`${column.name}-bar-${idx}`">
+                                  <div class="flex-1 h-full flex items-end">
+                                    <div class="w-full rounded-t-md bg-gradient-to-t from-[#03466e] to-[#f68712] opacity-90"
+                                         :style="profile.histogramBarStyle(column, bin)"></div>
+                                  </div>
+                                </template>
+                              </div>
+                            </div>
+                            <div class="mt-2 flex gap-1">
+                              <template x-for="(bin, idx) in column.histogram" :key="`${column.name}-tick-${idx}`">
+                                <div class="flex-1 text-[10px] text-gray-400 leading-tight text-center" x-text="profile.histogramTick(bin)"></div>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
+
+                        <template x-if="column.box_plot">
+                          <div class="rounded-2xl bg-white border border-gray-100 p-4">
+                            <div class="flex items-center justify-between gap-3">
+                              <div>
+                                <div class="text-[11px] uppercase tracking-wide text-gray-400">Box Plot</div>
+                                <div class="text-sm font-semibold text-gray-800">Median, quartiles, and spread</div>
+                              </div>
+                              <div class="text-xs text-gray-400" x-text="'IQR ' + profile.formatNumeric(column.box_plot.iqr)"></div>
+                            </div>
+                            <div class="mt-5 relative h-16">
+                              <div class="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-gray-100"></div>
+                              <div class="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-[#03466e]"
+                                   :style="profile.boxWhiskerStyle(column)"></div>
+                              <div class="absolute top-1/2 -translate-y-1/2 h-8 rounded-xl bg-[#f68712]/20 border border-[#f68712]"
+                                   :style="profile.boxBodyStyle(column)"></div>
+                              <div class="absolute top-1/2 -translate-y-1/2 w-1 h-10 rounded-full bg-[#03466e]"
+                                   :style="profile.boxMedianStyle(column)"></div>
+                              <div class="absolute top-1/2 -translate-y-1/2 w-[2px] h-6 bg-gray-500"
+                                   :style="profile.boxTickStyle(column, column.box_plot.whisker_min)"></div>
+                              <div class="absolute top-1/2 -translate-y-1/2 w-[2px] h-6 bg-gray-500"
+                                   :style="profile.boxTickStyle(column, column.box_plot.whisker_max)"></div>
+                            </div>
+                            <div class="mt-3 grid grid-cols-5 gap-2 text-[11px] text-gray-500">
+                              <div><span class="block uppercase tracking-wide text-gray-400">Min</span><span class="font-semibold text-gray-700" x-text="profile.formatNumeric(column.box_plot.min)"></span></div>
+                              <div><span class="block uppercase tracking-wide text-gray-400">Q1</span><span class="font-semibold text-gray-700" x-text="profile.formatNumeric(column.box_plot.q1)"></span></div>
+                              <div><span class="block uppercase tracking-wide text-gray-400">Median</span><span class="font-semibold text-gray-700" x-text="profile.formatNumeric(column.box_plot.median)"></span></div>
+                              <div><span class="block uppercase tracking-wide text-gray-400">Q3</span><span class="font-semibold text-gray-700" x-text="profile.formatNumeric(column.box_plot.q3)"></span></div>
+                              <div><span class="block uppercase tracking-wide text-gray-400">Max</span><span class="font-semibold text-gray-700" x-text="profile.formatNumeric(column.box_plot.max)"></span></div>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+
+                <template x-if="profile.isDate(column)">
+                  <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">Min Date</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="column.min_date || '—'"></div>
+                    </div>
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">Max Date</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="column.max_date || '—'"></div>
+                    </div>
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">Range</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="column.date_range_days !== undefined ? profile.number(column.date_range_days) + ' days' : '—'"></div>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-if="profile.isBoolean(column)">
+                  <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">True Count</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="profile.number(column.true_count)"></div>
+                    </div>
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">False Count</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="profile.number(column.false_count)"></div>
+                    </div>
+                    <div class="rounded-xl bg-white border border-gray-100 px-3 py-2">
+                      <div class="text-[11px] uppercase tracking-wide text-gray-400">True %</div>
+                      <div class="mt-1 font-semibold text-gray-800" x-text="profile.percent(column.true_pct)"></div>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-if="profile.hasTopValues(column)">
+                  <div class="mt-4">
+                    <div class="text-[11px] uppercase tracking-wide text-gray-400 mb-2">Top Values</div>
+                    <div class="flex flex-wrap gap-2">
+                      <template x-for="item in column.top_values" :key="`${column.name}-${item.value}`">
+                        <div class="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700">
+                          <span class="font-medium max-w-[14rem] truncate" x-text="item.value || 'Blank'"></span>
+                          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500" x-text="profile.number(item.count)"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 
   <div x-show="activeTab === 'records'" x-cloak class="p-6">
@@ -496,6 +774,150 @@ function tableManager() {
   return {
     activeTab: '{{ request.GET.tab|default:"records" }}',
     search: '',
+    profile: {
+      data: null,
+      loading: false,
+      loaded: false,
+      error: '',
+
+      async load(force = false) {
+        if (this.loading) return;
+        if (this.loaded && !force) return;
+
+        this.loading = true;
+        this.error = '';
+        try {
+          const res = await fetch('{{ profile_api_url }}', {
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to load table profile.');
+          this.data = data;
+          this.loaded = true;
+        } catch (e) {
+          this.error = e.message;
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      gradeClass(grade) {
+        return {
+          'A': 'bg-emerald-100 text-emerald-700',
+          'B': 'bg-blue-100 text-blue-700',
+          'C': 'bg-amber-100 text-amber-700',
+          'D': 'bg-orange-100 text-orange-700',
+          'F': 'bg-red-100 text-red-700',
+        }[grade] || 'bg-gray-100 text-gray-700';
+      },
+
+      number(value) {
+        if (value === null || value === undefined || value === '') return '—';
+        return Number(value).toLocaleString();
+      },
+
+      percent(value) {
+        if (value === null || value === undefined || value === '') return '—';
+        return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+      },
+
+      formatNumeric(value) {
+        if (value === null || value === undefined || value === '') return '—';
+        return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      },
+
+      formatDate(value) {
+        if (!value) return '—';
+        const dt = new Date(value);
+        if (Number.isNaN(dt.getTime())) return value;
+        return dt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      },
+
+      isNumeric(column) {
+        return ['number', 'currency', 'percentage'].includes(column.type);
+      },
+
+      isDate(column) {
+        return ['date', 'datetime'].includes(column.type);
+      },
+
+      isBoolean(column) {
+        return column.type === 'boolean';
+      },
+
+      hasTopValues(column) {
+        return Array.isArray(column.top_values) && column.top_values.length > 0;
+      },
+
+      hasHistogram(column) {
+        return Array.isArray(column.histogram) && column.histogram.length > 0;
+      },
+
+      numericStats(column) {
+        return [
+          { label: 'Mean', value: this.formatNumeric(column.mean) },
+          { label: 'Median', value: this.formatNumeric(column.median) },
+          { label: 'Std Dev', value: this.formatNumeric(column.std) },
+          { label: 'Min', value: this.formatNumeric(column.min) },
+          { label: 'Max', value: this.formatNumeric(column.max) },
+          { label: 'P25', value: this.formatNumeric(column.p25) },
+          { label: 'P75', value: this.formatNumeric(column.p75) },
+          { label: 'Skew', value: this.formatNumeric(column.skewness) },
+        ];
+      },
+
+      histogramBarStyle(column, bin) {
+        const maxCount = Math.max(...(column.histogram || []).map(item => Number(item.count) || 0), 1);
+        const count = Number(bin.count) || 0;
+        if (count <= 0) return 'height:0px;';
+        const px = Math.max(12, Math.round((count / maxCount) * 88));
+        return `height:${px}px;`;
+      },
+
+      histogramTick(bin) {
+        return `${this.formatNumeric(bin.start)}-${this.formatNumeric(bin.end)}`;
+      },
+
+      histogramLabel(column) {
+        const bins = column.histogram || [];
+        return `${bins.length} bins`;
+      },
+
+      boxPosition(column, value) {
+        const box = column.box_plot;
+        if (!box) return 0;
+        const min = Number(box.min);
+        const max = Number(box.max);
+        if (max === min) return 50;
+        return ((Number(value) - min) / (max - min)) * 100;
+      },
+
+      boxWhiskerStyle(column) {
+        const box = column.box_plot;
+        if (!box) return '';
+        const left = this.boxPosition(column, box.whisker_min);
+        const right = this.boxPosition(column, box.whisker_max);
+        return `left:${left}%; width:${Math.max(right - left, 1)}%;`;
+      },
+
+      boxBodyStyle(column) {
+        const box = column.box_plot;
+        if (!box) return '';
+        const left = this.boxPosition(column, box.q1);
+        const right = this.boxPosition(column, box.q3);
+        return `left:${left}%; width:${Math.max(right - left, 1)}%;`;
+      },
+
+      boxMedianStyle(column) {
+        const box = column.box_plot;
+        if (!box) return '';
+        return `left:${this.boxPosition(column, box.median)}%;`;
+      },
+
+      boxTickStyle(column, value) {
+        return `left:${this.boxPosition(column, value)}%;`;
+      },
+    },
 
     // ── Calculated fields sub-manager ──────────────────────────────
     cf: {
@@ -665,8 +1087,13 @@ function tableManager() {
 
     init() {
       this.$watch('search', val => this.filterRows(val));
+      if (this.activeTab === 'profile') this.loadProfile();
       // If landing on calcfields tab directly, load immediately
       if (this.activeTab === 'calcfields') this.loadCalcFields();
+    },
+
+    async loadProfile(force = false) {
+      await this.profile.load(force);
     },
 
     async loadCalcFields() {

@@ -2,7 +2,6 @@ FROM python:3.14-slim-bookworm
 
 ARG ENVIRONMENT=development
 
-# Install only required system dependencies (no vim, no netcat)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
@@ -11,49 +10,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# Copy dependency files
 COPY pyproject.toml uv.lock README.md ./
 
-# Create virtual environment and install dependencies
 RUN uv venv /opt/venv
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install project in editable mode with all dependencies
+COPY . .
+
 RUN uv pip install -e .
 
-# Install development tools only in development
 RUN if [ "$ENVIRONMENT" = "development" ]; then \
     uv pip install ipython django-extensions psutil debugpy django-redis; \
     fi
 
-# Copy the rest of the code
-COPY . .
-
-# Create necessary directories with proper permissions
 RUN mkdir -p /app/logs /app/staticfiles /app/static/media /app/staticfiles/admin && \
     chmod -R 777 /app/logs /app/staticfiles /app/static/media
 
-# Create non-root user for production only
 RUN if [ "$ENVIRONMENT" = "production" ]; then \
     adduser --disabled-password --gecos '' appuser && \
     chown -R appuser:appuser /app; \
     fi
 
-# Set default settings
 ENV DJANGO_SETTINGS_MODULE=config.settings.development
 
 EXPOSE 8000
 
-# Health check (remains)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health/ || exit 1
 
-# No wait script – rely on docker-compose health checks
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

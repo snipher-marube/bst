@@ -27,6 +27,12 @@
         style="background:#f68712">
   <i class="fas fa-plus text-xs"></i> Add Widget
 </button>
+<button id="themeToggleBtn"
+        onclick="toggleDashboardTheme()"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">
+  <i class="fas fa-moon text-xs"></i>
+  <span>Dark Mode</span>
+</button>
 {% endblock %}
 
 {% block extra_head %}
@@ -36,17 +42,65 @@
 <style>
   :root {
     --primary: #03466e;
-    --accent:  #f68712;
-    --success: #10b981;
+    --accent:  #19d3b5;
+    --success: #19d3b5;
     --error:   #ef4444;
+    --shell:   #f8fafc;
+    --panel:   #ffffff;
+    --panel-2: #f8fafc;
+    --line:    #e5e7eb;
+    --muted:   #9ca3af;
+    --text:    #111827;
+    --subtle:  #6b7280;
+    --hover:   #f9fafb;
+  }
+
+  html[data-theme="dark"] {
+    --primary: #dbeafe;
+    --accent:  #19d3b5;
+    --success: #19d3b5;
+    --error:   #f87171;
+    --shell:   #09111d;
+    --panel:   #111827;
+    --panel-2: #0f172a;
+    --line:    #243244;
+    --muted:   #94a3b8;
+    --text:    #e5eefc;
+    --subtle:  #9fb0c5;
+    --hover:   #172131;
+  }
+
+  #dashboardShell { background: var(--shell); color: var(--text); transition: background .2s ease, color .2s ease; }
+  .dashboard-meta,
+  .dashboard-card,
+  .dashboard-filterbar,
+  #emptyState {
+    background: var(--panel) !important;
+    border-color: var(--line) !important;
+    color: var(--text);
+  }
+  .dashboard-meta a,
+  .dashboard-meta span,
+  .dashboard-card,
+  #emptyState p { color: var(--subtle); }
+  .dashboard-card-title,
+  #emptyState .empty-title { color: var(--text) !important; }
+  .dashboard-card-soft { background: var(--panel-2) !important; border-color: var(--line) !important; }
+  .dashboard-filterbar label,
+  .dashboard-filterbar button { color: var(--subtle); }
+  .dashboard-filterbar select,
+  .dashboard-filterbar input {
+    background: var(--panel);
+    border-color: var(--line);
+    color: var(--text);
   }
 
   /* ── gridstack ── */
   .grid-stack { background: transparent; }
   .grid-stack-item-content {
-    background: #fff !important;
+    background: var(--panel) !important;
     border-radius: .875rem !important;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--line);
     overflow: hidden !important;
     box-shadow: 0 1px 3px rgba(0,0,0,.07);
     transition: box-shadow .2s, transform .2s;
@@ -60,8 +114,8 @@
   .widget-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: .625rem 1rem;
-    background: #fff;
-    border-bottom: 1px solid #f3f4f6;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
     cursor: move; user-select: none;
   }
   .widget-header h3 {
@@ -70,18 +124,48 @@
   }
   .widget-actions { display: flex; gap: .25rem; opacity: 0; transition: opacity .2s; }
   .grid-stack-item-content:hover .widget-actions { opacity: 1; }
+  .widget-header-tools { display: flex; align-items: center; gap: .35rem; }
+  .widget-time-filter {
+    align-items: center; gap: .45rem; margin-right: .35rem;
+    min-width: 232px;
+  }
+  .widget-time-filter-label {
+    font-size: .6875rem; color: #6b7280; white-space: nowrap;
+  }
+  .widget-time-filter-sliders {
+    position: relative; width: 7rem; height: 1.25rem;
+  }
+  .widget-time-filter-input {
+    position: absolute; inset: 0; width: 100%; cursor: pointer;
+    pointer-events: none;
+    background: transparent;
+  }
+  .widget-time-filter-input.start {
+    accent-color: #4f8fdd;
+  }
+  .widget-time-filter-input.end {
+    accent-color: #14b8a6;
+  }
+  .widget-time-filter-input::-webkit-slider-thumb {
+    pointer-events: auto;
+  }
+  .widget-time-filter-input::-moz-range-thumb {
+    pointer-events: auto;
+  }
   .widget-action-btn {
-    background: transparent; border: none; color: #9ca3af;
+    background: transparent; border: none; color: var(--muted);
     padding: .25rem .375rem; border-radius: .375rem; cursor: pointer;
     font-size: .7rem; transition: all .15s;
   }
-  .widget-action-btn:hover { color: var(--accent); background: #f9fafb; }
+  .widget-action-btn:hover { color: var(--accent); background: var(--hover); }
   .widget-action-btn.del:hover { color: var(--error); }
 
   /* ── widget body ── */
   .widget-body {
     height: calc(100% - 41px);
     overflow: auto;
+    padding: 0 .75rem .75rem;
+    box-sizing: border-box;
   }
 
   /* ── KPI card variants ── */
@@ -92,7 +176,7 @@
   }
   .kpi-icon i { font-size: 1.125rem; }
   .kpi-num { font-size: 1.875rem; font-weight: 700; line-height: 1.1; letter-spacing: -.025em; }
-  .kpi-label { font-size: .6875rem; color: #6b7280; margin-top: .25rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
+  .kpi-label { font-size: .6875rem; color: var(--subtle); margin-top: .25rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
 
   /* colour palettes */
   .kpi-blue   { background: #eff6ff; } .kpi-blue   i { color: #3b82f6; } .kpi-blue   .kpi-num { color: #1e3a8a; }
@@ -103,35 +187,35 @@
   /* ── loading / error / empty ── */
   .state-center { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 1rem; gap: .5rem; }
   .state-center i { font-size: 2rem; }
-  .state-center p { font-size: .8125rem; color: #6b7280; margin: 0; }
+  .state-center p { font-size: .8125rem; color: var(--subtle); margin: 0; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   /* ── data table inside widget ── */
   .data-table { width: 100%; border-collapse: collapse; font-size: .75rem; }
-  .data-table th { background: #f9fafb; padding: .5rem .75rem; text-align: left; font-weight: 600; color: #374151; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
-  .data-table td { padding: .5rem .75rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
-  .data-table tbody tr:hover { background: #f9fafb; }
+  .data-table th { background: var(--panel-2); padding: .5rem .75rem; text-align: left; font-weight: 600; color: var(--text); position: sticky; top: 0; z-index: 10; border-bottom: 2px solid var(--line); white-space: nowrap; }
+  .data-table td { padding: .5rem .75rem; border-bottom: 1px solid var(--line); color: var(--text); }
+  .data-table tbody tr:hover { background: var(--hover); }
 
   /* ── modal ── */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; backdrop-filter: blur(4px); align-items: center; justify-content: center; }
   .modal-overlay.open { display: flex; }
-  .modal-box { background: #fff; border-radius: 1rem; width: 90%; max-width: 460px; overflow: auto; animation: slideUp .25s ease-out; }
+  .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; width: 90%; max-width: 460px; overflow: auto; animation: slideUp .25s ease-out; color: var(--text); }
   @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  .modal-head { padding: 1.25rem 1.5rem; border-bottom: 1px solid #e5e7eb; }
+  .modal-head { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--line); }
   .modal-head h2 { font-size: 1rem; font-weight: 700; color: var(--primary); margin: 0; }
   .modal-body-wrap { padding: 1.25rem 1.5rem; }
-  .modal-foot { padding: 1rem 1.5rem; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: .75rem; }
-  .form-label { display: block; font-size: .8125rem; font-weight: 500; color: #374151; margin-bottom: .375rem; }
-  .form-ctrl { width: 100%; padding: .5rem .75rem; border: 1px solid #d1d5db; border-radius: .5rem; font-size: .875rem; outline: none; transition: border-color .15s; }
-  .form-ctrl:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(246,135,18,.15); }
+  .modal-foot { padding: 1rem 1.5rem; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: .75rem; }
+  .form-label { display: block; font-size: .8125rem; font-weight: 500; color: var(--text); margin-bottom: .375rem; }
+  .form-ctrl { width: 100%; padding: .5rem .75rem; border: 1px solid var(--line); background:var(--panel); color:var(--text); border-radius: .5rem; font-size: .875rem; outline: none; transition: border-color .15s; }
+  .form-ctrl:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(25,211,181,.15); }
   .form-group { margin-bottom: 1rem; }
 
   .btn { display: inline-flex; align-items: center; gap: .375rem; padding: .5rem 1.125rem; border-radius: .5rem; font-size: .8125rem; font-weight: 600; cursor: pointer; border: none; transition: all .15s; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-primary:hover { background: #e07810; }
-  .btn-secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-  .btn-secondary:hover { background: #f9fafb; }
+  .btn-secondary { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .btn-secondary:hover { background: var(--hover); }
 
   /* ── empty dashboard ── */
   #emptyState { display: none; }
@@ -146,10 +230,10 @@
 {% endblock %}
 
 {% block main_content %}
-<div class="min-h-full bg-[#f8fafc]">
+<div id="dashboardShell" class="min-h-full">
 
   {# Dashboard meta bar #}
-  <div class="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-2 text-xs text-gray-400">
+  <div class="dashboard-meta border-b px-6 py-2 flex items-center gap-2 text-xs">
     <a href="{% url 'dashboard:home' %}" class="hover:text-[#03466e]">Overview</a>
     <i class="fas fa-chevron-right text-[10px]"></i>
     <span class="text-[#03466e] font-semibold">{{ dashboard.name }}</span>
@@ -161,7 +245,7 @@
   {# ── AI Insights panel (workspace overview only) ──────────────────── #}
   {% if ai_insights %}
   <div class="px-4 sm:px-6 pt-5 pb-1">
-    <div x-data="{ open: true }" class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div x-data="{ open: true }" class="dashboard-card rounded-2xl border shadow-sm overflow-hidden">
 
       {# Panel header #}
       <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-50 cursor-pointer select-none"
@@ -170,7 +254,7 @@
           <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:#f68712/10;background-color:rgba(246,135,18,.12)">
             <i class="fas fa-magic text-xs" style="color:#f68712"></i>
           </div>
-          <span class="text-sm font-semibold text-gray-800">AI Insights</span>
+          <span class="dashboard-card-title text-sm font-semibold">AI Insights</span>
           <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#03466e]/10 text-[#03466e]">
             {{ ai_insights|length }}
           </span>
@@ -183,7 +267,7 @@
       <div x-show="open" x-collapse>
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-5">
           {% for insight in ai_insights %}
-          <div class="rounded-xl border p-4 flex flex-col gap-2
+          <div class="dashboard-card-soft rounded-xl border p-4 flex flex-col gap-2
             {% if insight.insight_type == 'anomaly' %}border-red-100 bg-red-50/40
             {% elif insight.insight_type == 'trend' %}border-blue-100 bg-blue-50/40
             {% elif insight.insight_type == 'comparison' %}border-purple-100 bg-purple-50/40
@@ -211,10 +295,10 @@
             </div>
 
             {# Title #}
-            <p class="text-xs font-semibold text-gray-800 leading-snug">{{ insight.title }}</p>
+            <p class="dashboard-card-title text-xs font-semibold leading-snug">{{ insight.title }}</p>
 
             {# Narrative #}
-            <p class="text-xs text-gray-600 leading-relaxed flex-1">{{ insight.description }}</p>
+            <p class="text-xs leading-relaxed flex-1" style="color:var(--subtle)">{{ insight.description }}</p>
 
             {# Footer: table source + token count #}
             <div class="flex items-center justify-between pt-1 border-t border-white/60">
@@ -242,7 +326,7 @@
        x-data="filterBar()"
        x-init="init()"
        x-show="hasFilters"
-       class="bg-white border-b border-gray-100 px-4 sm:px-6 py-3">
+       class="dashboard-filterbar border-b px-4 sm:px-6 py-3">
     <div class="flex flex-wrap items-end gap-3">
 
       {# Dynamic filter controls – rendered by Alpine once dashboardData is ready #}
@@ -293,10 +377,10 @@
 
   <div class="p-4 sm:p-6">
     {# Empty state #}
-    <div id="emptyState" class="bg-white rounded-xl border border-dashed border-gray-300 py-20 text-center">
+    <div id="emptyState" class="rounded-xl border border-dashed py-20 text-center">
       <i class="fas fa-chart-line text-5xl text-gray-200 mb-4"></i>
-      <p class="text-lg font-semibold text-gray-400">No widgets yet</p>
-      <p class="text-sm text-gray-400 mt-1 mb-5">Click "Add Widget" in the top bar to build your dashboard.</p>
+      <p class="empty-title text-lg font-semibold">No widgets yet</p>
+      <p class="text-sm mt-1 mb-5" style="color:var(--subtle)">Click "Add Widget" in the top bar to build your dashboard.</p>
     </div>
 
     <div class="grid-stack" id="dashboard-grid"></div>
@@ -334,8 +418,12 @@
           <select id="widgetType" class="form-ctrl" required onchange="onTypeChange()">
             <option value="metric">KPI / Metric Card</option>
             <option value="line_chart">Line Chart – Trend over time</option>
+            <option value="area_chart">Area Chart – Filled trend over time</option>
             <option value="bar_chart">Bar Chart – Category comparison</option>
             <option value="pie_chart">Pie Chart – Part of whole</option>
+            <option value="histogram">Histogram – Distribution with KDE</option>
+            <option value="box_plot">Box Plot – Quartiles and spread</option>
+            <option value="scatter">Scatter Plot – Relationship between two measures</option>
             <option value="table">Data Table</option>
           </select>
         </div>
@@ -343,8 +431,12 @@
         {# Dynamic field selectors – shown/hidden by JS #}
         <div id="fieldConfig" class="hidden">
           <div id="numericFieldGroup" class="form-group hidden">
-            <label class="form-label">Measure (numeric field)</label>
+            <label class="form-label" id="numericFieldLabel">Measure (numeric field)</label>
             <select id="numericField" class="form-ctrl"></select>
+          </div>
+          <div id="secondaryNumericFieldGroup" class="form-group hidden">
+            <label class="form-label" id="secondaryNumericFieldLabel">Second numeric field</label>
+            <select id="secondaryNumericField" class="form-ctrl"></select>
           </div>
           <div id="aggregationGroup" class="form-group hidden">
             <label class="form-label">Aggregation</label>
@@ -360,6 +452,16 @@
           <div id="groupByGroup" class="form-group hidden">
             <label class="form-label">Group by</label>
             <select id="groupByField" class="form-ctrl"></select>
+          </div>
+          <div id="histogramBinsGroup" class="form-group hidden">
+            <label class="form-label" for="histogramBins">Histogram bins</label>
+            <input type="number" id="histogramBins" class="form-ctrl" min="5" max="40" value="12">
+          </div>
+          <div id="histogramKdeGroup" class="form-group hidden">
+            <label class="form-label" style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+              <input type="checkbox" id="histogramShowKde" checked>
+              <span>Overlay KDE curve</span>
+            </label>
           </div>
 
           {# ── Calculated expression panel ── #}
@@ -489,12 +591,23 @@
 //  BRAND COLOURS
 // ───────────────────────────────────────────────────────────────
 const BRAND = {
-  primary:  '#03466e',
-  accent:   '#f68712',
-  colors:   ['#03466e','#f68712','#0a7ebf','#e07810','#025b8c','#ff9f3c','#01304d','#fbc16a'],
-  gridColor:'rgba(0,0,0,.04)',
-  paper:    'rgba(0,0,0,0)',
+  primary:  '#19d3b5',
+  accent:   '#f4b740',
+  colors:   ['#19d3b5','#4f8fdd','#5ad7c2','#6aa7ea','#f4b740','#2dd4bf','#7dd3fc','#38bdf8'],
+  gridColor:'rgba(255,255,255,.88)',
+  paper:    '#d1dceb',
 };
+
+function currentChartTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    dark,
+    paper: dark ? '#162131' : '#d1dceb',
+    gridColor: dark ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.88)',
+    fontColor: dark ? '#c4d2e4' : '#6b7280',
+    hoverBg: dark ? '#0b1220' : '#1f2937',
+  };
+}
 
 // KPI icon/colour config
 const KPI_PALETTE = {
@@ -549,7 +662,7 @@ async function initDashboard() {
 function initGrid() {
   grid = GridStack.init({
     column: 12,
-    cellHeight: 90,
+    cellHeight: 104,
     margin: 8,
     float: true,
     animate: true,
@@ -586,6 +699,12 @@ function renderWidgets() {
   const sorted = [...dashboardData.widgets].sort((a, b) => {
     const pa = a.position || {y:0,x:0}, pb = b.position || {y:0,x:0};
     return pa.y !== pb.y ? pa.y - pb.y : pa.x - pb.x;
+  });
+
+  let barOrder = 0;
+  sorted.forEach(w => {
+    if (w.widget_type === 'bar_chart') barOrder += 1;
+    w._barOrder = w.widget_type === 'bar_chart' ? barOrder : null;
   });
 
   sorted.forEach(w => addWidgetToGrid(w));
@@ -626,15 +745,24 @@ function buildWidgetHTML(widget) {
       <div class="grid-stack-item-content">
         <div class="widget-header">
           <h3 title="${esc(widget.title)}">${esc(widget.title)}</h3>
-          <div class="widget-actions" role="group" aria-label="Widget actions for ${esc(widget.title)}">
-            <button class="widget-action-btn" onclick="refreshWidget('${widget.id}')"
-                    aria-label="Refresh ${esc(widget.title)}">
-              <i class="fas fa-sync-alt" aria-hidden="true"></i>
-            </button>
-            <button class="widget-action-btn del" onclick="deleteWidget('${widget.id}')"
-                    aria-label="Delete ${esc(widget.title)}">
-              <i class="fas fa-trash" aria-hidden="true"></i>
-            </button>
+          <div class="widget-header-tools">
+            <div id="widget-time-filter-${widget.id}" class="widget-time-filter" style="display:none">
+              <span id="widget-time-filter-label-${widget.id}" class="widget-time-filter-label"></span>
+              <div class="widget-time-filter-sliders">
+                <input id="widget-time-filter-start-${widget.id}" type="range" min="0" max="0" value="0" class="widget-time-filter-input start">
+                <input id="widget-time-filter-end-${widget.id}" type="range" min="0" max="0" value="0" class="widget-time-filter-input end">
+              </div>
+            </div>
+            <div class="widget-actions" role="group" aria-label="Widget actions for ${esc(widget.title)}">
+              <button class="widget-action-btn" onclick="refreshWidget('${widget.id}')"
+                      aria-label="Refresh ${esc(widget.title)}">
+                <i class="fas fa-sync-alt" aria-hidden="true"></i>
+              </button>
+              <button class="widget-action-btn del" onclick="deleteWidget('${widget.id}')"
+                      aria-label="Delete ${esc(widget.title)}">
+                <i class="fas fa-trash" aria-hidden="true"></i>
+              </button>
+            </div>
           </div>
         </div>
         <div class="widget-body" id="widget-${widget.id}" role="region" aria-label="${esc(widget.title)}">
@@ -666,8 +794,12 @@ function renderWidgetContent(widget) {
     case 'metric':     renderKPI(el, widget, data);           break;
     case 'table':      renderTable(el, data);                 break;
     case 'line_chart': renderChart(el, data, 'scatter', widget); break;
+    case 'area_chart': renderChart(el, data, 'area',    widget); break;
     case 'bar_chart':  renderChart(el, data, 'bar',     widget); break;
     case 'pie_chart':  renderChart(el, data, 'pie',     widget); break;
+    case 'histogram':  renderHistogramChart(el, data, widget); break;
+    case 'box_plot':   renderBoxPlotChart(el, data, widget); break;
+    case 'scatter':    renderScatterChart(el, data, widget); break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
   }
@@ -739,6 +871,109 @@ function _toDateOnly(label) {
   return (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) ? s.slice(0, 10) : s;
 }
 
+function _hexToRgb(hex) {
+  const cleaned = hex.replace('#', '');
+  const expanded = cleaned.length === 3 ? cleaned.split('').map((ch) => ch + ch).join('') : cleaned;
+  const value = parseInt(expanded, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function _rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function _mixColor(from, to, t) {
+  const a = _hexToRgb(from);
+  const b = _hexToRgb(to);
+  return _rgbToHex({
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  });
+}
+
+function _colorsWithSmallestYellow(values, horizontal) {
+  const nums = values.map((value) => Number(value) || 0);
+  const min = Math.min(...nums);
+  const colors = horizontal
+    ? (() => {
+        const splitIndex = Math.max(1, Math.ceil(nums.length / 2));
+        const topPalette = ['#19d3b5', '#12cbb2', '#0fc2ad', '#0db8a6'];
+        const basePalette = ['#4f8fdd', '#4384d2', '#3779c7', '#2c6fbc'];
+        return nums.map((_, index) => (
+          index < splitIndex
+            ? topPalette[index % topPalette.length]
+            : basePalette[(index - splitIndex) % basePalette.length]
+        ));
+      })()
+    : nums.map((_, i) => BRAND.colors[i % BRAND.colors.length]);
+  return colors.map((color, index) => (nums[index] === min ? '#f4b740' : color));
+}
+
+function _timeAxisLayout(labels) {
+  const count = labels.length;
+  return {
+    type: 'date',
+    tickformat: '%d %b %Y',
+    dtick: count <= 14 ? 86400000 : count <= 60 ? 7 * 86400000 : 'M1',
+  };
+}
+
+function _formatShortDate(label) {
+  const date = new Date(_toDateOnly(label));
+  if (Number.isNaN(date.getTime())) return String(label);
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function _setupHeaderTimeFilter(widget, plotDiv, labels, isDateAxis) {
+  const widgetId = widget?.id;
+  if (!widgetId) return;
+
+  const wrap = document.getElementById(`widget-time-filter-${widgetId}`);
+  const label = document.getElementById(`widget-time-filter-label-${widgetId}`);
+  const startInput = document.getElementById(`widget-time-filter-start-${widgetId}`);
+  const endInput = document.getElementById(`widget-time-filter-end-${widgetId}`);
+  if (!wrap || !label || !startInput || !endInput) return;
+
+  if (!isDateAxis || labels.length < 7) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  const maxIndex = labels.length - 1;
+  if (maxIndex < 2) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  const syncRange = (changed) => {
+    let start = Math.max(0, Math.min(Number(startInput.value) || 0, maxIndex));
+    let end = Math.max(0, Math.min(Number(endInput.value) || 0, maxIndex));
+    if (start >= end) {
+      if (changed === 'start') start = Math.max(0, end - 1);
+      else end = Math.min(maxIndex, start + 1);
+    }
+    startInput.value = String(start);
+    endInput.value = String(end);
+    Plotly.relayout(plotDiv, {
+      'xaxis.range': [_toDateOnly(labels[start]), _toDateOnly(labels[end])],
+    });
+    label.textContent = `${_formatShortDate(labels[start])} - ${_formatShortDate(labels[end])}`;
+  };
+
+  wrap.style.display = 'inline-flex';
+  [startInput, endInput].forEach((input) => {
+    input.min = '0';
+    input.max = String(maxIndex);
+    input.step = '1';
+  });
+  startInput.value = '0';
+  endInput.value = String(maxIndex);
+  startInput.oninput = () => syncRange('start');
+  endInput.oninput = () => syncRange('end');
+  syncRange();
+}
+
 function renderChart(el, data, chartType, widget) {
   let labels = [], values = [];
 
@@ -753,7 +988,8 @@ function renderChart(el, data, chartType, widget) {
 
   if (!labels.length) { el.innerHTML = `<div class="state-center"><i class="fas fa-chart-bar" style="color:#e5e7eb"></i><p>Not enough data</p></div>`; return; }
 
-  const nums = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
+  let nums = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
+  const chartTheme = currentChartTheme();
 
   // Read axis title overrides from viz_config (e.g. "date", "revenue", "sales")
   const viz      = widget?.viz_config || {};
@@ -762,36 +998,61 @@ function renderChart(el, data, chartType, widget) {
 
   // Detect whether x labels are ISO dates so we can tell Plotly to treat them
   // as a time axis (proper tick spacing, formatting, zoom behaviour).
-  const isDateAxis = chartType === 'scatter' && _labelsAreDates(labels);
+  const isDateAxis = (chartType === 'scatter' || chartType === 'area') && _labelsAreDates(labels);
   // Always pass clean YYYY-MM-DD strings to Plotly — strip any time component.
   const xValues = isDateAxis ? labels.map(_toDateOnly) : labels;
 
   let traces = [];
-  if (chartType === 'scatter') {
+  if (chartType === 'scatter' || chartType === 'area') {
     traces = [{
       type: 'scatter', mode: 'lines+markers',
       x: xValues, y: nums,
-      line: { color: BRAND.primary, width: 2.5, shape: 'spline' },
-      marker: { color: BRAND.accent, size: 6, line: { color: '#fff', width: 1.5 } },
+      line: { color: chartType === 'area' ? '#19d3b5' : '#4f8fdd', width: chartType === 'area' ? 2.6 : 1.9, shape: 'spline' },
+      marker: { color: chartType === 'area' ? BRAND.accent : '#4f8fdd', size: chartType === 'area' ? 5 : 6, line: { width: 0 } },
       fill: 'tozeroy',
-      fillcolor: 'rgba(3,70,110,.06)',
+      fillcolor: chartType === 'area' ? 'rgba(25,211,181,.20)' : 'rgba(79,143,221,.12)',
       hovertemplate: isDateAxis
         ? '<b>%{x|%d %b %Y}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>'
         : '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else if (chartType === 'bar') {
+    const horizontal = labels.length > 5;
+    const pairs = labels.map((label, index) => ({
+      label,
+      value: Number(nums[index] ?? 0),
+    }));
+    const sortAscending = Number(widget?._barOrder || 1) % 2 === 0;
+    const orderedPairs = [...pairs].sort((a, b) => sortAscending ? a.value - b.value : b.value - a.value);
+    labels = orderedPairs.map(({ label }) => label);
+    nums = orderedPairs.map(({ value }) => value);
+    const barWidth = horizontal ? 0.46 : 0.42;
     traces = [{
-      type: 'bar', x: labels, y: nums,
+      type: 'bar',
+      x: horizontal ? nums : labels,
+      y: horizontal ? labels : nums,
+      orientation: horizontal ? 'h' : 'v',
+      width: barWidth,
       marker: {
-        color: nums.map((_, i) => BRAND.colors[i % BRAND.colors.length]),
-        opacity: .85,
-        line: { color: 'rgba(255,255,255,.6)', width: 1 },
+        color: _colorsWithSmallestYellow(nums, horizontal),
+        line: { color: 'rgba(255,255,255,.36)', width: 0.8 },
       },
-      hovertemplate: '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
+      hovertemplate: horizontal
+        ? '<b>%{y}</b><br>' + (yTitle || 'Value') + ': <b>%{x:,.2f}</b><extra></extra>'
+        : '<b>%{x}</b><br>' + (yTitle || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else {
+    const slices = labels.map((label, index) => ({
+      label,
+      value: Number(nums[index] ?? 0),
+    })).filter(({ label, value }) => label !== null && label !== undefined && label !== '' && Number.isFinite(value) && value > 0);
+    if (!slices.length) {
+      el.innerHTML = `<div class="state-center"><i class="fas fa-chart-pie" style="color:#e5e7eb"></i><p>No chartable categories</p></div>`;
+      return;
+    }
     traces = [{
-      type: 'pie', labels, values: nums,
+      type: 'pie',
+      labels: slices.map(({ label }) => label),
+      values: slices.map(({ value }) => value),
       marker: { colors: BRAND.colors, line: { color: '#fff', width: 2 } },
       hovertemplate: '<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
       textinfo: 'percent',
@@ -800,34 +1061,34 @@ function renderChart(el, data, chartType, widget) {
   }
 
   // Bottom margin grows when we show axis titles so the labels aren't clipped.
-  const bMargin = chartType !== 'pie' ? (xTitle ? 56 : 40) : 10;
-  const lMargin = chartType !== 'pie' ? (yTitle ? 64 : 50) : 10;
+  const isHorizontalBar = chartType === 'bar' && labels.length > 5;
+  const bMargin = chartType !== 'pie' ? (isHorizontalBar ? 46 : 82) : 14;
+  const lMargin = chartType !== 'pie' ? (isHorizontalBar ? 132 : (yTitle ? 72 : 58)) : 14;
 
   const layout = {
-    paper_bgcolor: BRAND.paper,
-    plot_bgcolor:  BRAND.paper,
-    margin: chartType === 'pie' ? {t:10, r:10, b:10, l:10} : {t:10, r:12, b:bMargin, l:lMargin},
-    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    paper_bgcolor: chartTheme.paper,
+    plot_bgcolor:  chartTheme.paper,
+    bargap: chartType === 'bar' ? (isHorizontalBar ? 0.62 : 0.54) : undefined,
+    margin: chartType === 'pie' ? {t:14, r:14, b:14, l:14} : {t:14, r:18, b:bMargin, l:lMargin},
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: chartTheme.fontColor },
     showlegend: false,
     xaxis: chartType !== 'pie' ? {
-      gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
-      tickfont: { size: 10 }, automargin: true,
+      showgrid: false,
+      gridcolor: chartTheme.gridColor, zerolinecolor: chartTheme.gridColor,
+      tickfont: { size: 10, color: chartTheme.fontColor }, automargin: true,
       // Tell Plotly this is a date axis so it formats ticks as dates.
-      ...(isDateAxis ? {
-        type: 'date',
-        tickformat: '%d %b %Y',
-        dtick: labels.length <= 14 ? 86400000       // daily ticks up to 14 pts
-             : labels.length <= 60 ? 7 * 86400000   // weekly ticks up to 60 pts
-             : 'M1',                                 // monthly ticks beyond that
-      } : {}),
+      ...(isDateAxis ? _timeAxisLayout(labels) : {}),
+      ...(!isHorizontalBar && chartType === 'bar' ? { tickangle: -45 } : {}),
       ...(xTitle ? { title: { text: xTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
     yaxis: chartType !== 'pie' ? {
-      gridcolor: BRAND.gridColor, zerolinecolor: BRAND.gridColor,
-      tickfont: { size: 10 }, automargin: true,
+      gridcolor: chartTheme.gridColor, zerolinecolor: chartTheme.gridColor,
+      tickfont: { size: 10, color: chartTheme.fontColor }, automargin: true,
       tickformat: ',',
+      ...(isHorizontalBar ? { autorange: 'reversed' } : {}),
       ...(yTitle ? { title: { text: yTitle, font: { size: 11, color: '#6b7280' }, standoff: 8 } } : {}),
     } : undefined,
+    hoverlabel: { bgcolor: chartTheme.hoverBg, font: { color: '#fff', size: 12 } },
   };
 
   el.innerHTML = '';
@@ -842,6 +1103,7 @@ function renderChart(el, data, chartType, widget) {
   Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
   // Register for resize events triggered by GridStack
   if (widget?.id) plotlyDivs.set(widget.id, div);
+  _setupHeaderTimeFilter(widget, div, xValues, isDateAxis);
 
   if (desc) {
     const foot = document.createElement('div');
@@ -853,6 +1115,163 @@ function renderChart(el, data, chartType, widget) {
     foot.innerHTML = `<i class="fas fa-lightbulb" style="color:#f68712;margin-right:.3rem;font-size:.6rem"></i>${esc(desc)}`;
     el.appendChild(foot);
   }
+}
+
+function renderHistogramChart(el, data, widget) {
+  const values = Array.isArray(data.values) ? data.values : [];
+  if (!values.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-chart-column" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget?.viz_config || {};
+  const traces = [{
+    type: 'histogram',
+    x: values,
+    nbinsx: data.bins || 12,
+    marker: { color: BRAND.primary, opacity: 0.78, line: { color: '#ffffff', width: 1 } },
+    histnorm: data.kde ? 'probability density' : '',
+    name: 'Distribution',
+    hovertemplate: '<b>Range</b><br>%{x}<br>Count: <b>%{y}</b><extra></extra>',
+  }];
+
+  if (data.kde && Array.isArray(data.kde.x) && Array.isArray(data.kde.y)) {
+    traces.push({
+      type: 'scatter',
+      mode: 'lines',
+      x: data.kde.x,
+      y: data.kde.y,
+      line: { color: BRAND.accent, width: 3, shape: 'spline', smoothing: 0.8 },
+      name: 'KDE',
+      hovertemplate: '<b>%{x:,.2f}</b><br>Density: <b>%{y:.4f}</b><extra></extra>',
+    });
+  }
+
+  const layout = {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    barmode: 'overlay',
+    showlegend: !!data.kde,
+    legend: { orientation: 'h', y: -0.2, x: 0, font: { size: 10 } },
+    xaxis: {
+      title: { text: viz.x_axis || data.field || 'Value', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      gridcolor: BRAND.gridColor,
+      zerolinecolor: BRAND.gridColor,
+      automargin: true,
+    },
+    yaxis: {
+      title: { text: data.kde ? 'Density' : 'Count', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      gridcolor: BRAND.gridColor,
+      zerolinecolor: BRAND.gridColor,
+      automargin: true,
+    },
+  };
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+  Plotly.newPlot(div, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+function renderBoxPlotChart(el, data, widget) {
+  const values = Array.isArray(data.values) ? data.values : [];
+  if (!values.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-box" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget?.viz_config || {};
+  const layout = {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: false,
+    xaxis: {
+      title: { text: viz.x_axis || data.field || 'Distribution', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      showgrid: false,
+      zeroline: false,
+      automargin: true,
+    },
+    yaxis: {
+      title: { text: viz.y_axis || data.field || 'Value', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      gridcolor: BRAND.gridColor,
+      zerolinecolor: BRAND.gridColor,
+      automargin: true,
+    },
+  };
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+  Plotly.newPlot(div, [{
+    type: 'box',
+    y: values,
+    name: data.field || 'Values',
+    boxmean: true,
+    marker: { color: BRAND.accent, size: 5, opacity: 0.7 },
+    line: { color: BRAND.primary, width: 2 },
+    fillcolor: 'rgba(246,135,18,.18)',
+    hovertemplate: '<b>%{y:,.2f}</b><extra></extra>',
+  }], layout, { responsive: true, displaylogo: false, displayModeBar: false });
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+function renderScatterChart(el, data, widget) {
+  const points = Array.isArray(data.points) ? data.points : [];
+  if (!points.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-braille" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget?.viz_config || {};
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.innerHTML = '';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'scatter',
+    mode: 'markers',
+    x: points.map(p => p.x),
+    y: points.map(p => p.y),
+    text: points.map(p => p.label || ''),
+    marker: {
+      color: BRAND.accent,
+      size: 9,
+      opacity: 0.7,
+      line: { color: '#ffffff', width: 1 },
+    },
+    hovertemplate: (
+      `<b>${esc(viz.x_axis || data.x_field || 'X')}</b>: %{x:,.2f}<br>` +
+      `<b>${esc(viz.y_axis || data.y_field || 'Y')}</b>: %{y:,.2f}` +
+      `<br>%{text}<extra></extra>`
+    ),
+  }], {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: false,
+    xaxis: {
+      title: { text: viz.x_axis || data.x_field || 'X Axis', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      gridcolor: BRAND.gridColor,
+      zerolinecolor: BRAND.gridColor,
+      automargin: true,
+    },
+    yaxis: {
+      title: { text: viz.y_axis || data.y_field || 'Y Axis', font: { size: 11, color: '#6b7280' }, standoff: 8 },
+      gridcolor: BRAND.gridColor,
+      zerolinecolor: BRAND.gridColor,
+      automargin: true,
+    },
+  }, { responsive: true, displaylogo: false, displayModeBar: false });
+  if (widget?.id) plotlyDivs.set(widget.id, div);
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -1310,13 +1729,15 @@ function onTypeChange() {
   const numericF = schemaFields(schema, NUMERIC_TYPES);
   const dateF    = schemaFields(schema, DATE_TYPES);
   const textF    = schemaFields(schema, TEXT_TYPES);
-  const allF     = schema.map(f => f.name);
+  const numericLabel = document.getElementById('numericFieldLabel');
+  const secondaryLabel = document.getElementById('secondaryNumericFieldLabel');
 
   const show = id => document.getElementById(id).classList.remove('hidden');
   const hide = id => document.getElementById(id).classList.add('hidden');
 
   // Reset (keep calculatedExprGroup controlled by onAggTypeChange)
   hide('fieldConfig'); hide('numericFieldGroup'); hide('aggregationGroup'); hide('groupByGroup');
+  hide('secondaryNumericFieldGroup'); hide('histogramBinsGroup'); hide('histogramKdeGroup');
   const calcGroup = document.getElementById('calculatedExprGroup');
   if (calcGroup) calcGroup.style.display = 'none';
 
@@ -1328,23 +1749,50 @@ function onTypeChange() {
   show('fieldConfig');
 
   if (wType === 'metric') {
+    if (numericLabel) numericLabel.textContent = 'Measure (numeric field)';
     if (numericF.length) {
       populateSelect('numericField', numericF);
       show('numericFieldGroup');
       show('aggregationGroup');
     }
     // no group-by for metric
-  } else if (wType === 'line_chart') {
+  } else if (wType === 'line_chart' || wType === 'area_chart') {
+    if (numericLabel) numericLabel.textContent = 'Measure (numeric field)';
     if (numericF.length) { populateSelect('numericField', numericF); show('numericFieldGroup'); }
     // group-by: date fields first, then all
     const gbOptions = [...dateF, ...textF, ...numericF.filter(f => !dateF.includes(f))];
     if (gbOptions.length) { populateSelect('groupByField', gbOptions, '— auto detect —'); show('groupByGroup'); }
     show('aggregationGroup');
   } else if (wType === 'bar_chart' || wType === 'pie_chart') {
+    if (numericLabel) numericLabel.textContent = wType === 'pie_chart' ? 'Slice value (optional numeric field)' : 'Measure (numeric field)';
     if (numericF.length) { populateSelect('numericField', numericF); show('numericFieldGroup'); }
     const gbOptions = [...textF, ...dateF];
     if (gbOptions.length) { populateSelect('groupByField', gbOptions, '— auto detect —'); show('groupByGroup'); }
     show('aggregationGroup');
+  } else if (wType === 'scatter') {
+    if (numericLabel) numericLabel.textContent = 'X axis (numeric field)';
+    if (secondaryLabel) secondaryLabel.textContent = 'Y axis (numeric field)';
+    if (numericF.length) {
+      populateSelect('numericField', numericF);
+      populateSelect('secondaryNumericField', numericF);
+      if (numericF.length > 1) document.getElementById('secondaryNumericField').value = numericF[1];
+      show('numericFieldGroup');
+      show('secondaryNumericFieldGroup');
+    }
+  } else if (wType === 'histogram') {
+    if (numericLabel) numericLabel.textContent = 'Value field (numeric)';
+    if (numericF.length) {
+      populateSelect('numericField', numericF);
+      show('numericFieldGroup');
+    }
+    show('histogramBinsGroup');
+    show('histogramKdeGroup');
+  } else if (wType === 'box_plot') {
+    if (numericLabel) numericLabel.textContent = 'Value field (numeric)';
+    if (numericF.length) {
+      populateSelect('numericField', numericF);
+      show('numericFieldGroup');
+    }
   }
 
   // Auto-fill title
@@ -1358,8 +1806,12 @@ function autoFillTitle(wType, numericF, dateF, textF) {
   let title = '';
   if      (wType === 'metric')     title = numericF.length ? `Total ${numericF[0]}` : 'Total Records';
   else if (wType === 'line_chart') title = numericF.length ? `${numericF[0]} Over Time` : 'Records Over Time';
+  else if (wType === 'area_chart') title = numericF.length ? `${numericF[0]} Area Trend` : 'Area Trend';
   else if (wType === 'bar_chart')  title = numericF.length && textF.length ? `${numericF[0]} by ${textF[0]}` : (textF.length ? `${textF[0]} Distribution` : 'Comparison');
   else if (wType === 'pie_chart')  title = numericF.length && textF.length ? `${numericF[0]} by ${textF[0]}` : 'Breakdown';
+  else if (wType === 'histogram')  title = numericF.length ? `${numericF[0]} Distribution` : 'Histogram';
+  else if (wType === 'box_plot')   title = numericF.length ? `${numericF[0]} Box Plot` : 'Box Plot';
+  else if (wType === 'scatter')    title = numericF.length > 1 ? `${numericF[0]} vs ${numericF[1]}` : 'Scatter Plot';
   else if (wType === 'table')      title = 'Data Preview';
   el.value = title;
 }
@@ -1370,6 +1822,7 @@ function updatePreview(wType, numericF, dateF, textF, schema) {
   if (!schema || !schema.length) { el.classList.add('hidden'); return; }
   const parts = [`Type: ${wType.replace('_', ' ')}`];
   if (numericF && numericF.length) parts.push(`Measure: ${numericF[0]}`);
+  if (wType === 'scatter' && numericF && numericF.length > 1) parts.push(`Y axis: ${numericF[1]}`);
   if (dateF   && dateF.length)    parts.push(`Date field: ${dateF[0]}`);
   if (textF   && textF.length)    parts.push(`Category: ${textF[0]}`);
   txt.textContent = parts.join('  ·  ');
@@ -1473,13 +1926,39 @@ async function addWidget() {
 
 /** Auto-pick a group-by field when the user left it blank. */
 function autoGroupBy(wType, dateF, textF) {
-  if (wType === 'line_chart') return dateF[0] || 'created_at_date';
+  if (wType === 'line_chart' || wType === 'area_chart') return dateF[0] || 'created_at_date';
   if (wType === 'bar_chart' || wType === 'pie_chart') return textF[0] || dateF[0] || null;
   return null;
 }
 
 function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF, textF) {
   if (wType === 'table') return { limit: 20 };
+
+  if (wType === 'histogram') {
+    const bins = parseInt(document.getElementById('histogramBins')?.value || '12', 10);
+    return {
+      field: numericField,
+      bins: Number.isFinite(bins) ? bins : 12,
+      show_kde: !!document.getElementById('histogramShowKde')?.checked,
+      limit: 1000,
+    };
+  }
+
+  if (wType === 'box_plot') {
+    return {
+      field: numericField,
+      limit: 1000,
+    };
+  }
+
+  if (wType === 'scatter') {
+    const yField = document.getElementById('secondaryNumericField')?.value || numericF[1] || numericField;
+    return {
+      x_field: numericField,
+      y_field: yField,
+      limit: 1000,
+    };
+  }
 
   // ── Calculated expression widget ────────────────────────────────
   if (aggType === 'calculated') {
@@ -1508,7 +1987,7 @@ function buildQueryConfig(wType, numericField, groupBy, aggType, numericF, dateF
     return { aggregations: [agg] };
   }
 
-  // line / bar / pie — all need group_by
+  // line / area / bar / pie — all need group_by
   const agg = { type: useNumeric ? finalAgg : 'count', group_by: finalGroupBy, name: 'val' };
   if (useNumeric) agg.field = numericField;
   return { aggregations: [agg] };
@@ -1526,6 +2005,19 @@ function buildVizConfig(wType, numericField, groupByField, numericF) {
       prefix: ft === 'currency'   ? '$'  : '',
       suffix: ft === 'percentage' ? '%'  : '',
     };
+  }
+  if (wType === 'scatter') {
+    const yField = document.getElementById('secondaryNumericField')?.value || numericF[1] || 'y';
+    return { x_axis: numericField || 'x', y_axis: yField };
+  }
+  if (wType === 'histogram') {
+    return {
+      x_axis: numericField || 'value',
+      y_axis: document.getElementById('histogramShowKde')?.checked ? 'density' : 'count',
+    };
+  }
+  if (wType === 'box_plot') {
+    return { x_axis: 'distribution', y_axis: numericField || 'value' };
   }
   return { x_axis: groupByField || null, y_axis: 'val' };
 }
@@ -1971,5 +2463,28 @@ function filterBar() {
     },
   };
 }
+
+const DASHBOARD_THEME_KEY = 'analyticsmeta_dashboard_theme';
+
+function applyDashboardTheme(theme) {
+  const normalized = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', normalized);
+  localStorage.setItem(DASHBOARD_THEME_KEY, normalized);
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  btn.innerHTML = normalized === 'dark'
+    ? '<i class="fas fa-sun text-xs"></i><span>Light Mode</span>'
+    : '<i class="fas fa-moon text-xs"></i><span>Dark Mode</span>';
+}
+
+function toggleDashboardTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyDashboardTheme(current === 'dark' ? 'light' : 'dark');
+  if (dashboardData?.widgets?.length) renderWidgets();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  applyDashboardTheme(localStorage.getItem(DASHBOARD_THEME_KEY) || 'light');
+});
 </script>
 {% endblock %}

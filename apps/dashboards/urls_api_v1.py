@@ -16,6 +16,7 @@ urlpatterns = [
     # Tables (workspace-scoped)
     path('workspaces/<uuid:workspace_id>/tables/', api_v1.TableListCreateAPIView.as_view(), name='api_v1_tables'),
     path('tables/<uuid:pk>/', api_v1.TableDetailAPIView.as_view(), name='api_v1_table_detail'),
+    path('tables/<uuid:table_id>/profile/', api_v1.TableProfileAPIView.as_view(), name='api_v1_table_profile'),
 
     # Records (table-scoped)
     path('tables/<uuid:table_id>/records/', api_v1.RecordListCreateAPIView.as_view(), name='api_v1_records'),

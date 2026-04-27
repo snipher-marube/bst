@@ -17,7 +17,7 @@ from apps.dashboards.factories import (
     RecordFactory, DashboardFactory, WidgetFactory, ImportJobFactory,
 )
 from apps.dashboards.models import DataTable, Record, Dashboard, Widget, ImportJob
-from apps.dashboards.services import DataImportService, QueryEngine
+from apps.dashboards.services import DataImportService, QueryEngine, TableProfileService
 
 
 # ---------------------------------------------------------------------------
@@ -222,10 +222,10 @@ class TestDashboardModel(TestCase):
 
 class TestWidgetModel(TestCase):
 
-    def test_widget_types_include_all_nine(self):
+    def test_widget_types_include_distribution_and_scatter_widgets(self):
         types = [c[0] for c in Widget.WIDGET_TYPES]
-        for t in ['line_chart', 'bar_chart', 'pie_chart', 'table', 'metric',
-                  'number', 'gauge', 'heatmap', 'scatter']:
+        for t in ['line_chart', 'area_chart', 'bar_chart', 'pie_chart', 'table', 'metric',
+                  'number', 'gauge', 'heatmap', 'scatter', 'histogram', 'box_plot']:
             self.assertIn(t, types)
 
     def test_get_data_no_table_returns_error(self):
@@ -459,6 +459,27 @@ class TestQueryEngine(TestCase):
         w = self._widget('line_chart', {})
         result = self.engine.execute_widget_query(w)
         self.assertIn('error', result)
+
+    def test_execute_histogram_returns_values_and_kde(self):
+        w = self._widget('histogram', {'field': 'amount', 'bins': 8, 'show_kde': True})
+        result = self.engine.execute_widget_query(w)
+        self.assertEqual(result.get('field'), 'amount')
+        self.assertEqual(len(result.get('values', [])), 5)
+        self.assertIn('kde', result)
+
+    def test_execute_box_plot_returns_values_and_summary(self):
+        w = self._widget('box_plot', {'field': 'amount'})
+        result = self.engine.execute_widget_query(w)
+        self.assertEqual(result.get('field'), 'amount')
+        self.assertEqual(len(result.get('values', [])), 5)
+        self.assertEqual(result.get('summary', {}).get('median'), 300.0)
+
+    def test_execute_scatter_returns_points(self):
+        w = self._widget('scatter', {'x_field': 'amount', 'y_field': 'amount'})
+        result = self.engine.execute_widget_query(w)
+        self.assertEqual(result.get('x_field'), 'amount')
+        self.assertEqual(result.get('y_field'), 'amount')
+        self.assertEqual(len(result.get('points', [])), 5)
 
     # --- filters ---
 
@@ -790,6 +811,45 @@ class TestWorkspaceInsightService(TestCase):
         self.assertEqual(spec['title'], 'Revenue')
         self.assertIn('query_config', spec)
         self.assertIn('viz_config', spec)
+
+
+class TestTableProfileService(TestCase):
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.table = DataTableFactory(
+            workspace=self.workspace,
+            created_by=self.user,
+            schema=[
+                {'name': 'amount', 'type': 'number'},
+                {'name': 'status', 'type': 'text'},
+            ],
+        )
+
+        with patch('apps.dashboards.models.broadcast_widget_update.delay'), \
+             patch('apps.dashboards.models.notify_table_change.delay'):
+            Record.objects.bulk_create([
+                Record(table=self.table, created_by=self.user, data={'amount': 10, 'status': 'new'}),
+                Record(table=self.table, created_by=self.user, data={'amount': 20, 'status': 'new'}),
+                Record(table=self.table, created_by=self.user, data={'amount': 30, 'status': 'paid'}),
+                Record(table=self.table, created_by=self.user, data={'amount': 40, 'status': 'paid'}),
+                Record(table=self.table, created_by=self.user, data={'amount': 50, 'status': 'paid'}),
+            ])
+        self.table.record_count = 5
+        self.table.save(update_fields=['record_count'])
+
+    def test_numeric_column_includes_histogram_and_box_plot(self):
+        profile = TableProfileService(self.table).compute()
+        amount = next(col for col in profile['columns'] if col['name'] == 'amount')
+
+        self.assertIn('histogram', amount)
+        self.assertTrue(amount['histogram'])
+        self.assertIn('box_plot', amount)
+        self.assertEqual(amount['box_plot']['median'], 30.0)
+        self.assertEqual(amount['box_plot']['min'], 10.0)
+        self.assertEqual(amount['box_plot']['max'], 50.0)
+        self.assertEqual(sum(bin_['count'] for bin_ in amount['histogram']), 5)
 
 
 # ---------------------------------------------------------------------------
@@ -3152,6 +3212,36 @@ class TestDataSourceQueryEngine(TestCase):
         self.assertIn('val', result)
         self.assertEqual(result['val']['EMEA'], 50000.0)
 
+    def test_histogram_returns_values_and_bins(self):
+        engine = self._engine()
+        widget = self._make_widget('histogram', {
+            'field': 'revenue',
+            'bins': 8,
+            'show_kde': False,
+        })
+        rows = [(10.0,), (15.5,), (22.0,)]
+        with patch.object(engine, '_connect', return_value=self._mock_conn(rows, [('value',)])):
+            result = engine.execute_widget_query(widget)
+        self.assertEqual(result['field'], 'revenue')
+        self.assertEqual(result['bins'], 8)
+        self.assertEqual(result['values'], [10.0, 15.5, 22.0])
+        self.assertIsNone(result['kde'])
+
+    def test_scatter_returns_points(self):
+        engine = self._engine()
+        widget = self._make_widget('scatter', {
+            'x_field': 'revenue',
+            'y_field': 'margin',
+            'label_field': 'segment',
+        })
+        rows = [(10.0, 2.5, 'SMB'), (22.0, 5.0, 'Enterprise')]
+        with patch.object(engine, '_connect', return_value=self._mock_conn(rows, [('x',), ('y',), ('label',)])):
+            result = engine.execute_widget_query(widget)
+        self.assertEqual(result['x_field'], 'revenue')
+        self.assertEqual(result['y_field'], 'margin')
+        self.assertEqual(result['points'][0], {'x': 10.0, 'y': 2.5, 'label': 'SMB'})
+
+
     # ── where clause / injection safety ─────────────────────────────────
 
     def test_invalid_table_name_returns_error(self):
@@ -3192,6 +3282,55 @@ class TestDataSourceQueryEngine(TestCase):
         # Invalid field name must be silently skipped — no injection
         self.assertEqual(clause, '')
         self.assertEqual(params, [])
+
+
+class TestGoogleSheetsQueryEngine(TestCase):
+    def setUp(self):
+        self.user = UserFactory()
+        self.workspace = WorkspaceFactory(owner=self.user)
+        self.ds = DataSourceFactory.create(self.workspace, self.user)
+        self.ds.connector_type = 'google_sheets'
+
+    def _engine(self):
+        from apps.dashboards.services import GoogleSheetsQueryEngine
+        return GoogleSheetsQueryEngine(self.ds)
+
+    def _widget(self, widget_type, query_config):
+        widget = MagicMock()
+        widget.widget_type = widget_type
+        widget.source_table_name = 'Sheet1'
+        widget.query_config = query_config
+        return widget
+
+    def test_google_sheets_histogram_returns_values(self):
+        import pandas as pd
+
+        engine = self._engine()
+        widget = self._widget('histogram', {'field': 'revenue', 'bins': 6, 'show_kde': False})
+        df = pd.DataFrame({'revenue': ['10', '20.5', '$30.00', None]})
+        with patch.object(engine, '_sheet_to_df', return_value=df):
+            result = engine.execute_widget_query(widget)
+        self.assertEqual(result['field'], 'revenue')
+        self.assertEqual(result['bins'], 6)
+        self.assertEqual(result['values'], [10.0, 20.5, 30.0])
+
+    def test_google_sheets_scatter_returns_points(self):
+        import pandas as pd
+
+        engine = self._engine()
+        widget = self._widget('scatter', {
+            'x_field': 'revenue',
+            'y_field': 'margin',
+            'label_field': 'segment',
+        })
+        df = pd.DataFrame({
+            'revenue': ['10', '20'],
+            'margin': ['2.5', '5.0'],
+            'segment': ['SMB', 'Enterprise'],
+        })
+        with patch.object(engine, '_sheet_to_df', return_value=df):
+            result = engine.execute_widget_query(widget)
+        self.assertEqual(result['points'][1], {'x': 20.0, 'y': 5.0, 'label': 'Enterprise'})
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,8 @@ services:
         condition: service_healthy
     volumes:
       - app_logs:/app/logs
+    healthcheck:
+      disable: true
     deploy:
       replicas: 1     # NEVER increase — duplicate beat causes duplicate tasks
       resources:

@@ -256,6 +256,18 @@ class TableDetailAPIView(APIView):
         return Response(status=204)
 
 
+class TableProfileAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasWorkspaceAccess]
+
+    def get(self, request, table_id):
+        from .services import TableProfileService
+
+        workspace = _require_workspace(request)
+        table = get_object_or_404(DataTable, pk=table_id, workspace=workspace, is_active=True)
+        profile = TableProfileService(table).compute()
+        return Response(profile)
+
+
 # ---------------------------------------------------------------------------
 # RECORDS
 # ---------------------------------------------------------------------------

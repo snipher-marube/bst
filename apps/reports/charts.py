@@ -11,13 +11,15 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Brand palette — matches the Plotly frontend colours
-BRAND_COLORS = ['#03466e', '#0a8043', '#e37400', '#8e24aa',
-                '#1a73e8', '#c62828', '#00838f', '#f4511e']
+BRAND_COLORS = ['#1f77b4', '#f2a900', '#10a37f', '#3e8ec6',
+                '#f6b93b', '#2fb58f', '#165a8a', '#0d7a60']
+CHART_BG = '#dbe5f1'
+CHART_GRID = '#ffffff'
 
 
 def _to_image(fig, dpi: int = 150) -> bytes:
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor='white')
+    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor=CHART_BG)
     buf.seek(0)
     return buf.read()
 
@@ -48,9 +50,11 @@ def render_line_chart(
 ) -> bytes:
     plt, mticker = _get_matplotlib()
     fig, ax = plt.subplots(figsize=(width_in, height_in))
-    c = color or BRAND_COLORS[0]
+    c = color or '#4f8fdd'
+    ax.set_facecolor(CHART_BG)
+    fig.patch.set_facecolor(CHART_BG)
     ax.plot(labels, values, color=c, linewidth=2, marker='o', markersize=4)
-    ax.fill_between(range(len(labels)), values, alpha=0.12, color=c)
+    ax.fill_between(range(len(labels)), values, alpha=0.12, color='#4f8fdd')
     ax.set_title(title, fontsize=11, fontweight='bold', pad=8)
     ax.set_ylabel(y_label, fontsize=9)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(
@@ -58,6 +62,7 @@ def render_line_chart(
     ))
     ax.tick_params(axis='x', labelsize=7, rotation=30)
     ax.tick_params(axis='y', labelsize=7)
+    ax.grid(axis='y', color=CHART_GRID, linewidth=0.8, alpha=0.82)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.set_xticks(range(len(labels)))
@@ -79,22 +84,36 @@ def render_bar_chart(
 ) -> bytes:
     plt, mticker = _get_matplotlib()
     fig, ax = plt.subplots(figsize=(width_in, height_in))
-    colors = [BRAND_COLORS[i % len(BRAND_COLORS)] for i in range(len(labels))]
+    ax.set_facecolor(CHART_BG)
+    fig.patch.set_facecolor(CHART_BG)
+    pairs = sorted(zip(labels, values), key=lambda item: item[1], reverse=True)
+    labels = [label for label, _ in pairs]
+    values = [value for _, value in pairs]
     idx = range(len(labels))
     if horizontal:
-        ax.barh(idx, values, color=colors)
+        split_index = max(1, len(labels) // 2 + (len(labels) % 2))
+        colors = [
+            ['#19d3b5', '#12cbb2', '#0fc2ad', '#0db8a6'][i % 4] if i < split_index
+            else ['#4f8fdd', '#4384d2', '#3779c7', '#2c6fbc'][(i - split_index) % 4]
+            for i in range(len(labels))
+        ]
+        ax.barh(idx, values, color=colors, height=0.5)
         ax.set_yticks(list(idx))
         ax.set_yticklabels([str(l) for l in labels], fontsize=7)
+        ax.invert_yaxis()
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(
             lambda x, _: f'{x:,.0f}' if x == int(x) else f'{x:,.2f}'
         ))
     else:
-        ax.bar(idx, values, color=colors)
+        colors = [BRAND_COLORS[i % len(BRAND_COLORS)] for i in range(len(labels))]
+        ax.bar(idx, values, color=colors, width=0.48)
         ax.set_xticks(list(idx))
-        ax.set_xticklabels([str(l) for l in labels], rotation=30, ha='right', fontsize=7)
+        ax.set_xticklabels([str(l) for l in labels], rotation=45, ha='right', fontsize=7)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(
             lambda x, _: f'{x:,.0f}' if x == int(x) else f'{x:,.2f}'
         ))
+    ax.grid(axis='x' if horizontal else 'y', color=CHART_GRID, linewidth=0.8, alpha=0.82)
+    ax.set_axisbelow(True)
     ax.set_title(title, fontsize=11, fontweight='bold', pad=8)
     ax.set_ylabel(y_label if not horizontal else '', fontsize=9)
     ax.spines['top'].set_visible(False)
@@ -114,6 +133,8 @@ def render_pie_chart(
 ) -> bytes:
     plt, _ = _get_matplotlib()
     fig, ax = plt.subplots(figsize=(width_in, height_in))
+    ax.set_facecolor(CHART_BG)
+    fig.patch.set_facecolor(CHART_BG)
     colors = [BRAND_COLORS[i % len(BRAND_COLORS)] for i in range(len(labels))]
     wedges, texts, autotexts = ax.pie(
         values, labels=None, autopct='%1.1f%%',

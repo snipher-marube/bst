@@ -1,3 +1,9 @@
+name: analyticsmeta-dev
+
+x-app-env: &app-env
+  env_file:
+    - .env
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -6,7 +12,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5433:5432"
+      - "${DEV_POSTGRES_PORT:-15433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +29,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "${DEV_REDIS_PORT:-16380}:6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -38,6 +44,7 @@ services:
     cpus: '0.5'
 
   web:
+    <<: *app-env
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -45,31 +52,25 @@ services:
     volumes:
       - .:/app:cached
     ports:
-      - "8000:8000"
+      - "${DEV_WEB_PORT:-18000}:8000"
     environment:
-      - DEBUG=1
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
-      - REDIS_URL=redis://redis:6379/0
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=dev-secret-key
-      - DJANGO_SETTINGS_MODULE=config.settings.development
-      - PG_DATABASE_NAME_DEV=analyticsmeta
-      - PG_DATABASE_USER_DEV=postgres
-      - PG_DATABASE_PASSWORD_DEV=postgres
-      - PG_DATABASE_HOST_DEV=postgres
-      - PG_DATABASE_PORT_DEV=5432
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID:-}
-      - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET:-}
-      - EMAIL_HOST_USER=${EMAIL_HOST_USER:-}
-      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
-      - SUPPORT_EMAIL=${SUPPORT_EMAIL:-support@businessight.com}
-      - SALES_EMAIL=${SALES_EMAIL:-sales@businessight.com}
+      DEBUG: "1"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      PG_DATABASE_NAME_DEV: analyticsmeta
+      PG_DATABASE_USER_DEV: postgres
+      PG_DATABASE_PASSWORD_DEV: postgres
+      PG_DATABASE_HOST_DEV: postgres
+      PG_DATABASE_PORT_DEV: "5432"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@analyticsmeta.com}
+      SALES_EMAIL: ${SALES_EMAIL:-sales@analyticsmeta.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +88,7 @@ services:
     cpus: '0.5'
 
   celery-worker:
+    <<: *app-env
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -94,19 +96,19 @@ services:
     volumes:
       - .:/app:cached
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
-      - REDIS_URL=redis://redis:6379/0
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DJANGO_SETTINGS_MODULE=config.settings.development
-      - PG_DATABASE_NAME_DEV=analyticsmeta
-      - PG_DATABASE_USER_DEV=postgres
-      - PG_DATABASE_PASSWORD_DEV=postgres
-      - PG_DATABASE_HOST_DEV=postgres
-      - PG_DATABASE_PORT_DEV=5432
-      - SECRET_KEY=dev-secret-key
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      PG_DATABASE_NAME_DEV: analyticsmeta
+      PG_DATABASE_USER_DEV: postgres
+      PG_DATABASE_PASSWORD_DEV: postgres
+      PG_DATABASE_HOST_DEV: postgres
+      PG_DATABASE_PORT_DEV: "5432"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +127,7 @@ services:
     cpus: '0.5'
 
   celery-beat:
+    <<: *app-env
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -132,14 +135,14 @@ services:
     volumes:
       - .:/app:cached
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/analyticsmeta
-      - REDIS_URL=redis://redis:6379/0
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DJANGO_SETTINGS_MODULE=config.settings.development
-      - SECRET_KEY=dev-secret-key
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/analyticsmeta
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +152,8 @@ services:
         condition: service_healthy
     networks:
       - analytics_network
+    healthcheck:
+      disable: true
     mem_limit: 256m
     cpus: '0.5'
 

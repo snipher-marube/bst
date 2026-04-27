@@ -20,7 +20,7 @@ let currentWorkspace = null;
 let currentDashboard = null;
 let grid = null;
 
-// Map widgetId → { type, vizConfig } so re-renders know how to draw
+// Map widgetId → { type, vizConfig, barOrder } so re-renders know how to draw
 const widgetRegistry = new Map();
 
 // CSRF token (injected by Django into the page meta tag)
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initGrid() {
   grid = GridStack.init({
     column: 12,
-    cellHeight: 80,
+    cellHeight: 92,
     margin: 8,
     float: false,
     animate: true,
@@ -78,13 +78,16 @@ function loadDashboardFromPage() {
 // ---------------------------------------------------------------------------
 function renderWidgets(widgets) {
   grid.removeAll();
+  let barOrder = 0;
   widgets.forEach(widget => {
-    const pos  = widget.position || { x: 0, y: 0, w: 6, h: 4 };
+    const pos  = widget.position || { x: 0, y: 0, w: 6, h: 5 };
     const el   = createWidgetElement(widget);
     grid.addWidget(el, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, id: widget.id });
+    if (widget.widget_type === 'bar_chart') barOrder += 1;
     widgetRegistry.set(widget.id, {
       type:      widget.widget_type,
       vizConfig: widget.viz_config || {},
+      barOrder,
     });
     // Render data that was already server-rendered into the payload
     if (widget.widget_data) {
@@ -100,30 +103,40 @@ function createWidgetElement(widget) {
   div.className = 'grid-stack-item';
   div.setAttribute('gs-id', widget.id);
   div.innerHTML = `
-    <div class="grid-stack-item-content bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+    <div class="grid-stack-item-content rounded-xl shadow-sm border flex flex-col overflow-hidden" style="background:#ffffff;border-color:#e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.07);">
       <!-- Header -->
-      <div class="widget-drag-handle flex items-center justify-between px-4 py-2 border-b border-gray-100 cursor-move select-none bg-gray-50">
+      <div class="widget-drag-handle flex items-center justify-between px-4 py-2 border-b cursor-move select-none" style="background:#f9fafb;border-color:#e5e7eb;">
         <div class="flex items-center gap-2 min-w-0">
-          <i class="fas fa-grip-vertical text-gray-300 text-xs"></i>
-          <span class="text-sm font-semibold text-gray-700 truncate">${escHtml(widget.title)}</span>
+          <i class="fas fa-grip-vertical text-xs" style="color:#d1d5db"></i>
+          <span class="text-sm font-semibold truncate" style="color:#374151">${escHtml(widget.title)}</span>
         </div>
-        <div class="flex items-center gap-1 flex-shrink-0">
-          <button class="widget-refresh-btn p-1 text-gray-400 hover:text-[#03466e] transition-colors rounded"
+        <div class="flex items-center gap-3 flex-shrink-0">
+          <div id="widget-time-filter-${widget.id}" class="hidden items-center gap-2" style="min-width:220px;">
+            <span id="widget-time-filter-label-${widget.id}" class="text-[11px] whitespace-nowrap" style="color:#6b7280"></span>
+            <div class="relative w-28 h-5">
+              <input id="widget-time-filter-start-${widget.id}" type="range" min="0" max="0" value="0" class="absolute inset-0 w-full accent-blue-500 cursor-pointer" />
+              <input id="widget-time-filter-end-${widget.id}" type="range" min="0" max="0" value="0" class="absolute inset-0 w-full accent-cyan-500 cursor-pointer" />
+            </div>
+          </div>
+          <button class="widget-refresh-btn p-1 transition-colors rounded"
+                  style="color:#9ca3af"
                   data-id="${widget.id}" title="Refresh">
             <i class="fas fa-sync-alt text-xs"></i>
           </button>
-          <button class="widget-edit-btn p-1 text-gray-400 hover:text-[#f68712] transition-colors rounded"
+          <button class="widget-edit-btn p-1 transition-colors rounded"
+                  style="color:#9ca3af"
                   data-id="${widget.id}" title="Edit">
             <i class="fas fa-edit text-xs"></i>
           </button>
-          <button class="widget-delete-btn p-1 text-gray-400 hover:text-red-500 transition-colors rounded"
+          <button class="widget-delete-btn p-1 transition-colors rounded"
+                  style="color:#9ca3af"
                   data-id="${widget.id}" title="Delete">
             <i class="fas fa-trash text-xs"></i>
           </button>
         </div>
       </div>
       <!-- Body -->
-      <div class="widget-body flex-1 p-3 min-h-0" id="widget-body-${widget.id}">
+      <div class="widget-body flex-1 px-4 pb-4 pt-0 min-h-0" id="widget-body-${widget.id}">
         ${skeletonHtml(widget.widget_type)}
       </div>
     </div>
@@ -166,6 +179,7 @@ function fetchAndRenderWidget(widgetId) {
 function renderWidgetChart(widgetId, type, data, vizConfig) {
   const container = document.getElementById(`widget-body-${widgetId}`);
   if (!container) return;
+  const info = widgetRegistry.get(widgetId) || {};
 
   // Clear any skeleton
   container.innerHTML = '';
@@ -183,7 +197,8 @@ function renderWidgetChart(widgetId, type, data, vizConfig) {
     switch (type) {
       case 'metric':     renderMetric(container, data, vizConfig);    break;
       case 'line_chart': renderLineChart(container, data, vizConfig);  break;
-      case 'bar_chart':  renderBarChart(container, data, vizConfig);   break;
+      case 'area_chart': renderAreaChart(container, data, vizConfig);  break;
+      case 'bar_chart':  renderBarChart(container, data, vizConfig, info);   break;
       case 'pie_chart':  renderPieChart(container, data, vizConfig);   break;
       case 'table':      renderDataTable(container, data, vizConfig);  break;
       default:
@@ -263,41 +278,109 @@ function renderLineChart(container, data, viz) {
   const grouped = extractGroupedData(data, valKey);
 
   if (!grouped.labels.length) { renderWidgetEmptyInContainer(container, 'No data to chart'); return; }
+  const isDateAxis = labelsAreDates(grouped.labels);
+  const xValues = isDateAxis ? grouped.labels.map(toDateOnly) : grouped.labels;
 
   Plotly.newPlot(plotDiv, [{
-    x:    grouped.labels,
+    x:    xValues,
     y:    grouped.values,
     type: 'scatter',
     mode: 'lines+markers',
-    line: { color: '#03466e', width: 2.5, shape: 'spline', smoothing: 0.8 },
-    marker: { color: '#f68712', size: 5 },
-    hovertemplate: '<b>%{x}</b><br>%{y:,.2f}<extra></extra>',
+    line: { color: '#4f8fdd', width: 1.9, shape: 'spline', smoothing: 0.8 },
+    marker: { color: '#4f8fdd', size: 5, line: { width: 0 } },
+    hovertemplate: isDateAxis
+      ? '<b>%{x|%d %b %Y}</b><br>%{y:,.2f}<extra></extra>'
+      : '<b>%{x}</b><br>%{y:,.2f}<extra></extra>',
     fill: 'tozeroy',
-    fillcolor: 'rgba(3,70,110,0.06)',
-  }], plotlyLayout(container), plotlyConfig());
+    fillcolor: 'rgba(79,143,221,0.12)',
+  }], {
+    ...plotlyLayout(container),
+    xaxis: isDateAxis
+      ? timeAxisLayout(grouped.labels, plotlyLayout(container).xaxis)
+      : plotlyLayout(container).xaxis,
+  }, plotlyConfig());
+  setupHeaderTimeFilter(container, plotDiv, xValues, isDateAxis);
+}
+
+function renderAreaChart(container, data, viz) {
+  const plotDiv = createPlotDiv(container);
+  const valKey  = viz.y_axis || 'val';
+  const grouped = extractGroupedData(data, valKey);
+
+  if (!grouped.labels.length) { renderWidgetEmptyInContainer(container, 'No data to chart'); return; }
+  const isDateAxis = labelsAreDates(grouped.labels);
+  const xValues = isDateAxis ? grouped.labels.map(toDateOnly) : grouped.labels;
+
+  Plotly.newPlot(plotDiv, [{
+    x:    xValues,
+    y:    grouped.values,
+    type: 'scatter',
+    mode: 'lines+markers',
+    line: { color: '#19d3b5', width: 2.6, shape: 'spline', smoothing: 0.8 },
+    marker: { color: '#f2a900', size: 5, line: { width: 0 } },
+    hovertemplate: isDateAxis
+      ? '<b>%{x|%d %b %Y}</b><br>%{y:,.2f}<extra></extra>'
+      : '<b>%{x}</b><br>%{y:,.2f}<extra></extra>',
+    fill: 'tozeroy',
+    fillcolor: 'rgba(25,211,181,0.20)',
+  }], {
+    ...plotlyLayout(container),
+    xaxis: isDateAxis
+      ? timeAxisLayout(grouped.labels, plotlyLayout(container).xaxis)
+      : plotlyLayout(container).xaxis,
+  }, plotlyConfig());
+  setupHeaderTimeFilter(container, plotDiv, xValues, isDateAxis);
 }
 
 // ---------------------------------------------------------------------------
 // Bar chart
 // ---------------------------------------------------------------------------
-function renderBarChart(container, data, viz) {
+function renderBarChart(container, data, viz, meta = {}) {
   const plotDiv = createPlotDiv(container);
   const valKey  = viz.y_axis || 'val';
   const grouped = extractGroupedData(data, valKey);
 
   if (!grouped.labels.length) { renderWidgetEmptyInContainer(container, 'No data to chart'); return; }
 
+  const horizontal = grouped.labels.length > 5;
+  const pairs = grouped.labels.map((label, index) => ({
+    label,
+    value: Number(grouped.values[index] ?? 0),
+  }));
+  const sortAscending = Number(meta.barOrder || 1) % 2 === 0;
+  const orderedPairs = [...pairs].sort((a, b) => sortAscending ? a.value - b.value : b.value - a.value);
+  const labels = orderedPairs.map(({ label }) => label);
+  const values = orderedPairs.map(({ value }) => value);
+
+  const barWidth = horizontal ? 0.46 : 0.42;
+  const barColors = colorsWithSmallestYellow(values, horizontal);
+
   Plotly.newPlot(plotDiv, [{
-    x:    grouped.labels,
-    y:    grouped.values,
+    x:    horizontal ? values : labels,
+    y:    horizontal ? labels : values,
     type: 'bar',
+    orientation: horizontal ? 'h' : 'v',
+    width: barWidth,
     marker: {
-      color: grouped.values.map((_, i) =>
-        i % 2 === 0 ? '#03466e' : '#f68712'),
-      opacity: 0.85,
+      color: barColors,
+      line: { color: 'rgba(255,255,255,0.36)', width: 0.8 },
     },
-    hovertemplate: '<b>%{x}</b><br>%{y:,.2f}<extra></extra>',
-  }], plotlyLayout(container), plotlyConfig());
+    hovertemplate: horizontal
+      ? '<b>%{y}</b><br>%{x:,.2f}<extra></extra>'
+      : '<b>%{x}</b><br>%{y:,.2f}<extra></extra>',
+  }], {
+    ...plotlyLayout(container),
+    bargap: horizontal ? 0.62 : 0.54,
+    margin: horizontal
+      ? { t: 14, r: 18, b: 42, l: 118 }
+      : plotlyLayout(container).margin,
+    xaxis: horizontal
+      ? plotlyLayout(container).xaxis
+      : { ...plotlyLayout(container).xaxis, tickangle: -45, automargin: true },
+    yaxis: horizontal
+      ? { ...plotlyLayout(container).yaxis, autorange: 'reversed' }
+      : plotlyLayout(container).yaxis,
+  }, plotlyConfig());
 }
 
 // ---------------------------------------------------------------------------
@@ -310,14 +393,21 @@ function renderPieChart(container, data, viz) {
 
   if (!grouped.labels.length) { renderWidgetEmptyInContainer(container, 'No data to chart'); return; }
 
-  const palette = ['#03466e','#f68712','#0ea5e9','#10b981','#8b5cf6','#ef4444','#f59e0b','#14b8a6'];
+  const slices = grouped.labels.map((label, index) => ({
+    label,
+    value: Number(grouped.values[index] ?? 0),
+  })).filter(({ label, value }) => label !== null && label !== undefined && label !== '' && Number.isFinite(value) && value > 0);
+
+  if (!slices.length) { renderWidgetEmptyInContainer(container, 'No chartable categories'); return; }
+
+  const palette = ['#1f77b4','#f2a900','#10a37f','#3e8ec6','#f6b93b','#2fb58f','#165a8a','#0d7a60'];
 
   Plotly.newPlot(plotDiv, [{
-    labels: grouped.labels,
-    values: grouped.values,
+    labels: slices.map(({ label }) => label),
+    values: slices.map(({ value }) => value),
     type:   'pie',
     hole:   0.38,
-    marker: { colors: palette },
+    marker: { colors: palette, line: { color: '#ffffff', width: 2 } },
     textinfo: 'percent',
     hovertemplate: '<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
   }], {
@@ -397,17 +487,136 @@ function createPlotDiv(container) {
 }
 
 function plotlyLayout(container) {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   return {
-    margin:      { t: 8, r: 8, b: 36, l: 44 },
-    paper_bgcolor: 'transparent',
-    plot_bgcolor:  'transparent',
-    font:        { family: 'Inter, sans-serif', size: 11, color: '#6b7280' },
-    xaxis:       { showgrid: false, zeroline: false, tickfont: { size: 10 } },
-    yaxis:       { gridcolor: '#f3f4f6', zeroline: false, tickfont: { size: 10 } },
+    margin:      { t: 14, r: 18, b: 52, l: 56 },
+    paper_bgcolor: dark ? '#162131' : '#d1dceb',
+    plot_bgcolor:  dark ? '#162131' : '#d1dceb',
+    font:        { family: 'Inter, sans-serif', size: 11, color: dark ? '#c4d2e4' : '#6b7280' },
+    xaxis:       { showgrid: false, zeroline: false, tickfont: { size: 10, color: dark ? '#c4d2e4' : '#6b7280' } },
+    yaxis:       { gridcolor: dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.88)', zeroline: false, tickfont: { size: 10, color: dark ? '#c4d2e4' : '#6b7280' } },
     hovermode:   'closest',
-    hoverlabel:  { bgcolor: '#1f2937', font: { color: '#fff', size: 12 } },
+    hoverlabel:  { bgcolor: dark ? '#0b1220' : '#1f2937', font: { color: '#fff', size: 12 } },
     autosize:    true,
   };
+}
+
+function labelsAreDates(labels) {
+  const iso = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/;
+  return labels.length > 0 && labels.every(label => iso.test(String(label)));
+}
+
+function toDateOnly(label) {
+  const s = String(label);
+  return (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) ? s.slice(0, 10) : s;
+}
+
+function hexToRgb(hex) {
+  const cleaned = hex.replace('#', '');
+  const expanded = cleaned.length === 3 ? cleaned.split('').map((ch) => ch + ch).join('') : cleaned;
+  const value = parseInt(expanded, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function mixColor(from, to, t) {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  return rgbToHex({
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  });
+}
+
+function colorsWithSmallestYellow(values, horizontal) {
+  const nums = values.map((value) => Number(value) || 0);
+  const min = Math.min(...nums);
+  const colors = horizontal
+    ? (() => {
+        const splitIndex = Math.max(1, Math.ceil(values.length / 2));
+        const topPalette = ['#19d3b5', '#12cbb2', '#0fc2ad', '#0db8a6'];
+        const basePalette = ['#4f8fdd', '#4384d2', '#3779c7', '#2c6fbc'];
+        return values.map((_, index) => (
+          index < splitIndex
+            ? topPalette[index % topPalette.length]
+            : basePalette[(index - splitIndex) % basePalette.length]
+        ));
+      })()
+    : values.map((_, i) => ['#1f77b4', '#f2a900', '#10a37f', '#3e8ec6', '#f6b93b', '#2fb58f'][i % 6]);
+  return colors.map((color, index) => (nums[index] === min ? '#f4b740' : color));
+}
+
+function timeAxisLayout(labels, baseAxis = {}) {
+  const count = labels.length;
+  return {
+    ...baseAxis,
+    type: 'date',
+    tickformat: '%d %b %Y',
+    dtick: count <= 14 ? 86400000 : count <= 60 ? 7 * 86400000 : 'M1',
+  };
+}
+
+function formatShortDate(label) {
+  const date = new Date(toDateOnly(label));
+  if (Number.isNaN(date.getTime())) return String(label);
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function setupHeaderTimeFilter(container, plotDiv, labels, isDateAxis) {
+  const bodyId = container.id || '';
+  const widgetId = bodyId.replace('widget-body-', '');
+  if (!widgetId) return;
+
+  const filterWrap = document.getElementById(`widget-time-filter-${widgetId}`);
+  const filterLabel = document.getElementById(`widget-time-filter-label-${widgetId}`);
+  const filterStart = document.getElementById(`widget-time-filter-start-${widgetId}`);
+  const filterEnd = document.getElementById(`widget-time-filter-end-${widgetId}`);
+  if (!filterWrap || !filterLabel || !filterStart || !filterEnd) return;
+
+  if (!isDateAxis || labels.length < 7) {
+    filterWrap.classList.add('hidden');
+    filterWrap.classList.remove('flex');
+    return;
+  }
+
+  const maxIndex = labels.length - 1;
+  if (maxIndex < 2) {
+    filterWrap.classList.add('hidden');
+    filterWrap.classList.remove('flex');
+    return;
+  }
+
+  const syncRange = (changed) => {
+    let start = Math.max(0, Math.min(Number(filterStart.value) || 0, maxIndex));
+    let end = Math.max(0, Math.min(Number(filterEnd.value) || 0, maxIndex));
+    if (start >= end) {
+      if (changed === 'start') start = Math.max(0, end - 1);
+      else end = Math.min(maxIndex, start + 1);
+    }
+    filterStart.value = String(start);
+    filterEnd.value = String(end);
+    Plotly.relayout(plotDiv, {
+      'xaxis.range': [toDateOnly(labels[start]), toDateOnly(labels[end])],
+    });
+    filterLabel.textContent = `${formatShortDate(labels[start])} - ${formatShortDate(labels[end])}`;
+  };
+
+  filterWrap.classList.remove('hidden');
+  filterWrap.classList.add('flex');
+  [filterStart, filterEnd].forEach((input) => {
+    input.min = '0';
+    input.max = String(maxIndex);
+    input.step = '1';
+  });
+  filterStart.value = '0';
+  filterEnd.value = String(maxIndex);
+  filterStart.oninput = () => syncRange('start');
+  filterEnd.oninput = () => syncRange('end');
+  syncRange();
 }
 
 function plotlyConfig() {
@@ -637,7 +846,7 @@ function submitNewWidget() {
       table_id:    tableId || null,
       query_config: {},
       viz_config:   {},
-      position:    { x: 0, y: 0, w: 6, h: 4 },
+      position:    { x: 0, y: 0, w: 6, h: 5 },
     }
   };
 
@@ -655,7 +864,7 @@ function submitNewWidget() {
       .then(widget => {
         closeWidgetModal();
         const el  = createWidgetElement(widget);
-        const pos = widget.position || { x: 0, y: 0, w: 6, h: 4 };
+        const pos = widget.position || { x: 0, y: 0, w: 6, h: 5 };
         grid.addWidget(el, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, id: widget.id });
         widgetRegistry.set(widget.id, { type: widget.widget_type, vizConfig: widget.viz_config || {} });
         fetchAndRenderWidget(widget.id);

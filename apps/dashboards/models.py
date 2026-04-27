@@ -444,8 +444,11 @@ class Widget(models.Model):
     """
     WIDGET_TYPES = [
         ('line_chart', 'Line Chart'),
+        ('area_chart', 'Area Chart'),
         ('bar_chart', 'Bar Chart'),
         ('pie_chart', 'Pie Chart'),
+        ('histogram', 'Histogram'),
+        ('box_plot', 'Box Plot'),
         ('table', 'Data Table'),
         ('metric', 'Single Metric'),
         ('number', 'Number Card'),

@@ -202,7 +202,8 @@ cd analyticsmeta
 
 ```bash
 cp .env.example .env
-# Open .env and fill in the required values (see Environment Variables below)
+# For Docker, leave PG_DATABASE_HOST_DEV=localhost in the file.
+# Compose overrides it to `postgres` inside containers automatically.
 ```
 
 ### 3. Build and start
@@ -211,7 +212,23 @@ cp .env.example .env
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-Starts: **PostgreSQL 18** · **Redis 7** · **Django dev server (:8000)** · **Celery worker**
+Starts: **PostgreSQL 18** · **Redis 7** · **Django dev server (:8000)** · **Celery worker** · **Celery beat**
+
+By default, the Docker stack publishes to these host ports to avoid common local conflicts:
+
+```bash
+http://localhost:18000   # Django
+localhost:15433          # PostgreSQL
+localhost:16380          # Redis
+```
+
+You can override them in `.env` with `DEV_WEB_PORT`, `DEV_POSTGRES_PORT`, and `DEV_REDIS_PORT`.
+
+If you prefer shortcuts, the repo now includes:
+
+```bash
+make docker-up
+```
 
 ### 4. First-run setup
 
@@ -221,20 +238,25 @@ docker compose -f docker-compose.dev.yml exec web python manage.py createsuperus
 docker compose -f docker-compose.dev.yml exec web python manage.py collectstatic --noinput
 ```
 
+The development Docker stack uses Django's console email backend by default, so emails print in container logs instead of sending through SMTP. That keeps local testing safe even if your `.env` contains real mail credentials.
+
 ### 5. Open
 
 | URL | Description |
 |---|---|
-| <http://localhost:8000> | Marketing home |
-| <http://localhost:8000/admin> | Django admin |
-| <http://localhost:8000/api/v1/> | REST API root |
-| <http://localhost:8000/dashboard/analytics/> | Dashboard home |
+| <http://localhost:18000> | Marketing home |
+| <http://localhost:18000/admin> | Django admin |
+| <http://localhost:18000/api/v1/> | REST API root |
+| <http://localhost:18000/dashboard/analytics/> | Dashboard home |
 
 ### Useful Docker commands
 
 ```bash
 # Tail logs
 docker compose -f docker-compose.dev.yml logs -f web
+
+# Or use Makefile shortcuts
+make docker-logs
 
 # Django shell
 docker compose -f docker-compose.dev.yml exec web python manage.py shell
@@ -245,8 +267,14 @@ docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d analy
 # Run tests
 docker compose -f docker-compose.dev.yml exec web python manage.py test
 
+# Start in background
+make docker-up
+
 # Stop everything
 docker compose -f docker-compose.dev.yml down
+
+# Stop with shortcut
+make docker-down
 ```
 
 ---

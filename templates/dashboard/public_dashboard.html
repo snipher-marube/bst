@@ -19,13 +19,31 @@
     :root {
       --primary: #03466e;
       --accent:  #f68712;
+      --shell:   #f8fafc;
+      --panel:   #ffffff;
+      --panel-2: #f8fafc;
+      --line:    #e5e7eb;
+      --text:    #111827;
+      --subtle:  #6b7280;
+      --hover:   #f9fafb;
     }
-    body { background: #f8fafc; font-family: Inter, system-ui, sans-serif; }
+    html[data-theme="dark"] {
+      --primary: #dbeafe;
+      --accent:  #19d3b5;
+      --shell:   #09111d;
+      --panel:   #111827;
+      --panel-2: #0f172a;
+      --line:    #243244;
+      --text:    #e5eefc;
+      --subtle:  #9fb0c5;
+      --hover:   #172131;
+    }
+    body { background: var(--shell); color: var(--text); font-family: Inter, system-ui, sans-serif; transition: background .2s ease, color .2s ease; }
 
     .widget-card {
-      background: #fff;
+      background: var(--panel);
       border-radius: .875rem;
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--line);
       box-shadow: 0 1px 3px rgba(0,0,0,.07);
       overflow: hidden;
       display: flex;
@@ -33,31 +51,72 @@
     }
     .widget-header {
       padding: .625rem 1rem;
-      background: #fff;
-      border-bottom: 1px solid #f3f4f6;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
     }
     .widget-header h3 {
       font-size: .8125rem; font-weight: 600; color: var(--primary);
       margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .widget-body { flex: 1; min-height: 220px; overflow: auto; }
+    .widget-time-filter {
+      display: none;
+      align-items: center;
+      gap: .45rem;
+      min-width: 232px;
+      flex-shrink: 0;
+    }
+    .widget-time-filter-label {
+      font-size: .6875rem;
+      color: var(--subtle);
+      white-space: nowrap;
+    }
+    .widget-time-filter-sliders {
+      position: relative;
+      width: 7rem;
+      height: 1.25rem;
+    }
+    .widget-time-filter-input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      cursor: pointer;
+      pointer-events: none;
+      background: transparent;
+    }
+    .widget-time-filter-input.start {
+      accent-color: #4f8fdd;
+    }
+    .widget-time-filter-input.end {
+      accent-color: #14b8a6;
+    }
+    .widget-time-filter-input::-webkit-slider-thumb {
+      pointer-events: auto;
+    }
+    .widget-time-filter-input::-moz-range-thumb {
+      pointer-events: auto;
+    }
+    .widget-body { flex: 1; min-height: 250px; overflow: auto; padding: 0 .75rem .75rem; box-sizing: border-box; }
 
     /* KPI */
     .kpi-card { display: flex; align-items: center; height: 100%; padding: 1rem 1.25rem; gap: 1rem; }
     .kpi-icon { width: 3rem; height: 3rem; border-radius: .875rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .kpi-num  { font-size: 1.875rem; font-weight: 700; line-height: 1.1; letter-spacing: -.025em; }
-    .kpi-label { font-size: .6875rem; color: #6b7280; margin-top: .25rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
+    .kpi-label { font-size: .6875rem; color: var(--subtle); margin-top: .25rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
 
     /* data table */
     .data-table { width: 100%; border-collapse: collapse; font-size: .75rem; }
-    .data-table th { background: #f9fafb; padding: .5rem .75rem; text-align: left; font-weight: 600; color: #374151; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
-    .data-table td { padding: .5rem .75rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
-    .data-table tbody tr:hover { background: #f9fafb; }
+    .data-table th { background: var(--panel-2); padding: .5rem .75rem; text-align: left; font-weight: 600; color: var(--text); position: sticky; top: 0; z-index: 10; border-bottom: 2px solid var(--line); white-space: nowrap; }
+    .data-table td { padding: .5rem .75rem; border-bottom: 1px solid var(--line); color: var(--text); }
+    .data-table tbody tr:hover { background: var(--hover); }
 
     /* state helpers */
     .state-center { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 180px; text-align: center; padding: 1rem; gap: .5rem; }
     .state-center i { font-size: 2rem; }
-    .state-center p { font-size: .8125rem; color: #6b7280; margin: 0; }
+    .state-center p { font-size: .8125rem; color: var(--subtle); margin: 0; }
   </style>
 </head>
 <body>
@@ -71,7 +130,15 @@
       <span class="text-white/60 text-xs truncate hidden sm:block">— {{ dashboard.description }}</span>
       {% endif %}
     </div>
-    <div class="text-white/70 text-xs shrink-0">{{ dashboard.workspace.name }}</div>
+    <div class="flex items-center gap-3 shrink-0">
+      <button id="publicThemeToggleBtn"
+              onclick="toggleDashboardTheme()"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 bg-white border border-white/70 hover:bg-gray-50 transition">
+        <i class="fas fa-moon text-xs"></i>
+        <span>Dark Mode</span>
+      </button>
+      <div class="text-white/70 text-xs">{{ dashboard.workspace.name }}</div>
+    </div>
   </div>
 </header>
 
@@ -105,12 +172,24 @@
 <script>
 // ── Brand constants (shared with the authenticated view) ──────────────────────
 const BRAND = {
-  primary:  '#03466e',
-  accent:   '#f68712',
-  colors:   ['#03466e','#f68712','#0a7ebf','#e07810','#025b8c','#ff9f3c','#01304d','#fbc16a'],
-  gridColor:'rgba(0,0,0,.04)',
-  paper:    'rgba(0,0,0,0)',
+  primary:  '#19d3b5',
+  accent:   '#f4b740',
+  colors:   ['#19d3b5','#4f8fdd','#5ad7c2','#6aa7ea','#f4b740','#2dd4bf','#7dd3fc','#38bdf8'],
+  gridColor:'rgba(255,255,255,.88)',
+  paper:    '#d1dceb',
 };
+let publicDashboardData = null;
+
+function currentChartTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    dark,
+    paper: dark ? '#162131' : '#d1dceb',
+    gridColor: dark ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.88)',
+    fontColor: dark ? '#c4d2e4' : '#6b7280',
+    hoverBg: dark ? '#0b1220' : '#1f2937',
+  };
+}
 const KPI_PALETTE = {
   blue:   { bg:'#eff6ff', iconColor:'#3b82f6', numColor:'#1e3a8a', border:'#bfdbfe' },
   green:  { bg:'#f0fdf4', iconColor:'#22c55e', numColor:'#14532d', border:'#bbf7d0' },
@@ -143,6 +222,109 @@ function _labelsAreDates(labels) {
 function _toDateOnly(label) {
   const s = String(label);
   return (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) ? s.slice(0, 10) : s;
+}
+
+function _hexToRgb(hex) {
+  const cleaned = hex.replace('#', '');
+  const expanded = cleaned.length === 3 ? cleaned.split('').map((ch) => ch + ch).join('') : cleaned;
+  const value = parseInt(expanded, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function _rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function _mixColor(from, to, t) {
+  const a = _hexToRgb(from);
+  const b = _hexToRgb(to);
+  return _rgbToHex({
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  });
+}
+
+function _colorsWithSmallestYellow(values, horizontal) {
+  const nums = values.map((value) => Number(value) || 0);
+  const min = Math.min(...nums);
+  const colors = horizontal
+    ? (() => {
+        const splitIndex = Math.max(1, Math.ceil(nums.length / 2));
+        const topPalette = ['#19d3b5', '#12cbb2', '#0fc2ad', '#0db8a6'];
+        const basePalette = ['#4f8fdd', '#4384d2', '#3779c7', '#2c6fbc'];
+        return nums.map((_, index) => (
+          index < splitIndex
+            ? topPalette[index % topPalette.length]
+            : basePalette[(index - splitIndex) % basePalette.length]
+        ));
+      })()
+    : nums.map((_, i) => BRAND.colors[i % BRAND.colors.length]);
+  return colors.map((color, index) => (nums[index] === min ? '#f4b740' : color));
+}
+
+function _timeAxisLayout(labels) {
+  const count = labels.length;
+  return {
+    type: 'date',
+    tickformat: '%d %b %Y',
+    dtick: count <= 14 ? 86400000 : count <= 60 ? 7 * 86400000 : 'M1',
+  };
+}
+
+function _formatShortDate(label) {
+  const date = new Date(_toDateOnly(label));
+  if (Number.isNaN(date.getTime())) return String(label);
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function _setupHeaderTimeFilter(widget, plotDiv, labels, isDateAxis) {
+  const widgetId = widget?.id;
+  if (!widgetId) return;
+
+  const wrap = document.getElementById(`pub-time-filter-${widgetId}`);
+  const label = document.getElementById(`pub-time-filter-label-${widgetId}`);
+  const startInput = document.getElementById(`pub-time-filter-start-${widgetId}`);
+  const endInput = document.getElementById(`pub-time-filter-end-${widgetId}`);
+  if (!wrap || !label || !startInput || !endInput) return;
+
+  if (!isDateAxis || labels.length < 7) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  const maxIndex = labels.length - 1;
+  if (maxIndex < 2) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  const syncRange = (changed) => {
+    let start = Math.max(0, Math.min(Number(startInput.value) || 0, maxIndex));
+    let end = Math.max(0, Math.min(Number(endInput.value) || 0, maxIndex));
+    if (start >= end) {
+      if (changed === 'start') start = Math.max(0, end - 1);
+      else end = Math.min(maxIndex, start + 1);
+    }
+    startInput.value = String(start);
+    endInput.value = String(end);
+    Plotly.relayout(plotDiv, {
+      'xaxis.range': [_toDateOnly(labels[start]), _toDateOnly(labels[end])],
+    });
+    label.textContent = `${_formatShortDate(labels[start])} - ${_formatShortDate(labels[end])}`;
+  };
+
+  wrap.style.display = 'inline-flex';
+  [startInput, endInput].forEach((input) => {
+    input.min = '0';
+    input.max = String(maxIndex);
+    input.step = '1';
+  });
+  startInput.value = '0';
+  endInput.value = String(maxIndex);
+  startInput.oninput = () => syncRange('start');
+  endInput.oninput = () => syncRange('end');
+  syncRange();
 }
 
 // ── Render helpers (same logic as the authenticated view) ─────────────────────
@@ -200,58 +382,181 @@ function renderChart(el, data, chartType, widget) {
     el.innerHTML = `<div class="state-center"><i class="fas fa-chart-bar" style="color:#e5e7eb"></i><p>Not enough data</p></div>`;
     return;
   }
-  const nums     = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
+  let nums     = values.map(v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0));
   const viz      = widget.viz_config || {};
+  const chartTheme = currentChartTheme();
   const xTitle   = viz.x_axis ? String(viz.x_axis).replace(/_/g,' ') : '';
   const yTitle   = viz.y_axis ? String(viz.y_axis).replace(/_/g,' ') : '';
-  const isDates  = chartType === 'scatter' && _labelsAreDates(labels);
+  const isDates  = (chartType === 'scatter' || chartType === 'area') && _labelsAreDates(labels);
   const xVals    = isDates ? labels.map(_toDateOnly) : labels;
 
   let traces = [];
-  if (chartType === 'scatter') {
+  if (chartType === 'scatter' || chartType === 'area') {
     traces = [{ type:'scatter', mode:'lines+markers', x:xVals, y:nums,
-      line:{color:BRAND.primary,width:2.5,shape:'spline'},
-      marker:{color:BRAND.accent,size:6,line:{color:'#fff',width:1.5}},
-      fill:'tozeroy', fillcolor:'rgba(3,70,110,.06)',
+      line:{color:chartType === 'area' ? '#19d3b5' : '#4f8fdd',width:chartType === 'area' ? 2.6 : 1.9,shape:'spline'},
+      marker:{color:chartType === 'area' ? BRAND.accent : '#4f8fdd',size:chartType === 'area' ? 5 : 6,line:{width:0}},
+      fill:'tozeroy', fillcolor:chartType === 'area' ? 'rgba(25,211,181,.20)' : 'rgba(79,143,221,.12)',
       hovertemplate: isDates
         ? '<b>%{x|%d %b %Y}</b><br>'+(yTitle||'Value')+': <b>%{y:,.2f}</b><extra></extra>'
         : '<b>%{x}</b><br>'+(yTitle||'Value')+': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else if (chartType === 'bar') {
-    traces = [{ type:'bar', x:labels, y:nums,
-      marker:{ color:nums.map((_,i)=>BRAND.colors[i%BRAND.colors.length]), opacity:.85, line:{color:'rgba(255,255,255,.6)',width:1} },
-      hovertemplate:'<b>%{x}</b><br>'+(yTitle||'Value')+': <b>%{y:,.2f}</b><extra></extra>',
+    const horizontal = labels.length > 5;
+    const pairs = labels.map((label, index) => ({
+      label,
+      value: Number(nums[index] ?? 0),
+    }));
+    const sortAscending = Number(widget?._barOrder || 1) % 2 === 0;
+    const orderedPairs = [...pairs].sort((a, b) => sortAscending ? a.value - b.value : b.value - a.value);
+    labels = orderedPairs.map(({ label }) => label);
+    nums = orderedPairs.map(({ value }) => value);
+    const barWidth = horizontal ? 0.46 : 0.42;
+    traces = [{ type:'bar',
+      x: horizontal ? nums : labels,
+      y: horizontal ? labels : nums,
+      orientation: horizontal ? 'h' : 'v',
+      width: barWidth,
+      marker:{ color:_colorsWithSmallestYellow(nums, horizontal), line:{color:'rgba(255,255,255,.36)',width:0.8} },
+      hovertemplate: horizontal
+        ? '<b>%{y}</b><br>'+(yTitle||'Value')+': <b>%{x:,.2f}</b><extra></extra>'
+        : '<b>%{x}</b><br>'+(yTitle||'Value')+': <b>%{y:,.2f}</b><extra></extra>',
     }];
   } else {
-    traces = [{ type:'pie', labels, values:nums,
+    const slices = labels.map((label, index) => ({
+      label,
+      value: Number(nums[index] ?? 0),
+    })).filter(({ label, value }) => label !== null && label !== undefined && label !== '' && Number.isFinite(value) && value > 0);
+    if (!slices.length) {
+      el.innerHTML = `<div class="state-center"><i class="fas fa-chart-pie" style="color:#e5e7eb"></i><p>No chartable categories</p></div>`;
+      return;
+    }
+    traces = [{ type:'pie', labels:slices.map(({ label }) => label), values:slices.map(({ value }) => value),
       marker:{colors:BRAND.colors, line:{color:'#fff',width:2}},
       hovertemplate:'<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
       textinfo:'percent', textfont:{size:11},
     }];
   }
 
-  const bMarg = chartType !== 'pie' ? (xTitle ? 56 : 40) : 10;
-  const lMarg = chartType !== 'pie' ? (yTitle ? 64 : 50) : 10;
+  const isHorizontalBar = chartType === 'bar' && labels.length > 5;
+  const bMarg = chartType !== 'pie' ? (isHorizontalBar ? 46 : 82) : 14;
+  const lMarg = chartType !== 'pie' ? (isHorizontalBar ? 132 : (yTitle ? 72 : 58)) : 14;
   const layout = {
-    paper_bgcolor:BRAND.paper, plot_bgcolor:BRAND.paper,
-    margin: chartType==='pie' ? {t:10,r:10,b:10,l:10} : {t:10,r:12,b:bMarg,l:lMarg},
-    font:{family:'Inter,system-ui,sans-serif',size:11,color:'#6b7280'},
+    paper_bgcolor:chartTheme.paper, plot_bgcolor:chartTheme.paper,
+    bargap: chartType==='bar' ? (isHorizontalBar ? 0.62 : 0.54) : undefined,
+    margin: chartType==='pie' ? {t:14,r:14,b:14,l:14} : {t:14,r:18,b:bMarg,l:lMarg},
+    font:{family:'Inter,system-ui,sans-serif',size:11,color:chartTheme.fontColor},
     showlegend:false,
     xaxis: chartType!=='pie' ? {
-      gridcolor:BRAND.gridColor, zerolinecolor:BRAND.gridColor,
-      tickfont:{size:10}, automargin:true,
-      ...(isDates ? {type:'date',tickformat:'%d %b %Y'} : {}),
+      showgrid:false,
+      gridcolor:chartTheme.gridColor, zerolinecolor:chartTheme.gridColor,
+      tickfont:{size:10,color:chartTheme.fontColor}, automargin:true,
+      ...(isDates ? _timeAxisLayout(labels) : {}),
+      ...(!isHorizontalBar && chartType === 'bar' ? {tickangle:-45} : {}),
       title: xTitle ? {text:xTitle,font:{size:11,color:'#9ca3af'}} : undefined,
     } : undefined,
     yaxis: chartType!=='pie' ? {
-      gridcolor:BRAND.gridColor, zerolinecolor:BRAND.gridColor,
-      tickfont:{size:10}, automargin:true,
+      gridcolor:chartTheme.gridColor, zerolinecolor:chartTheme.gridColor,
+      tickfont:{size:10,color:chartTheme.fontColor}, automargin:true,
+      ...(isHorizontalBar ? { autorange:'reversed' } : {}),
       title: yTitle ? {text:yTitle,font:{size:11,color:'#9ca3af'}} : undefined,
     } : undefined,
+    hoverlabel:{ bgcolor:chartTheme.hoverBg, font:{ color:'#fff', size:12 } },
   };
   const config = { displayModeBar:false, responsive:true };
   el.innerHTML = '';
   Plotly.newPlot(el, traces, layout, config);
+  _setupHeaderTimeFilter(widget, el, xVals, isDates);
+}
+
+function renderHistogramChart(el, data, widget) {
+  const values = Array.isArray(data.values) ? data.values : [];
+  if (!values.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-chart-column" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget.viz_config || {};
+  const traces = [{
+    type: 'histogram',
+    x: values,
+    nbinsx: data.bins || 12,
+    marker: { color: BRAND.primary, opacity: 0.78, line: { color: '#ffffff', width: 1 } },
+    histnorm: data.kde ? 'probability density' : '',
+    name: 'Distribution',
+  }];
+  if (data.kde && Array.isArray(data.kde.x) && Array.isArray(data.kde.y)) {
+    traces.push({
+      type: 'scatter',
+      mode: 'lines',
+      x: data.kde.x,
+      y: data.kde.y,
+      line: { color: BRAND.accent, width: 3, shape: 'spline' },
+      name: 'KDE',
+    });
+  }
+  Plotly.newPlot(el, traces, {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: !!data.kde,
+    legend: { orientation: 'h', y: -0.2, x: 0, font: { size: 10 } },
+    xaxis: { title: viz.x_axis || data.field || 'Value', gridcolor: BRAND.gridColor, automargin: true },
+    yaxis: { title: data.kde ? 'Density' : 'Count', gridcolor: BRAND.gridColor, automargin: true },
+  }, { displayModeBar: false, responsive: true });
+}
+
+function renderBoxPlotChart(el, data, widget) {
+  const values = Array.isArray(data.values) ? data.values : [];
+  if (!values.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-box" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget.viz_config || {};
+  Plotly.newPlot(el, [{
+    type: 'box',
+    y: values,
+    name: data.field || 'Values',
+    boxmean: true,
+    marker: { color: BRAND.accent, size: 5, opacity: 0.7 },
+    line: { color: BRAND.primary, width: 2 },
+    fillcolor: 'rgba(246,135,18,.18)',
+  }], {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: false,
+    xaxis: { title: viz.x_axis || 'Distribution', showgrid: false, automargin: true },
+    yaxis: { title: viz.y_axis || data.field || 'Value', gridcolor: BRAND.gridColor, automargin: true },
+  }, { displayModeBar: false, responsive: true });
+}
+
+function renderScatterPlot(el, data, widget) {
+  const points = Array.isArray(data.points) ? data.points : [];
+  if (!points.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-braille" style="color:#e5e7eb"></i><p>Not enough numeric data</p></div>`;
+    return;
+  }
+
+  const viz = widget.viz_config || {};
+  Plotly.newPlot(el, [{
+    type: 'scatter',
+    mode: 'markers',
+    x: points.map(p => p.x),
+    y: points.map(p => p.y),
+    text: points.map(p => p.label || ''),
+    marker: { color: BRAND.accent, size: 9, opacity: 0.7, line: { color: '#ffffff', width: 1 } },
+  }], {
+    paper_bgcolor: BRAND.paper,
+    plot_bgcolor: BRAND.paper,
+    margin: { t: 14, r: 18, b: 64, l: 66 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    showlegend: false,
+    xaxis: { title: viz.x_axis || data.x_field || 'X Axis', gridcolor: BRAND.gridColor, automargin: true },
+    yaxis: { title: viz.y_axis || data.y_field || 'Y Axis', gridcolor: BRAND.gridColor, automargin: true },
+  }, { displayModeBar: false, responsive: true });
 }
 
 function renderWidgetContent(el, widget) {
@@ -268,18 +573,52 @@ function renderWidgetContent(el, widget) {
     case 'metric':     renderKPI(el, widget, data);              break;
     case 'table':      renderTable(el, data);                    break;
     case 'line_chart': renderChart(el, data, 'scatter', widget); break;
+    case 'area_chart': renderChart(el, data, 'area',    widget); break;
     case 'bar_chart':  renderChart(el, data, 'bar',     widget); break;
     case 'pie_chart':  renderChart(el, data, 'pie',     widget); break;
+    case 'histogram':  renderHistogramChart(el, data, widget);   break;
+    case 'box_plot':   renderBoxPlotChart(el, data, widget);     break;
+    case 'scatter':    renderScatterPlot(el, data, widget);      break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
   }
 }
 
+const DASHBOARD_THEME_KEY = 'analyticsmeta_dashboard_theme';
+
+function applyDashboardTheme(theme) {
+  const normalized = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', normalized);
+  localStorage.setItem(DASHBOARD_THEME_KEY, normalized);
+  const btn = document.getElementById('publicThemeToggleBtn');
+  if (!btn) return;
+  btn.innerHTML = normalized === 'dark'
+    ? '<i class="fas fa-sun text-xs"></i><span>Light Mode</span>'
+    : '<i class="fas fa-moon text-xs"></i><span>Dark Mode</span>';
+}
+
+function toggleDashboardTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyDashboardTheme(current === 'dark' ? 'light' : 'dark');
+  rerenderPublicCharts();
+}
+
+function rerenderPublicCharts() {
+  if (!publicDashboardData?.widgets?.length) return;
+  publicDashboardData.widgets.forEach(widget => {
+    const body = document.getElementById(`pub-widget-${widget.id}`);
+    if (!body) return;
+    renderWidgetContent(body, widget);
+  });
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  applyDashboardTheme(localStorage.getItem(DASHBOARD_THEME_KEY) || 'light');
   const el = document.getElementById('dashboard-data');
   if (!el) return;
   const dd = JSON.parse(el.textContent);
+  publicDashboardData = dd;
   if (!dd.widgets || !dd.widgets.length) return;
 
   const grid = document.getElementById('widget-grid');
@@ -291,6 +630,12 @@ document.addEventListener('DOMContentLoaded', () => {
     return pa.y !== pb.y ? pa.y - pb.y : pa.x - pb.x;
   });
 
+  let barOrder = 0;
+  sorted.forEach(widget => {
+    if (widget.widget_type === 'bar_chart') barOrder += 1;
+    widget._barOrder = widget.widget_type === 'bar_chart' ? barOrder : null;
+  });
+
   sorted.forEach(widget => {
     // Determine column span from grid position width (12-col grid → 12 slots)
     // Map to Tailwind 3-col layout: w≤4 → span-1, w≤8 → span-2, w>8 → span-3
@@ -300,9 +645,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const card = document.createElement('div');
     card.className = `widget-card ${span}`;
-    card.style.minHeight = isKPI ? '100px' : '260px';
+    card.style.minHeight = isKPI ? '112px' : '310px';
     card.innerHTML = `
-      <div class="widget-header"><h3 title="${esc(widget.title)}">${esc(widget.title)}</h3></div>
+      <div class="widget-header">
+        <h3 title="${esc(widget.title)}">${esc(widget.title)}</h3>
+        <div id="pub-time-filter-${widget.id}" class="widget-time-filter">
+          <span id="pub-time-filter-label-${widget.id}" class="widget-time-filter-label"></span>
+          <div class="widget-time-filter-sliders">
+            <input id="pub-time-filter-start-${widget.id}" type="range" min="0" max="0" value="0" class="widget-time-filter-input start">
+            <input id="pub-time-filter-end-${widget.id}" type="range" min="0" max="0" value="0" class="widget-time-filter-input end">
+          </div>
+        </div>
+      </div>
       <div class="widget-body" id="pub-widget-${esc(widget.id)}">
         <div class="state-center"><i class="fas fa-circle-notch" style="color:#03466e;opacity:.35;animation:spin 1s linear infinite"></i></div>
       </div>`;

@@ -133,8 +133,14 @@ class QueryEngine:
                 data = self._execute_metric_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type == 'table':
                 data = self._execute_table_query(widget, limit, extra_filters=extra_filters)
-            elif widget.widget_type in ['line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap']:
+            elif widget.widget_type in ['line_chart', 'area_chart', 'bar_chart', 'pie_chart', 'heatmap']:
                 data = self._execute_chart_query(widget, limit, extra_filters=extra_filters)
+            elif widget.widget_type == 'scatter':
+                data = self._execute_scatter_query(widget, limit, extra_filters=extra_filters)
+            elif widget.widget_type == 'histogram':
+                data = self._execute_histogram_query(widget, limit, extra_filters=extra_filters)
+            elif widget.widget_type == 'box_plot':
+                data = self._execute_box_plot_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type == 'cohort':
                 data = CohortAnalysisEngine().execute(widget)
             elif widget.widget_type == 'funnel':
@@ -260,6 +266,40 @@ class QueryEngine:
             return (0, _date.fromisoformat(str(k)))
         except (ValueError, TypeError):
             return (1, str(k))
+
+    @classmethod
+    def _apply_grouped_result_options(cls, grouped, config):
+        """
+        Apply optional grouped-chart shaping after aggregation.
+
+        Supported query_config keys:
+          - group_order: `value_desc`, `value_asc`, `label_desc`, `label_asc`
+          - group_limit / top_n: max number of groups to keep
+        """
+        if not isinstance(grouped, dict):
+            return grouped
+
+        items = list(grouped.items())
+        group_order = (config or {}).get('group_order')
+        group_limit = (config or {}).get('group_limit', (config or {}).get('top_n'))
+
+        if group_order == 'value_desc':
+            items.sort(key=lambda kv: float(kv[1] or 0), reverse=True)
+        elif group_order == 'value_asc':
+            items.sort(key=lambda kv: float(kv[1] or 0))
+        elif group_order == 'label_desc':
+            items.sort(key=lambda kv: cls._chart_sort_key(kv[0]), reverse=True)
+        elif group_order == 'label_asc':
+            items.sort(key=lambda kv: cls._chart_sort_key(kv[0]))
+
+        try:
+            if group_limit is not None:
+                group_limit = max(1, int(group_limit))
+                items = items[:group_limit]
+        except (TypeError, ValueError):
+            pass
+
+        return {str(k): v for k, v in items}
 
     def _db_grouped_agg(self, queryset, agg_type, field, group_by, limit):
         """
@@ -413,7 +453,8 @@ class QueryEngine:
                 if group_by:
                     # Attempt DB-side grouped aggregation
                     try:
-                        result[name] = self._db_grouped_agg(queryset, agg_type, field, group_by, limit)
+                        grouped = self._db_grouped_agg(queryset, agg_type, field, group_by, limit)
+                        result[name] = self._apply_grouped_result_options(grouped, config)
                     except Exception as db_exc:
                         logger.warning(
                             f"DB grouped agg failed (group_by='{group_by}', agg='{agg_type}'): "
@@ -424,9 +465,10 @@ class QueryEngine:
                         if not _fallback_records:
                             result[name] = {}
                         else:
-                            result[name] = self._python_grouped_agg(
+                            grouped = self._python_grouped_agg(
                                 _fallback_records, agg_type, field, group_by
                             )
+                            result[name] = self._apply_grouped_result_options(grouped, config)
                 else:
                     # Scalar aggregation — reuse the metric path helpers
                     if agg_type == 'count':
@@ -455,6 +497,140 @@ class QueryEngine:
             result = self._resolve_calculated_aggs(calc_aggs, {**result, **scalar_context}, queryset=queryset)
 
         return result
+
+    def _execute_histogram_query(self, widget, limit, extra_filters=None):
+        config = widget.query_config or {}
+        field = config.get('field')
+        if not field:
+            return {"error": "Histogram requires query_config.field"}
+
+        bins = config.get('bins', 12)
+        try:
+            bins = max(5, min(int(bins), 40))
+        except (TypeError, ValueError):
+            bins = 12
+
+        values = self._get_numeric_values(widget, field, limit, extra_filters=extra_filters)
+        if not values:
+            return {"message": "No numeric data available"}
+
+        kde = self._build_kde(values) if config.get('show_kde', True) else None
+        return {
+            'field': field,
+            'values': values,
+            'bins': bins,
+            'kde': kde,
+        }
+
+    def _execute_box_plot_query(self, widget, limit, extra_filters=None):
+        config = widget.query_config or {}
+        field = config.get('field')
+        if not field:
+            return {"error": "Box plot requires query_config.field"}
+
+        values = self._get_numeric_values(widget, field, limit, extra_filters=extra_filters)
+        if not values:
+            return {"message": "No numeric data available"}
+
+        series = pd.Series(values, dtype='float64')
+        q1 = float(series.quantile(0.25))
+        median = float(series.median())
+        q3 = float(series.quantile(0.75))
+        return {
+            'field': field,
+            'values': values,
+            'summary': {
+                'min': round(float(series.min()), 4),
+                'q1': round(q1, 4),
+                'median': round(median, 4),
+                'q3': round(q3, 4),
+                'max': round(float(series.max()), 4),
+            }
+        }
+
+    def _execute_scatter_query(self, widget, limit, extra_filters=None):
+        from .models import Record
+
+        config = widget.query_config or {}
+        x_field = config.get('x_field')
+        y_field = config.get('y_field')
+        label_field = config.get('label_field')
+        if not x_field or not y_field:
+            return {"error": "Scatter plot requires query_config.x_field and query_config.y_field"}
+
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
+        if 'filters' in config:
+            queryset = self._apply_filters(queryset, config['filters'])
+        if extra_filters:
+            queryset = self._apply_filters(queryset, extra_filters)
+
+        points = []
+        for record in queryset.values('data')[:limit]:
+            payload = record.get('data') or {}
+            try:
+                x_val = float(payload.get(x_field))
+                y_val = float(payload.get(y_field))
+            except (TypeError, ValueError):
+                continue
+            point = {'x': round(x_val, 4), 'y': round(y_val, 4)}
+            if label_field and payload.get(label_field) not in (None, ''):
+                point['label'] = str(payload.get(label_field))
+            points.append(point)
+
+        if not points:
+            return {"message": "No numeric data available"}
+
+        return {
+            'x_field': x_field,
+            'y_field': y_field,
+            'points': points,
+        }
+
+    def _get_numeric_values(self, widget, field, limit, extra_filters=None):
+        from .models import Record
+
+        config = widget.query_config or {}
+        queryset = Record.objects.filter(table=widget.table, is_active=True)
+        if 'filters' in config:
+            queryset = self._apply_filters(queryset, config['filters'])
+        if extra_filters:
+            queryset = self._apply_filters(queryset, extra_filters)
+
+        values = []
+        for payload in queryset.values_list('data', flat=True)[:limit]:
+            if not payload or field not in payload:
+                continue
+            try:
+                values.append(round(float(payload[field]), 4))
+            except (TypeError, ValueError):
+                continue
+        return values
+
+    def _build_kde(self, values):
+        arr = np.array(values, dtype=float)
+        if arr.size < 2:
+            return None
+
+        std = float(np.std(arr, ddof=1))
+        if std == 0:
+            return None
+
+        bandwidth = 1.06 * std * (arr.size ** (-1 / 5))
+        if bandwidth <= 0:
+            return None
+
+        xs = np.linspace(float(arr.min()), float(arr.max()), 60)
+        density = np.zeros_like(xs)
+        norm = arr.size * bandwidth * np.sqrt(2 * np.pi)
+
+        for value in arr:
+            density += np.exp(-0.5 * ((xs - value) / bandwidth) ** 2)
+        density = density / norm
+
+        return {
+            'x': [round(float(x), 4) for x in xs],
+            'y': [round(float(y), 6) for y in density],
+        }
 
     # ------------------------------------------------------------------
     # Calculated field resolution
@@ -1788,10 +1964,17 @@ class WorkspaceInsightService:
         primary_date = date_fields[0] if date_fields else None
         group_by     = primary_date if primary_date else 'created_at_date'
         date_label   = self._clean_display_name(primary_date) if primary_date else 'Date'
-        has_dates    = bool(date_fields) or True   # created_at is always available
+        has_dates    = bool(date_fields) #or True   # created_at is always available
 
         insights = []
         color_i  = 0
+
+        # 👇 ADD THIS RIGHT HERE
+        date_ok = False
+        if primary_date:
+            date_ok = self._has_meaningful_date_variation(primary_date, sample)
+        elif len(sample) > 1:
+            date_ok = True
 
         # ════════════════════════════════════════════════════════════════
         #  KPI CARDS (up to 4, always width=3 so they fill one row)
@@ -1807,26 +1990,31 @@ class WorkspaceInsightService:
         color_i += 1
 
         # Card 2 — Sum of primary value field
-        if primary_value:
-            sum_title = self._agg_title('sum', display_pv)
-            sum_desc  = (f"Grand total of {display_pv.lower()} across all {record_noun}. "
-                         f"This is your headline performance number.")
-            insights.append(self._kpi_spec(
-                sum_title, 'sum', primary_value, color_i,
-                prefix=prefix_pv, description=sum_desc
-            ))
-            color_i += 1
 
-        # Card 3 — Average of primary value field
-        if primary_value:
-            avg_title = self._agg_title('avg', display_pv)
-            avg_desc  = (f"Average {display_pv.lower()} per {record_noun[:-1] if record_noun.endswith('s') else record_noun}. "
-                         f"Benchmark this against targets to spot under- or over-performance.")
-            insights.append(self._kpi_spec(
-                avg_title, 'avg', primary_value, color_i,
-                prefix=prefix_pv, description=avg_desc
-            ))
-            color_i += 1
+        if date_ok:
+                    
+            if primary_value:
+                sum_title = self._agg_title('sum', display_pv)
+                sum_desc  = (f"Grand total of {display_pv.lower()} across all {record_noun}. "
+                            f"This is your headline performance number.")
+                insights.append(self._kpi_spec(
+                    sum_title, 'sum', primary_value, color_i,
+                    prefix=prefix_pv, description=sum_desc
+                ))
+                color_i += 1
+
+                # Card 3 — Average of primary value field
+            if primary_value:
+                avg_title = self._agg_title('avg', display_pv)
+                avg_desc  = (f"Average {display_pv.lower()} per {record_noun[:-1] if record_noun.endswith('s') else record_noun}. "
+                            f"Benchmark this against targets to spot under- or over-performance.")
+                insights.append(self._kpi_spec(
+                    avg_title, 'avg', primary_value, color_i,
+                    prefix=prefix_pv, description=avg_desc
+                ))
+                color_i += 1
+
+
 
         # Card 4 — Second meaningful numeric (skip semantically redundant fields)
         primary_display_lower = display_pv.lower() if primary_value else ''
@@ -1891,6 +2079,8 @@ class WorkspaceInsightService:
             },
         })
 
+        donut_field = self._pick_focus_donut_field(all_categorical, domain)
+
         # ════════════════════════════════════════════════════════════════
         #  BAR CHARTS — categorical breakdowns (up to 4)
         # ════════════════════════════════════════════════════════════════
@@ -1926,6 +2116,34 @@ class WorkspaceInsightService:
                 'viz_config': {'x_axis': display_field, 'y_axis': y_lbl, 'description': desc},
             })
             bar_count += 1
+
+            # Place a focused donut comparison in the second-row right slot:
+            # row 1 = two trend charts, row 2 left = first bar chart, row 2
+            # right = this donut comparing the top contributors using an
+            # explicit preferred dimension such as product category.
+            if bar_count == 1 and primary_value and donut_field:
+                donut_display_field = self._clean_display_name(donut_field)
+                insights.append({
+                    'type': 'pie_chart',
+                    'title': f'{display_pv} — Top 3 {donut_display_field}',
+                    'width': 6, 'height': 4,
+                    'query_config': {
+                        'aggregations': [{
+                            'type': 'sum',
+                            'field': primary_value,
+                            'group_by': donut_field,
+                            'name': 'val',
+                        }],
+                        'group_order': 'value_desc',
+                        'group_limit': 3,
+                    },
+                    'viz_config': {
+                        'description': (
+                            f"Focused donut comparison of the top {donut_display_field.lower()} "
+                            f"contributors to {display_pv.lower()}. Use it to compare the leaders at a glance."
+                        ),
+                    },
+                })
 
         # ════════════════════════════════════════════════════════════════
         #  PIE CHARTS — part-of-whole (2–8 unique values only)
@@ -2203,6 +2421,58 @@ class WorkspaceInsightService:
             score -= 4
         return score
 
+    def _pick_focus_donut_field(self, categorical_fields, domain):
+        """
+        Pick a stable dimension for the executive donut widget.
+
+        For sales-style dashboards we prefer dimensions like product category
+        over more generic ranked categorical fields so the second-row-right
+        donut stays predictable across regenerations.
+        """
+        if not categorical_fields:
+            return None
+
+        preferences = {
+            'sales': [
+                ('product', 'category'),
+                ('customer', 'segment'),
+            ],
+            'healthcare': [
+                ('diagnosis',),
+                ('customer', 'segment'),
+                ('channel',),
+                ('payment', 'status'),
+            ],
+            'inventory': [
+                ('product', 'category'),
+                ('supplier',),
+                ('warehouse',),
+                ('status',),
+            ],
+            'generic': [
+                ('product', 'category'),
+                ('category',),
+                ('segment',),
+                ('channel',),
+                ('status',),
+                ('type',),
+                ('group',),
+            ],
+        }
+
+        keyword_sets = preferences.get(domain, []) + preferences['generic']
+        normalized = [(field, self._normalize_name(field)) for field in categorical_fields]
+
+        for keywords in keyword_sets:
+            for field, norm in normalized:
+                if all(keyword in norm for keyword in keywords):
+                    return field
+
+        if domain == 'sales':
+            return None
+
+        return categorical_fields[0]
+
     def _clean_display_name(self, field_name):
         """
         Convert a raw field name to a clean axis / title label.
@@ -2393,6 +2663,18 @@ class WorkspaceInsightService:
             'iot':        'readings',
             'generic':    'records',
         }.get(domain, 'records')
+    
+    def _has_meaningful_date_variation(self, field_name, sample):
+        values = []
+        for rec in sample:
+            if not rec:
+                continue
+            if field_name == 'created_at_date':
+                continue
+            val = rec.get(field_name)
+            if val not in (None, '', 'None', 'nan'):
+                values.append(str(val)[:10])
+        return len(set(values)) > 1
 
 
 class AuditService:
@@ -2472,8 +2754,12 @@ class DataSourceQueryEngine:
                 return self._exec_metric(widget, table_name, extra_filters)
             elif widget.widget_type == 'table':
                 return self._exec_table(widget, table_name, limit, extra_filters)
-            elif widget.widget_type in ('line_chart', 'bar_chart', 'pie_chart', 'scatter', 'heatmap'):
+            elif widget.widget_type in ('line_chart', 'area_chart', 'bar_chart', 'pie_chart', 'heatmap'):
                 return self._exec_chart(widget, table_name, limit, extra_filters)
+            elif widget.widget_type == 'scatter':
+                return self._exec_scatter(widget, table_name, limit, extra_filters)
+            elif widget.widget_type == 'histogram':
+                return self._exec_histogram(widget, table_name, limit, extra_filters)
             else:
                 return {'error': f"Unknown widget type: {widget.widget_type}"}
         except Exception as exc:
@@ -2589,7 +2875,96 @@ class DataSourceQueryEngine:
         grouped = {}
         for label, value in rows:
             grouped[str(label)] = float(value) if value is not None else 0.0
+        grouped = QueryEngine._apply_grouped_result_options(grouped, config)
         return {name: grouped}
+
+    def _exec_histogram(self, widget, table_name, limit, extra_filters):
+        config = widget.query_config or {}
+        field = config.get('field')
+        if not field or not self._validate_identifier(field):
+            return {'error': 'Histogram requires a valid query_config.field'}
+
+        bins = config.get('bins', 12)
+        try:
+            bins = max(5, min(int(bins), 40))
+        except (TypeError, ValueError):
+            bins = 12
+
+        where_clause, params = self._build_where(config.get('filters', []), extra_filters or [])
+        expr = self._numeric_expr(field)
+        sql = f'SELECT v FROM (SELECT {expr} AS v FROM {self._qi(table_name)}'
+        if where_clause:
+            sql += f' WHERE {where_clause}'
+        sql += ') AS histogram_source WHERE v IS NOT NULL '
+        sql += f'LIMIT {min(limit, 5000)}'
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        values = [round(float(row[0]), 4) for row in rows if row and row[0] is not None]
+        if not values:
+            return {'message': 'No numeric data available'}
+
+        kde = QueryEngine()._build_kde(values) if config.get('show_kde', True) else None
+        return {
+            'field': field,
+            'values': values,
+            'bins': bins,
+            'kde': kde,
+        }
+
+    def _exec_scatter(self, widget, table_name, limit, extra_filters):
+        config = widget.query_config or {}
+        x_field = config.get('x_field')
+        y_field = config.get('y_field')
+        label_field = config.get('label_field')
+
+        if not x_field or not y_field:
+            return {'error': 'Scatter plot requires query_config.x_field and query_config.y_field'}
+        if not self._validate_identifier(x_field) or not self._validate_identifier(y_field):
+            return {'error': 'Scatter plot requires valid x_field and y_field identifiers'}
+        if label_field and not self._validate_identifier(label_field):
+            return {'error': 'Scatter plot label_field is invalid'}
+
+        where_clause, params = self._build_where(config.get('filters', []), extra_filters or [])
+        x_expr = self._numeric_expr(x_field)
+        y_expr = self._numeric_expr(y_field)
+        label_sql = f', {self._qi(label_field)}::text AS label' if label_field else ''
+        sql = (
+            f'SELECT x, y{", label" if label_field else ""} FROM ('
+            f'SELECT {x_expr} AS x, {y_expr} AS y{label_sql} '
+            f'FROM {self._qi(table_name)}'
+        )
+        if where_clause:
+            sql += f' WHERE {where_clause}'
+        sql += ') AS scatter_source WHERE x IS NOT NULL AND y IS NOT NULL '
+        sql += f'LIMIT {min(limit, 2000)}'
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        points = []
+        for row in rows:
+            point = {
+                'x': round(float(row[0]), 4),
+                'y': round(float(row[1]), 4),
+            }
+            if label_field and len(row) > 2 and row[2] not in (None, ''):
+                point['label'] = str(row[2])
+            points.append(point)
+
+        if not points:
+            return {'message': 'No numeric data available'}
+
+        return {
+            'x_field': x_field,
+            'y_field': y_field,
+            'points': points,
+        }
 
     # ------------------------------------------------------------------
     # WHERE clause builder
@@ -2722,6 +3097,16 @@ class DataSourceQueryEngine:
     def _qi(name: str) -> str:
         """Quote a SQL identifier by wrapping in double-quotes."""
         return f'"{name}"'
+
+    def _numeric_expr(self, field: str) -> str:
+        """Return a Postgres expression that coerces messy numeric text to float."""
+        col = self._qi(field)
+        return (
+            "NULLIF("
+            f"regexp_replace({col}::text, '[^0-9.\\-]', '', 'g'),"
+            "''"
+            ")::double precision"
+        )
 
     def fetch_sample(self, table_name: str, max_rows: int = 500):
         """
@@ -2895,6 +3280,12 @@ class GoogleSheetsQueryEngine:
             cleaned = df[field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True)
             df[field] = pd.to_numeric(cleaned, errors='coerce')
 
+        if widget.widget_type == 'histogram':
+            return self._exec_histogram_df(widget, df, limit)
+
+        if widget.widget_type == 'scatter':
+            return self._exec_scatter_df(widget, df, limit)
+
         if group_by and group_by in df.columns:
             grouped = df.groupby(group_by, sort=True)
             if agg_type == 'count':
@@ -2905,8 +3296,12 @@ class GoogleSheetsQueryEngine:
                 result = getattr(grouped[field], fn)()
             else:
                 result = grouped.size()
-            return {'val': {str(k): (None if (v != v) else round(float(v), 6))
-                            for k, v in result.items()}}
+            grouped_dict = {
+                str(k): (None if (v != v) else round(float(v), 6))
+                for k, v in result.items()
+            }
+            grouped_dict = QueryEngine._apply_grouped_result_options(grouped_dict, qc)
+            return {'val': grouped_dict}
 
         # Scalar aggregation
         if agg_type == 'count':
@@ -2921,6 +3316,74 @@ class GoogleSheetsQueryEngine:
             }
             return {'val': round(agg_scalar.get(agg_type, float(col.sum())), 6)}
         return {'val': len(df)}
+
+    def _exec_histogram_df(self, widget, df, limit):
+        field = (widget.query_config or {}).get('field')
+        if not field or field not in df.columns:
+            return {'error': 'Histogram requires query_config.field'}
+
+        bins = (widget.query_config or {}).get('bins', 12)
+        try:
+            bins = max(5, min(int(bins), 40))
+        except (TypeError, ValueError):
+            bins = 12
+
+        cleaned = df[field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True)
+        numeric = pd.to_numeric(cleaned, errors='coerce').dropna().head(min(limit, 5000))
+        values = [round(float(v), 4) for v in numeric.tolist()]
+        if not values:
+            return {'message': 'No numeric data available'}
+
+        kde = QueryEngine()._build_kde(values) if (widget.query_config or {}).get('show_kde', True) else None
+        return {
+            'field': field,
+            'values': values,
+            'bins': bins,
+            'kde': kde,
+        }
+
+    def _exec_scatter_df(self, widget, df, limit):
+        config = widget.query_config or {}
+        x_field = config.get('x_field')
+        y_field = config.get('y_field')
+        label_field = config.get('label_field')
+        if not x_field or not y_field:
+            return {'error': 'Scatter plot requires query_config.x_field and query_config.y_field'}
+        if x_field not in df.columns or y_field not in df.columns:
+            return {'message': 'No numeric data available'}
+
+        x_numeric = pd.to_numeric(
+            df[x_field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True),
+            errors='coerce',
+        )
+        y_numeric = pd.to_numeric(
+            df[y_field].astype(str).str.replace(r'[$£€¥₹,\s]', '', regex=True),
+            errors='coerce',
+        )
+
+        scatter_df = pd.DataFrame({'x': x_numeric, 'y': y_numeric})
+        if label_field and label_field in df.columns:
+            scatter_df['label'] = df[label_field].astype(str)
+
+        scatter_df = scatter_df.dropna(subset=['x', 'y']).head(min(limit, 2000))
+        if scatter_df.empty:
+            return {'message': 'No numeric data available'}
+
+        points = []
+        for _, row in scatter_df.iterrows():
+            point = {
+                'x': round(float(row['x']), 4),
+                'y': round(float(row['y']), 4),
+            }
+            if 'label' in scatter_df.columns and row.get('label') not in (None, '', 'nan'):
+                point['label'] = str(row['label'])
+            points.append(point)
+
+        return {
+            'x_field': x_field,
+            'y_field': y_field,
+            'points': points,
+        }
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
@@ -2955,3 +3418,264 @@ class GoogleSheetsQueryEngine:
         except (ValueError, TypeError):
             pass
         return 'text'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data Profiler
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TableProfileService:
+    """
+    Compute per-column statistics for a DataTable.
+
+    Loads up to MAX_SAMPLE active records and returns a profile dict with:
+    - Overall: total records, sample size, data quality score (0-100) + grade
+    - Per column: completeness %, unique count, and type-specific stats
+      - numeric  → mean, median, std, min, max, p25, p75, skewness
+      - date/datetime → min_date, max_date, date_range_days
+      - boolean  → true_count, false_count, true_pct
+      - text/email/url/phone → top 5 most frequent values
+
+    Results are cached for CACHE_TTL seconds keyed on (table PK + updated_at),
+    so a new import or record edit automatically busts the cache.
+    """
+
+    MAX_SAMPLE = 10_000
+    CACHE_TTL  = 300  # seconds
+
+    _NUMERIC_TYPES  = {'number', 'currency', 'percentage'}
+    _DATE_TYPES     = {'date', 'datetime'}
+    _BOOL_TYPES     = {'boolean'}
+    _BOOL_MAP       = {
+        'true': True, 'false': False,
+        '1': True,    '0': False,
+        'yes': True,  'no': False,
+    }
+
+    def __init__(self, table):
+        self.table = table
+
+    # ------------------------------------------------------------------
+    # Public
+    # ------------------------------------------------------------------
+
+    def compute(self):
+        """Return the profile, serving from cache when available."""
+        cache_key = self._cache_key()
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = self._compute_profile()
+        cache.set(cache_key, result, self.CACHE_TTL)
+        return result
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _cache_key(self):
+        ts = self.table.updated_at.timestamp() if self.table.updated_at else 0
+        return f"table_profile:{self.table.pk}:{ts}"
+
+    def _compute_profile(self):
+        from django.utils import timezone
+        import pandas as pd
+
+        schema       = self.table.schema or []
+        total_records = self.table.record_count
+
+        if total_records == 0 or not schema:
+            return {
+                'table_id':        str(self.table.pk),
+                'table_name':      self.table.name,
+                'total_records':   total_records,
+                'sampled_records': 0,
+                'is_sample':       False,
+                'column_count':    len(schema),
+                'quality_score':   100,
+                'quality_grade':   'A',
+                'columns':         [],
+                'generated_at':    timezone.now().isoformat(),
+            }
+
+        # Load records (capped at MAX_SAMPLE)
+        from apps.dashboards.models import Record as _Record
+        raw = list(
+            _Record.objects.filter(table=self.table, is_active=True)
+            .values_list('data', flat=True)[:self.MAX_SAMPLE]
+        )
+        sampled   = len(raw)
+        is_sample = total_records > self.MAX_SAMPLE
+
+        # Build DataFrame — one column per schema field, all others ignored
+        field_names = [f['name'] for f in schema]
+        df = pd.DataFrame(raw, columns=field_names)
+
+        columns            = []
+        completeness_sum   = 0.0
+
+        for field in schema:
+            col_stats = self._profile_column(df, field['name'], field['type'], sampled)
+            columns.append(col_stats)
+            completeness_sum += col_stats['completeness_pct']
+
+        avg_completeness = completeness_sum / len(schema) if schema else 100.0
+        quality_score    = round(avg_completeness)
+        quality_grade    = self._grade(quality_score)
+
+        return {
+            'table_id':        str(self.table.pk),
+            'table_name':      self.table.name,
+            'total_records':   total_records,
+            'sampled_records': sampled,
+            'is_sample':       is_sample,
+            'column_count':    len(schema),
+            'quality_score':   quality_score,
+            'quality_grade':   quality_grade,
+            'columns':         columns,
+            'generated_at':    timezone.now().isoformat(),
+        }
+
+    def _profile_column(self, df, col_name, col_type, total_rows):
+        import pandas as pd
+        import numpy as np
+
+        # Pull the series; missing column → treat as all-null
+        series   = df[col_name] if col_name in df.columns else pd.Series([None] * total_rows)
+        non_null = series.dropna()
+        non_null = non_null[non_null.astype(str).str.strip() != '']
+
+        null_count       = total_rows - len(non_null)
+        completeness_pct = round(len(non_null) / total_rows * 100, 1) if total_rows else 100.0
+        unique_count     = int(non_null.nunique())
+
+        stats = {
+            'name':             col_name,
+            'type':             col_type,
+            'total_count':      total_rows,
+            'non_null_count':   int(len(non_null)),
+            'null_count':       int(null_count),
+            'completeness_pct': completeness_pct,
+            'unique_count':     unique_count,
+        }
+
+        if col_type in self._NUMERIC_TYPES:
+            numeric = pd.to_numeric(non_null, errors='coerce').dropna()
+            if len(numeric) >= 1:
+                p25 = round(float(numeric.quantile(0.25)), 4)
+                median = round(float(numeric.median()), 4)
+                p75 = round(float(numeric.quantile(0.75)), 4)
+                stats.update({
+                    'mean':     round(float(numeric.mean()), 4),
+                    'median':   median,
+                    'std':      round(float(numeric.std()), 4) if len(numeric) > 1 else 0.0,
+                    'min':      round(float(numeric.min()), 4),
+                    'max':      round(float(numeric.max()), 4),
+                    'p25':      p25,
+                    'p75':      p75,
+                    'skewness': round(float(numeric.skew()), 4) if len(numeric) > 2 else 0.0,
+                })
+                stats['histogram'] = self._build_histogram(numeric)
+                stats['box_plot'] = self._build_box_plot(stats)
+            else:
+                stats.update({k: None for k in ('mean', 'median', 'std', 'min', 'max', 'p25', 'p75', 'skewness')})
+                stats['histogram'] = []
+                stats['box_plot'] = None
+
+        elif col_type in self._DATE_TYPES:
+            dates = pd.to_datetime(non_null, errors='coerce').dropna()
+            if len(dates) >= 1:
+                stats.update({
+                    'min_date':        dates.min().date().isoformat(),
+                    'max_date':        dates.max().date().isoformat(),
+                    'date_range_days': int((dates.max() - dates.min()).days),
+                })
+
+        elif col_type in self._BOOL_TYPES:
+            coerced    = non_null.astype(str).str.lower().map(self._BOOL_MAP).dropna()
+            true_count = int(coerced.sum())
+            if len(coerced) >= 1:
+                stats.update({
+                    'true_count':  true_count,
+                    'false_count': int(len(coerced)) - true_count,
+                    'true_pct':    round(true_count / len(coerced) * 100, 1),
+                })
+
+        else:  # text, email, url, phone
+            top = (
+                non_null.astype(str)
+                .value_counts()
+                .head(5)
+            )
+            stats['top_values'] = [
+                {'value': str(k), 'count': int(v)}
+                for k, v in top.items()
+            ]
+
+        return stats
+
+    def _build_histogram(self, numeric_series):
+        values = numeric_series.astype(float).to_numpy()
+        if values.size == 0:
+            return []
+
+        min_val = float(np.min(values))
+        max_val = float(np.max(values))
+        if min_val == max_val:
+            return [{
+                'start': round(min_val, 4),
+                'end': round(max_val, 4),
+                'count': int(values.size),
+            }]
+
+        bin_count = min(12, max(5, int(np.sqrt(values.size))))
+        counts, edges = np.histogram(values, bins=bin_count)
+        return [
+            {
+                'start': round(float(edges[idx]), 4),
+                'end': round(float(edges[idx + 1]), 4),
+                'count': int(counts[idx]),
+            }
+            for idx in range(len(counts))
+        ]
+
+    @staticmethod
+    def _build_box_plot(stats):
+        q1 = float(stats['p25'])
+        q3 = float(stats['p75'])
+        min_val = float(stats['min'])
+        max_val = float(stats['max'])
+        median = float(stats['median'])
+
+        iqr = q3 - q1
+        lower_fence = q1 - (1.5 * iqr)
+        upper_fence = q3 + (1.5 * iqr)
+        whisker_min = max(min_val, lower_fence)
+        whisker_max = min(max_val, upper_fence)
+
+        outlier_count = 0
+        if min_val < lower_fence:
+            outlier_count += 1
+        if max_val > upper_fence:
+            outlier_count += 1
+
+        return {
+            'min': round(min_val, 4),
+            'q1': round(q1, 4),
+            'median': round(median, 4),
+            'q3': round(q3, 4),
+            'max': round(max_val, 4),
+            'whisker_min': round(whisker_min, 4),
+            'whisker_max': round(whisker_max, 4),
+            'iqr': round(iqr, 4),
+            'outlier_count': int(outlier_count),
+        }
+
+    @staticmethod
+    def _grade(score):
+        if score >= 90: return 'A'
+        if score >= 75: return 'B'
+        if score >= 60: return 'C'
+        if score >= 40: return 'D'
+        return 'F'

@@ -31,6 +31,9 @@ dependencies = [
     "structlog>=25.5.0",
     "whitenoise>=6.11.0",
     "xlrd>=2.0.2",
+    "django-cloudinary-storage",
+    "cloudinary",
+    "stripe",
 ]
 
 # ---------------------------------------------------------------------------
@@ -70,3 +73,9 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
 ]
+
+[tool.setuptools]
+packages = ["apps", "config"]
+
+[tool.setuptools.package-dir]
+"" = "."
