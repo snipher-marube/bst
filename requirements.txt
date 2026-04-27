@@ -55,7 +55,7 @@ matplotlib-inline==0.2.1
 mccabe==0.7.0
 msgpack==1.1.2
 mypy-extensions==1.1.0
-numpy==2.4.2
+numpy==2.4.4
 openpyxl==3.1.5
 packaging==26.1
 pandas==3.0.2
