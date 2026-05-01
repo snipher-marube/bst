@@ -42,7 +42,7 @@ faker==40.15.0
 flake8==7.3.0
 fonttools==4.62.1
 hyperlink==21.0.0
-idna==3.11
+idna==3.13
 incremental==24.11.0
 iniconfig==2.3.0
 ipython==9.12.0
