@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "anthropic>=0.40.0",
     "celery>=5.6.2",
     "channels>=4.3.2",
     "channels-redis>=4.3.0",

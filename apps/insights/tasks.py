@@ -701,6 +701,94 @@ def _notify_anomaly_insights(workspace, anomaly_insights: list):
 # workspace that has at least one table with records.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# advise_and_build_dashboard
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30,
+             autoretry_for=(Exception,), retry_backoff=True)
+def advise_and_build_dashboard(self, dashboard_id, table_id, user_id):
+    """
+    Build a dashboard using the advisor → engine pattern.
+
+    1. Load DataTable + Dashboard.
+    2. PrivacySampler → privacy-safe shadow dataset.
+    3. VisualizationAdvisor.analyze() → plan (which columns, chart types, labels).
+    4. DataTable.build_widgets_from_plan() → engine creates Widget records from plan.
+    5. Fallback to build_default_widgets() if advisor unavailable or fails.
+    6. Deduct tokens, write audit Insight, broadcast dashboard_ready.
+    """
+    from apps.dashboards.models import DataTable, Dashboard
+    from apps.insights.privacy import PrivacySampler
+    from apps.insights.agents import VisualizationAdvisor
+    from apps.insights.models import Insight
+
+    try:
+        table     = DataTable.objects.select_related('workspace').get(pk=table_id)
+        dashboard = Dashboard.objects.get(pk=dashboard_id)
+        workspace = table.workspace
+    except (DataTable.DoesNotExist, Dashboard.DoesNotExist) as exc:
+        logger.error('advise_and_build_dashboard: not found — %s', exc)
+        return {'status': 'error', 'reason': str(exc)}
+
+    advisor    = VisualizationAdvisor()
+    ai_advised = False
+    tokens     = {}
+
+    if advisor.is_available():
+        budget = _get_or_create_budget(workspace)
+        if budget.has_capacity(estimated_tokens=2000):
+            shadow      = PrivacySampler(table).sample()
+            plan, tokens = advisor.analyze(shadow)
+
+            if plan and (plan.get('chart_plans') or plan.get('kpi_fields')):
+                grid_rows  = table.build_widgets_from_plan(dashboard, plan)
+                ai_advised = True
+                budget.consume(tokens.get('input', 0) + tokens.get('output', 0))
+
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                try:
+                    user = User.objects.get(pk=user_id) if user_id else None
+                except User.DoesNotExist:
+                    user = None
+
+                chart_count = len(plan.get('chart_plans', [])) + len(plan.get('kpi_fields', []))
+                Insight.objects.create(
+                    workspace         = workspace,
+                    title             = f'AI advised {chart_count} visualizations for {table.name}',
+                    description       = '; '.join(
+                        cp.get('title', '') for cp in plan.get('chart_plans', [])
+                    ),
+                    insight_type      = 'viz_suggestion',
+                    source_table_name = table.name,
+                    llm_model         = getattr(advisor, '_model', ''),
+                    prompt_tokens     = tokens.get('input', 0),
+                    completion_tokens = tokens.get('output', 0),
+                    created_by        = user,
+                )
+            else:
+                logger.warning('advise_and_build_dashboard: advisor returned empty plan — falling back dashboard=%s', dashboard_id)
+        else:
+            logger.warning('advise_and_build_dashboard: budget exhausted — falling back dashboard=%s', dashboard_id)
+
+    if not ai_advised:
+        grid_rows = table.build_default_widgets(dashboard)
+
+    _broadcast(f'dashboard_{dashboard_id}', {
+        'type':       'dashboard_ready',
+        'grid_rows':  grid_rows,
+        'ai_advised': ai_advised,
+        'table':      table.name,
+    })
+
+    logger.info(
+        'advise_and_build_dashboard: completed dashboard=%s table=%s ai_advised=%s widgets=%d',
+        dashboard_id, table_id, ai_advised, dashboard.widgets.count(),
+    )
+    return {'status': 'completed', 'ai_advised': ai_advised}
+
+
 @shared_task(
     name='insights.auto_trigger_anomaly_detection',
     bind=True,

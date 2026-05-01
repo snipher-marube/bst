@@ -16,7 +16,9 @@ class QueryEngine:
     """
 
     def __init__(self):
-        self.cache_timeout = getattr(settings, 'WIDGET_CACHE_TTL', 300)
+        # Long TTL — cache is invalidated by data changes via the cache key itself
+        # (table record_count + updated_at are baked into the key).
+        self.cache_timeout = getattr(settings, 'WIDGET_CACHE_TTL', 60 * 60 * 24 * 30)
 
 
     def _generate_cache_key(self, widget, extra_filters=None):
@@ -27,11 +29,20 @@ class QueryEngine:
         # Convert UUID to string for serialization
         table_id = str(widget.table_id) if widget.table_id else 'none'
 
+        # Include table data fingerprint so cache is invalidated automatically
+        # whenever records are added or the table is updated — no manual clearing needed.
+        table = widget.table
+        table_fingerprint = ''
+        if table is not None:
+            rc = getattr(table, 'record_count', None) or 0
+            ua = getattr(table, 'updated_at', None)
+            table_fingerprint = f'{rc}:{ua}'
+
         key_data = {
             'table_id': table_id,
+            'table_data': table_fingerprint,
             'query_config': widget.query_config,
             'widget_type': widget.widget_type,
-            'updated_at': str(widget.updated_at) if hasattr(widget, 'updated_at') else '',
             'extra_filters': extra_filters or [],
         }
 
@@ -133,7 +144,8 @@ class QueryEngine:
                 data = self._execute_metric_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type == 'table':
                 data = self._execute_table_query(widget, limit, extra_filters=extra_filters)
-            elif widget.widget_type in ['line_chart', 'area_chart', 'bar_chart', 'pie_chart', 'heatmap']:
+            elif widget.widget_type in ['line_chart', 'area_chart', 'bar_chart', 'pie_chart',
+                                         'heatmap', 'treemap', 'funnel_chart', 'waterfall', 'donut']:
                 data = self._execute_chart_query(widget, limit, extra_filters=extra_filters)
             elif widget.widget_type == 'scatter':
                 data = self._execute_scatter_query(widget, limit, extra_filters=extra_filters)
@@ -1239,9 +1251,10 @@ class DataImportService:
                                 error_count += 1
                                 errors.append(str(row_exc))
 
-            # Update record_count exactly once after all writes
+            # Update record_count + updated_at exactly once after all writes.
+            # updated_at changing invalidates widget cache for this table automatically.
             table.record_count = table.records.filter(is_active=True).count()
-            table.save(update_fields=['record_count'])
+            table.save(update_fields=['record_count', 'updated_at'])
 
         return {
             'success': success_count,

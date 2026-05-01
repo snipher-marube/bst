@@ -22,7 +22,7 @@ from django.conf import settings
 import logging
 
 from apps.dashboards.models import ( DataTable,
-    Record, Dashboard, AuditLog, CalculatedField, DataSource
+    Record, Dashboard, Widget, AuditLog, CalculatedField, DataSource
 )
 from apps.dashboards.services import DataImportService, WorkspaceInsightService
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -64,11 +64,29 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
         
         if workspace:
             # Get recent tables
-            context['recent_tables'] = DataTable.objects.filter(
+            recent_tables = list(DataTable.objects.filter(
                 workspace=workspace,
                 is_active=True
-            ).order_by('-updated_at')[:5]
-            
+            ).order_by('-updated_at')[:5])
+            context['recent_tables'] = recent_tables
+
+            # Build (table, dashboard|None) pairs so the template can show a
+            # "View Dashboard" link for each recent table without extra queries.
+            if recent_tables:
+                table_ids = [t.pk for t in recent_tables]
+                table_dashboard_map = {}
+                for w in (Widget.objects
+                          .filter(table_id__in=table_ids)
+                          .select_related('dashboard')
+                          .order_by('-dashboard__updated_at', '-dashboard__created_at')):
+                    if w.table_id not in table_dashboard_map and w.dashboard.is_active:
+                        table_dashboard_map[w.table_id] = w.dashboard
+                context['recent_tables_with_dash'] = [
+                    (t, table_dashboard_map.get(t.pk)) for t in recent_tables
+                ]
+            else:
+                context['recent_tables_with_dash'] = []
+
             # Get workspace overview dashboard if it exists
             context['insights_dashboard'] = Dashboard.objects.filter(
                 workspace=workspace,
@@ -76,11 +94,12 @@ class DashboardHomeView(LoginRequiredMixin, TemplateView):
                 is_active=True
             ).first()
 
-            # Get recent dashboards
+            # Get recent dashboards — secondary sort by created_at so a
+            # freshly-generated dashboard is always shown before older ones.
             context['recent_dashboards'] = Dashboard.objects.filter(
                 workspace=workspace,
                 is_active=True
-            ).order_by('-updated_at')[:5]
+            ).order_by('-updated_at', '-created_at')[:5]
             
             # Get usage statistics
             context['stats'] = workspace.get_usage_stats()
@@ -196,14 +215,21 @@ class TableCreateView(LoginRequiredMixin, CreateView):
         form.instance.created_by = self.request.user
         response = super().form_valid(form)
         
-        # AUTO-GENERATE DASHBOARD! 🎉
-        dashboard = self.object.generate_default_dashboard()
-        
+        # Create stub dashboard then queue AI advisor task
+        dashboard = self.object.create_stub_dashboard()
+        try:
+            from apps.insights.tasks import advise_and_build_dashboard
+            advise_and_build_dashboard.delay(
+                str(dashboard.pk), str(self.object.pk), self.request.user.pk
+            )
+        except Exception:
+            pass
+
         messages.success(
-            self.request, 
+            self.request,
             f'Table "{self.object.name}" created! '
             f'<a href="{reverse("dashboard:dashboard_detail", kwargs={"pk": dashboard.pk})}" '
-            f'class="underline font-medium">View auto-generated dashboard</a>'
+            f'class="underline font-medium">View dashboard</a>'
         )
         
         return response
@@ -383,6 +409,12 @@ class TableImportMixin:
                 return None
 
             table_name = request.POST.get('table_name', 'Imported Table')
+            # Auto-suffix name if it already exists in this workspace
+            base_name = table_name
+            counter = 1
+            while DataTable.objects.filter(workspace=workspace, name=table_name).exists():
+                table_name = f"{base_name} ({counter})"
+                counter += 1
             table = DataTable.objects.create(
                 workspace=workspace,
                 name=table_name,
@@ -403,11 +435,20 @@ class TableImportMixin:
                 mapping[col] = col
             table.schema = new_schema
             table.save()
-            # Generate default dashboard for new tables (non-fatal if it fails)
+            # Create stub dashboard + queue AI advisor task for new tables
             try:
-                table.generate_default_dashboard()
+                _new_dash = table.create_stub_dashboard()
+                table._new_dashboard = _new_dash
+                from apps.insights.tasks import advise_and_build_dashboard
+                from django.db import transaction as _tx
+                _dash_pk = str(_new_dash.pk)
+                _table_pk = str(table.pk)
+                _user_pk = request.user.pk
+                _tx.on_commit(lambda: advise_and_build_dashboard.delay(
+                    _dash_pk, _table_pk, _user_pk
+                ))
             except Exception:
-                pass
+                table._new_dashboard = None
         else:
             for field in table.schema:
                 field_name = field['name']
@@ -725,11 +766,14 @@ class TableCreateFromImportView(LoginRequiredMixin, TableImportMixin, TemplateVi
 
             table, result = result_data
             if result['errors'] == 0:
-                messages.success(request, f'Table "{table.name}" created with {result["success"]} records!')
+                messages.success(request, f'Table "{table.name}" created with {result["success"]} records! AI is building your dashboard…')
             else:
                 messages.warning(request, f'Table "{table.name}" created. Imported {result["success"]} records with {result["errors"]} errors.')
                 for detail in result.get('error_details', [])[:3]:
                     messages.error(request, detail)
+            new_dash = getattr(table, '_new_dashboard', None)
+            if new_dash:
+                return redirect('dashboard:dashboard_detail', pk=new_dash.pk)
             return redirect('dashboard:table_detail', pk=table.id)
 
         return redirect('dashboard:table_create_import')

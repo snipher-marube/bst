@@ -71,6 +71,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@analyticsmeta.com}
       SALES_EMAIL: ${SALES_EMAIL:-sales@analyticsmeta.com}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +110,7 @@ services:
       PG_DATABASE_HOST_DEV: postgres
       PG_DATABASE_PORT_DEV: "5432"
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy

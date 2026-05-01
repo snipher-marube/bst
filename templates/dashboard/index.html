@@ -274,7 +274,7 @@
           <a href="{% url 'dashboard:tables' %}" class="text-xs font-medium text-[#f68712] hover:underline">View all →</a>
         </div>
         <div class="divide-y divide-gray-50">
-          {% for table in recent_tables %}
+          {% for table, dash in recent_tables_with_dash %}
           <div class="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition group">
             <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
               <i class="fas fa-table text-blue-500 text-sm"></i>
@@ -285,6 +285,12 @@
               <p class="text-xs text-gray-400">{{ table.record_count }} record{{ table.record_count|pluralize }} · {{ table.updated_at|timesince }} ago</p>
             </div>
             <div class="hidden group-hover:flex items-center gap-1 shrink-0">
+              {% if dash %}
+              <a href="{% url 'dashboard:dashboard_detail' pk=dash.id %}"
+                 class="p-1.5 rounded-lg hover:bg-purple-50 text-gray-400 hover:text-purple-600 transition" title="View dashboard">
+                <i class="fas fa-chart-pie text-xs"></i>
+              </a>
+              {% endif %}
               <a href="{% url 'dashboard:record_create' table_id=table.id %}"
                  class="p-1.5 rounded-lg hover:bg-green-50 text-gray-400 hover:text-green-600 transition" title="Add record">
                 <i class="fas fa-plus text-xs"></i>

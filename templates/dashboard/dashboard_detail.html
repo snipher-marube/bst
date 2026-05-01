@@ -10,6 +10,13 @@
   <span class="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block"></span>
   <span>Connecting…</span>
 </span>
+<button id="themeToggleBtn"
+        onclick="toggleDashboardTheme()"
+        class="theme-toggle"
+        aria-label="Toggle dashboard dark mode"
+        title="Toggle dark mode">
+  <i class="fas fa-moon text-sm" aria-hidden="true"></i>
+</button>
 <button id="commentsBtn"
         onclick="toggleComments()"
         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition relative">
@@ -27,11 +34,13 @@
         style="background:#f68712">
   <i class="fas fa-plus text-xs"></i> Add Widget
 </button>
-<button id="themeToggleBtn"
-        onclick="toggleDashboardTheme()"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition">
-  <i class="fas fa-moon text-xs"></i>
-  <span>Dark Mode</span>
+<button id="askAiBtn"
+        onclick="toggleAskAI()"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+        style="background: linear-gradient(135deg,#0ea5e9,#06b6d4);"
+        title="Ask AI about your data">
+  <i class="fas fa-message text-xs"></i>
+  <span class="hidden sm:inline">Ask AI</span>
 </button>
 {% endblock %}
 
@@ -98,6 +107,7 @@
   /* ── gridstack ── */
   .grid-stack { background: transparent; }
   .grid-stack-item-content {
+    position: relative;
     background: var(--panel) !important;
     border-radius: .875rem !important;
     border: 1px solid var(--line);
@@ -125,6 +135,91 @@
   .widget-actions { display: flex; gap: .25rem; opacity: 0; transition: opacity .2s; }
   .grid-stack-item-content:hover .widget-actions { opacity: 1; }
   .widget-header-tools { display: flex; align-items: center; gap: .35rem; }
+  /* Hide resize handles and suppress chart hover when widget AI panel is open */
+  .widget-ai-panel-open .ui-resizable-handle,
+  .widget-ai-panel-open .gs-resizable-handle { display: none !important; }
+  .widget-ai-panel-open .widget-body { pointer-events: none; }
+
+  .widget-ask-ai-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 1.6rem; height: 1.6rem; padding: 0; border: none; border-radius: .375rem;
+    background: transparent; color: #6366f1; cursor: pointer;
+    font-size: .75rem; transition: color .15s, background .15s;
+    flex-shrink: 0;
+  }
+  .widget-ask-ai-btn:hover { color: #fff; background: #6366f1; }
+  .widget-ai-panel {
+    position: absolute; top: 25%; right: 0; bottom: 0; width: 75%; z-index: 20;
+    display: flex; flex-direction: column;
+    background: var(--panel, #fff);
+    border-radius: .75rem;
+    border: 1.5px solid #a5b4fc;
+    box-shadow: 0 -4px 20px rgba(99,102,241,.15);
+    overflow: hidden;
+  }
+  .widget-ai-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .45rem .75rem; background: #6366f1; color: #fff;
+    font-size: .75rem; font-weight: 600; gap: .5rem; flex-shrink: 0;
+  }
+  .widget-ai-panel-header button {
+    background: transparent; border: none; color: #fff; cursor: pointer;
+    font-size: .8rem; padding: .1rem .25rem; border-radius: .25rem;
+    line-height: 1; transition: background .15s;
+  }
+  .widget-ai-panel-header button:hover { background: rgba(255,255,255,.2); }
+  .widget-ai-response {
+    flex: 1; overflow-y: auto; padding: .6rem .75rem;
+    font-size: .78rem; line-height: 1.55; color: var(--text, #1f2937);
+    display: flex; flex-direction: column; gap: .5rem;
+  }
+  .widget-ai-response:empty::before {
+    content: 'Ask anything about this chart…';
+    color: #9ca3af; font-style: italic; font-size: .75rem;
+  }
+  .widget-ai-bubble-q {
+    align-self: flex-end; background: #e0f2fe; color: #0369a1;
+    padding: .35rem .65rem; border-radius: .75rem .75rem 0 .75rem;
+    max-width: 90%; word-break: break-word;
+  }
+  .widget-ai-bubble-a {
+    align-self: flex-start; background: #f3f4f6; color: #1f2937;
+    padding: .35rem .65rem; border-radius: .75rem .75rem .75rem 0;
+    max-width: 95%; word-break: break-word; white-space: pre-wrap;
+  }
+  .widget-ai-input-row {
+    display: flex; gap: .35rem; padding: .5rem .65rem;
+    border-top: 1px solid #e5e7eb; flex-shrink: 0;
+    background: var(--card, #fff);
+  }
+  .widget-ai-input-row input {
+    flex: 1; font-size: .75rem; padding: .35rem .55rem;
+    border: 1px solid #d1d5db; border-radius: .375rem;
+    outline: none; background: var(--panel-2, #f9fafb); color: var(--text, #1f2937);
+  }
+  .widget-ai-input-row input:focus { border-color: #6366f1; }
+  .widget-ai-input-row button {
+    display: flex; align-items: center; justify-content: center;
+    width: 1.75rem; height: 1.75rem; border: none; border-radius: .375rem;
+    background: #6366f1; color: #fff; cursor: pointer; font-size: .72rem;
+    flex-shrink: 0; transition: background .15s;
+  }
+  .widget-ai-input-row button:hover { background: #4f46e5; }
+  .ai-chart-bubble {
+    background: #f8faff; border: 1px solid #c7d7fe;
+    border-radius: .75rem; overflow: hidden; margin-bottom: .25rem;
+  }
+  .ai-chart-bubble-title {
+    font-size: .72rem; font-weight: 600; color: #3730a3;
+    padding: .45rem .7rem .1rem; display: flex; align-items: center; gap: .3rem;
+  }
+  .ai-chart-bubble-plot { width: 100%; height: 220px; }
+
+  .widget-ai-thinking {
+    display: flex; align-items: center; gap: .35rem;
+    font-size: .7rem; color: #6b7280; padding: 0 .75rem .4rem;
+    flex-shrink: 0;
+  }
   .widget-time-filter {
     align-items: center; gap: .45rem; margin-right: .35rem;
     min-width: 232px;
@@ -230,6 +325,33 @@
 {% endblock %}
 
 {% block main_content %}
+
+{% if dashboard.layout_config.ai_pending %}
+<div id="aiPendingOverlay"
+     class="fixed inset-0 z-40 flex items-center justify-center"
+     style="background: rgba(var(--shell-rgb, 248 250 252) / 0.92); backdrop-filter: blur(6px);">
+  <div class="flex flex-col items-center gap-5 text-center px-8 py-10 rounded-2xl border max-w-sm w-full"
+       style="background: var(--panel); border-color: var(--line); box-shadow: 0 8px 32px rgba(0,0,0,.1);">
+    <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl"
+         style="background: linear-gradient(135deg,#7c3aed,#4f46e5)">
+      <i class="fas fa-wand-magic-sparkles"></i>
+    </div>
+    <div>
+      <p class="font-bold text-base mb-1" style="color: var(--text)">Building your dashboard…</p>
+      <p class="text-sm" style="color: var(--subtle)">
+        AI is analysing your data to choose the best charts and labels,
+        then the engine is building them.
+      </p>
+    </div>
+    <div class="flex gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style="animation-delay:0ms"></span>
+      <span class="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style="animation-delay:150ms"></span>
+      <span class="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style="animation-delay:300ms"></span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div id="dashboardShell" class="min-h-full">
 
   {# Dashboard meta bar #}
@@ -416,15 +538,35 @@
         <div class="form-group">
           <label class="form-label" for="widgetType">Widget Type</label>
           <select id="widgetType" class="form-ctrl" required onchange="onTypeChange()">
-            <option value="metric">KPI / Metric Card</option>
-            <option value="line_chart">Line Chart – Trend over time</option>
-            <option value="area_chart">Area Chart – Filled trend over time</option>
-            <option value="bar_chart">Bar Chart – Category comparison</option>
-            <option value="pie_chart">Pie Chart – Part of whole</option>
-            <option value="histogram">Histogram – Distribution with KDE</option>
-            <option value="box_plot">Box Plot – Quartiles and spread</option>
-            <option value="scatter">Scatter Plot – Relationship between two measures</option>
-            <option value="table">Data Table</option>
+            <optgroup label="KPI">
+              <option value="metric">Metric Card – Single KPI number</option>
+              <option value="gauge">Gauge – Progress dial</option>
+            </optgroup>
+            <optgroup label="Trends">
+              <option value="line_chart">Line Chart – Trend over time</option>
+              <option value="area_chart">Area Chart – Filled volume over time</option>
+            </optgroup>
+            <optgroup label="Comparisons">
+              <option value="bar_chart">Bar Chart – Category comparison</option>
+              <option value="waterfall">Waterfall – Cumulative changes</option>
+            </optgroup>
+            <optgroup label="Part-of-Whole">
+              <option value="pie_chart">Pie Chart – Part of whole (≤ 7 slices)</option>
+              <option value="donut">Donut Chart – Part of whole with centre label</option>
+              <option value="treemap">Treemap – Proportional areas</option>
+              <option value="funnel_chart">Funnel Chart – Ranked drop-off</option>
+            </optgroup>
+            <optgroup label="Distributions">
+              <option value="histogram">Histogram – Distribution with KDE</option>
+              <option value="box_plot">Box Plot – Quartiles and spread</option>
+            </optgroup>
+            <optgroup label="Relationships">
+              <option value="scatter">Scatter Plot – Correlation between two measures</option>
+              <option value="bubble">Bubble Chart – Three-variable scatter</option>
+            </optgroup>
+            <optgroup label="Raw Data">
+              <option value="table">Data Table</option>
+            </optgroup>
           </select>
         </div>
 
@@ -662,8 +804,8 @@ async function initDashboard() {
 function initGrid() {
   grid = GridStack.init({
     column: 12,
-    cellHeight: 104,
-    margin: 8,
+    cellHeight: 100,
+    margin: 10,
     float: true,
     animate: true,
     alwaysShowResizeHandle: true,
@@ -753,6 +895,12 @@ function buildWidgetHTML(widget) {
                 <input id="widget-time-filter-end-${widget.id}" type="range" min="0" max="0" value="0" class="widget-time-filter-input end">
               </div>
             </div>
+            <button class="widget-ask-ai-btn"
+                    onclick="askAIAboutWidget('${widget.id}', '${esc(widget.widget_type)}')"
+                    aria-label="Ask AI about ${esc(widget.title)}"
+                    title="Ask AI about this chart">
+              <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
+            </button>
             <div class="widget-actions" role="group" aria-label="Widget actions for ${esc(widget.title)}">
               <button class="widget-action-btn" onclick="refreshWidget('${widget.id}')"
                       aria-label="Refresh ${esc(widget.title)}">
@@ -767,6 +915,22 @@ function buildWidgetHTML(widget) {
         </div>
         <div class="widget-body" id="widget-${widget.id}" role="region" aria-label="${esc(widget.title)}">
           <div class="state-center"><i class="fas fa-circle-notch spin" style="color:#03466e;opacity:.4" aria-hidden="true"></i><span class="sr-only">Loading…</span></div>
+        </div>
+        <div class="widget-ai-panel" id="widget-ai-panel-${widget.id}" style="display:none" data-widget-type="${esc(widget.widget_type)}" data-widget-title="${esc(widget.title)}">
+          <div class="widget-ai-panel-header">
+            <span><i class="fas fa-wand-magic-sparkles" style="margin-right:.3rem"></i>Ask AI — ${esc(widget.title)}</span>
+            <button onclick="closeWidgetAIPanel('${widget.id}')" aria-label="Close AI panel"><i class="fas fa-times"></i></button>
+          </div>
+          <div class="widget-ai-response" id="widget-ai-response-${widget.id}"></div>
+          <div class="widget-ai-thinking" id="widget-ai-thinking-${widget.id}" style="display:none">
+            <i class="fas fa-circle-notch spin" style="color:#6366f1"></i> Thinking…
+          </div>
+          <div class="widget-ai-input-row">
+            <input type="text" id="widget-ai-input-${widget.id}"
+                   placeholder="Ask about this chart…"
+                   onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendWidgetAI('${widget.id}');}">
+            <button onclick="sendWidgetAI('${widget.id}')" aria-label="Send"><i class="fas fa-paper-plane"></i></button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -791,15 +955,21 @@ function renderWidgetContent(widget) {
   }
 
   switch (widget.widget_type) {
-    case 'metric':     renderKPI(el, widget, data);           break;
-    case 'table':      renderTable(el, data);                 break;
-    case 'line_chart': renderChart(el, data, 'scatter', widget); break;
-    case 'area_chart': renderChart(el, data, 'area',    widget); break;
-    case 'bar_chart':  renderChart(el, data, 'bar',     widget); break;
-    case 'pie_chart':  renderChart(el, data, 'pie',     widget); break;
-    case 'histogram':  renderHistogramChart(el, data, widget); break;
-    case 'box_plot':   renderBoxPlotChart(el, data, widget); break;
-    case 'scatter':    renderScatterChart(el, data, widget); break;
+    case 'metric':       renderKPI(el, widget, data);               break;
+    case 'gauge':        renderGaugeChart(el, data, widget);        break;
+    case 'table':        renderTable(el, data);                     break;
+    case 'line_chart':   renderChart(el, data, 'scatter', widget);  break;
+    case 'area_chart':   renderChart(el, data, 'area',    widget);  break;
+    case 'bar_chart':    renderChart(el, data, 'bar',     widget);  break;
+    case 'pie_chart':    renderChart(el, data, 'pie',     widget);  break;
+    case 'donut':        renderDonutChart(el, data, widget);        break;
+    case 'histogram':    renderHistogramChart(el, data, widget);    break;
+    case 'box_plot':     renderBoxPlotChart(el, data, widget);      break;
+    case 'scatter':      renderScatterChart(el, data, widget);      break;
+    case 'bubble':       renderBubbleChart(el, data, widget);       break;
+    case 'waterfall':    renderWaterfallChart(el, data, widget);    break;
+    case 'treemap':      renderTreemapChart(el, data, widget);      break;
+    case 'funnel_chart': renderFunnelChart(el, data, widget);       break;
     default:
       el.innerHTML = `<div class="state-center"><p>Unknown widget type: ${esc(widget.widget_type)}</p></div>`;
   }
@@ -1124,6 +1294,7 @@ function renderHistogramChart(el, data, widget) {
     return;
   }
 
+  const t   = _chartTheme();
   const viz = widget?.viz_config || {};
   const traces = [{
     type: 'histogram',
@@ -1148,24 +1319,20 @@ function renderHistogramChart(el, data, widget) {
   }
 
   const layout = {
-    paper_bgcolor: BRAND.paper,
-    plot_bgcolor: BRAND.paper,
+    paper_bgcolor: t.paper,
+    plot_bgcolor:  t.paper,
     margin: { t: 14, r: 18, b: 64, l: 66 },
-    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: t.font },
     barmode: 'overlay',
     showlegend: !!data.kde,
-    legend: { orientation: 'h', y: -0.2, x: 0, font: { size: 10 } },
+    legend: { orientation: 'h', y: -0.2, x: 0, font: { size: 10, color: t.font } },
     xaxis: {
-      title: { text: viz.x_axis || data.field || 'Value', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      gridcolor: BRAND.gridColor,
-      zerolinecolor: BRAND.gridColor,
-      automargin: true,
+      title: { text: viz.x_axis || data.field || 'Value', font: { size: 11, color: t.font }, standoff: 8 },
+      gridcolor: t.grid, zerolinecolor: t.grid, tickfont: { color: t.font }, automargin: true,
     },
     yaxis: {
-      title: { text: data.kde ? 'Density' : 'Count', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      gridcolor: BRAND.gridColor,
-      zerolinecolor: BRAND.gridColor,
-      automargin: true,
+      title: { text: data.kde ? 'Density' : 'Count', font: { size: 11, color: t.font }, standoff: 8 },
+      gridcolor: t.grid, zerolinecolor: t.grid, tickfont: { color: t.font }, automargin: true,
     },
   };
 
@@ -1184,24 +1351,21 @@ function renderBoxPlotChart(el, data, widget) {
     return;
   }
 
+  const t   = _chartTheme();
   const viz = widget?.viz_config || {};
   const layout = {
-    paper_bgcolor: BRAND.paper,
-    plot_bgcolor: BRAND.paper,
+    paper_bgcolor: t.paper,
+    plot_bgcolor:  t.paper,
     margin: { t: 14, r: 18, b: 64, l: 66 },
-    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: t.font },
     showlegend: false,
     xaxis: {
-      title: { text: viz.x_axis || data.field || 'Distribution', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      showgrid: false,
-      zeroline: false,
-      automargin: true,
+      title: { text: viz.x_axis || data.field || 'Distribution', font: { size: 11, color: t.font }, standoff: 8 },
+      showgrid: false, zeroline: false, tickfont: { color: t.font }, automargin: true,
     },
     yaxis: {
-      title: { text: viz.y_axis || data.field || 'Value', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      gridcolor: BRAND.gridColor,
-      zerolinecolor: BRAND.gridColor,
-      automargin: true,
+      title: { text: viz.y_axis || data.field || 'Value', font: { size: 11, color: t.font }, standoff: 8 },
+      gridcolor: t.grid, zerolinecolor: t.grid, tickfont: { color: t.font }, automargin: true,
     },
   };
 
@@ -1229,6 +1393,7 @@ function renderScatterChart(el, data, widget) {
     return;
   }
 
+  const t   = _chartTheme();
   const viz = widget?.viz_config || {};
   const div = document.createElement('div');
   div.style.cssText = 'width:100%;height:100%';
@@ -1241,36 +1406,287 @@ function renderScatterChart(el, data, widget) {
     x: points.map(p => p.x),
     y: points.map(p => p.y),
     text: points.map(p => p.label || ''),
-    marker: {
-      color: BRAND.accent,
-      size: 9,
-      opacity: 0.7,
-      line: { color: '#ffffff', width: 1 },
-    },
+    marker: { color: BRAND.accent, size: 9, opacity: 0.7, line: { color: '#ffffff', width: 1 } },
     hovertemplate: (
       `<b>${esc(viz.x_axis || data.x_field || 'X')}</b>: %{x:,.2f}<br>` +
       `<b>${esc(viz.y_axis || data.y_field || 'Y')}</b>: %{y:,.2f}` +
       `<br>%{text}<extra></extra>`
     ),
   }], {
-    paper_bgcolor: BRAND.paper,
-    plot_bgcolor: BRAND.paper,
+    paper_bgcolor: t.paper,
+    plot_bgcolor:  t.paper,
     margin: { t: 14, r: 18, b: 64, l: 66 },
-    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: '#6b7280' },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: t.font },
     showlegend: false,
     xaxis: {
-      title: { text: viz.x_axis || data.x_field || 'X Axis', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      gridcolor: BRAND.gridColor,
-      zerolinecolor: BRAND.gridColor,
-      automargin: true,
+      title: { text: viz.x_axis || data.x_field || 'X Axis', font: { size: 11, color: t.font }, standoff: 8 },
+      gridcolor: t.grid, zerolinecolor: t.grid, tickfont: { color: t.font }, automargin: true,
     },
     yaxis: {
-      title: { text: viz.y_axis || data.y_field || 'Y Axis', font: { size: 11, color: '#6b7280' }, standoff: 8 },
-      gridcolor: BRAND.gridColor,
-      zerolinecolor: BRAND.gridColor,
-      automargin: true,
+      title: { text: viz.y_axis || data.y_field || 'Y Axis', font: { size: 11, color: t.font }, standoff: 8 },
+      gridcolor: t.grid, zerolinecolor: t.grid, tickfont: { color: t.font }, automargin: true,
     },
   }, { responsive: true, displaylogo: false, displayModeBar: false });
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Shared chart helpers ─────────────────────────────────────────────────────
+
+function _chartTheme() {
+  const t = currentChartTheme();
+  return { paper: t.paper, font: t.fontColor, grid: t.gridColor, hover: t.hoverBg };
+}
+
+function _baseLayout(extra = {}) {
+  const t = _chartTheme();
+  return Object.assign({
+    paper_bgcolor: t.paper, plot_bgcolor: t.paper,
+    margin: { t: 14, r: 18, b: 72, l: 72 },
+    font: { family: 'Inter,system-ui,sans-serif', size: 11, color: t.font },
+    showlegend: false,
+    hoverlabel: { bgcolor: '#1f2937', font: { color: '#fff', size: 12 } },
+  }, extra);
+}
+
+function _axisStyle(title, theme) {
+  return {
+    title: title ? { text: title, font: { size: 11, color: '#6b7280' }, standoff: 8 } : undefined,
+    gridcolor: theme.grid, zerolinecolor: theme.grid,
+    tickfont: { size: 10, color: theme.font }, automargin: true,
+  };
+}
+
+function _labelsValues(data) {
+  // Normalise the various data shapes the query engine can return into [labels, values]
+  if (Array.isArray(data.labels) && Array.isArray(data.values))
+    return [data.labels, data.values.map(Number)];
+  // Grouped aggregation: val is a {label: value} dict
+  if (data.val !== null && typeof data.val === 'object' && !Array.isArray(data.val)) {
+    const keys = Object.keys(data.val);
+    return [keys, keys.map(k => Number(data.val[k]) || 0)];
+  }
+  // Scalar val
+  if (data.val !== undefined)
+    return [['Value'], [Number(data.val)]];
+  if (typeof data === 'object' && !Array.isArray(data)) {
+    const keys = Object.keys(data).filter(k => !k.startsWith('_'));
+    return [keys, keys.map(k => Number(data[k]) || 0)];
+  }
+  return [[], []];
+}
+
+// ── Gauge ────────────────────────────────────────────────────────────────────
+function renderGaugeChart(el, data, widget) {
+  const viz   = widget?.viz_config || {};
+  const value = data.val !== undefined ? Number(data.val) : Number(Object.values(data)[0] || 0);
+  const max   = viz.gauge_max || (value > 0 ? Math.ceil(value * 1.5) : 100);
+  const t     = _chartTheme();
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'indicator', mode: 'gauge+number',
+    value,
+    title: { text: viz.y_axis || viz.description || '', font: { size: 11, color: '#6b7280' } },
+    gauge: {
+      axis: { range: [0, max], tickcolor: t.font, tickfont: { color: t.font, size: 10 } },
+      bar:  { color: '#4f8fdd', thickness: 0.55 },
+      bgcolor: t.paper,
+      borderwidth: 0,
+      steps: [
+        { range: [0, max * 0.5],  color: 'rgba(25,211,181,.10)' },
+        { range: [max * 0.5, max * 0.8], color: 'rgba(246,135,18,.12)' },
+        { range: [max * 0.8, max], color: 'rgba(239,68,68,.12)' },
+      ],
+    },
+    number: { font: { size: 22, color: t.font }, valueformat: ',' },
+  }], _baseLayout({ margin: { t: 28, r: 20, b: 20, l: 20 }, paper_bgcolor: t.paper }),
+  { responsive: true, displaylogo: false, displayModeBar: false });
+
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Donut ────────────────────────────────────────────────────────────────────
+function renderDonutChart(el, data, widget) {
+  const [labels, values] = _labelsValues(data);
+  const slices = labels
+    .map((l, i) => ({ l, v: values[i] }))
+    .filter(({ v }) => Number.isFinite(v) && v > 0);
+
+  if (!slices.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-circle-notch" style="color:#e5e7eb"></i><p>No chartable data</p></div>`;
+    return;
+  }
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'pie',
+    labels: slices.map(s => s.l),
+    values: slices.map(s => s.v),
+    hole:   0.44,
+    marker: { colors: BRAND.colors, line: { color: '#fff', width: 2 } },
+    hovertemplate: '<b>%{label}</b><br>%{value:,.2f} (%{percent})<extra></extra>',
+    textinfo: 'percent',
+    textfont: { size: 11 },
+  }], _baseLayout({ margin: { t: 14, r: 14, b: 14, l: 14 } }),
+  { responsive: true, displaylogo: false, displayModeBar: false });
+
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Waterfall ────────────────────────────────────────────────────────────────
+function renderWaterfallChart(el, data, widget) {
+  const [labels, values] = _labelsValues(data);
+  if (!labels.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-chart-waterfall" style="color:#e5e7eb"></i><p>Not enough data</p></div>`;
+    return;
+  }
+  const viz = widget?.viz_config || {};
+  const t   = _chartTheme();
+
+  // Colour bars: positive = teal, negative = red
+  const colors = values.map(v => v >= 0 ? '#19d3b5' : '#ef4444');
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'waterfall',
+    x: labels,
+    y: values,
+    connector: { line: { color: '#d1d5db', width: 1, dash: 'dot' } },
+    increasing: { marker: { color: '#19d3b5' } },
+    decreasing: { marker: { color: '#ef4444' } },
+    totals:     { marker: { color: '#4f8fdd' } },
+    hovertemplate: '<b>%{x}</b><br>' + (viz.y_axis || 'Value') + ': <b>%{y:,.2f}</b><extra></extra>',
+  }], _baseLayout({
+    xaxis: _axisStyle(viz.x_axis, t),
+    yaxis: _axisStyle(viz.y_axis, t),
+  }), { responsive: true, displaylogo: false, displayModeBar: false });
+
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Treemap ──────────────────────────────────────────────────────────────────
+function renderTreemapChart(el, data, widget) {
+  const [labels, values] = _labelsValues(data);
+  const valid = labels
+    .map((l, i) => ({ l: String(l), v: Math.abs(values[i]) }))
+    .filter(({ v }) => Number.isFinite(v) && v > 0);
+
+  if (!valid.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-th-large" style="color:#e5e7eb"></i><p>Not enough data</p></div>`;
+    return;
+  }
+  const viz = widget?.viz_config || {};
+  const t   = _chartTheme();
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'treemap',
+    labels: valid.map(s => s.l),
+    parents: valid.map(() => ''),
+    values:  valid.map(s => s.v),
+    textinfo: 'label+percent root',
+    hovertemplate: '<b>%{label}</b><br>' + (viz.y_axis || 'Value') + ': <b>%{value:,.2f}</b> (%{percentRoot:.1%})<extra></extra>',
+    marker: { colorscale: 'Teal', showscale: false },
+  }], _baseLayout({ margin: { t: 14, r: 8, b: 8, l: 8 } }),
+  { responsive: true, displaylogo: false, displayModeBar: false });
+
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Funnel Chart ─────────────────────────────────────────────────────────────
+function renderFunnelChart(el, data, widget) {
+  const [labels, rawValues] = _labelsValues(data);
+  if (!labels.length) {
+    el.innerHTML = `<div class="state-center"><i class="fas fa-filter" style="color:#e5e7eb"></i><p>Not enough data</p></div>`;
+    return;
+  }
+
+  // Sort descending so the largest bar is at the top (funnel shape)
+  const pairs = labels.map((l, i) => ({ l: String(l), v: Math.abs(rawValues[i]) }))
+    .filter(({ v }) => Number.isFinite(v))
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 12);  // cap at 12 stages for readability
+
+  const viz = widget?.viz_config || {};
+  const t   = _chartTheme();
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'funnel',
+    y: pairs.map(p => p.l),
+    x: pairs.map(p => p.v),
+    textinfo: 'value+percent previous',
+    marker: {
+      color: pairs.map((_, i) =>
+        `hsl(${180 + i * 20}, 60%, ${55 - i * 3}%)`
+      ),
+    },
+    hovertemplate: '<b>%{y}</b><br>' + (viz.y_axis || 'Value') + ': <b>%{x:,.2f}</b><extra></extra>',
+  }], _baseLayout({
+    margin: { t: 14, r: 18, b: 14, l: 140 },
+    funnelmode: 'stack',
+    xaxis: _axisStyle(viz.y_axis, t),
+    yaxis: { ...{ automargin: true, tickfont: { size: 10, color: t.font } } },
+  }), { responsive: true, displaylogo: false, displayModeBar: false });
+
+  if (widget?.id) plotlyDivs.set(widget.id, div);
+}
+
+// ── Bubble Chart ─────────────────────────────────────────────────────────────
+function renderBubbleChart(el, data, widget) {
+  // Falls back to regular scatter if no 'points' array with size property
+  const points = Array.isArray(data.points) ? data.points : [];
+  if (!points.length) {
+    renderScatterChart(el, data, widget);
+    return;
+  }
+
+  const viz = widget?.viz_config || {};
+  const t   = _chartTheme();
+  const maxSize = Math.max(...points.map(p => Math.abs(p.size || p.y || 1))) || 1;
+
+  el.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100%;height:100%';
+  el.appendChild(div);
+
+  Plotly.newPlot(div, [{
+    type: 'scatter', mode: 'markers',
+    x: points.map(p => p.x),
+    y: points.map(p => p.y),
+    text: points.map(p => p.label || ''),
+    marker: {
+      size: points.map(p => 8 + (Math.abs(p.size || p.y || 1) / maxSize) * 40),
+      color: BRAND.accent,
+      opacity: 0.65,
+      line: { color: '#ffffff', width: 1.2 },
+    },
+    hovertemplate:
+      `<b>%{text}</b><br>${viz.x_axis || 'X'}: %{x:,.2f}<br>${viz.y_axis || 'Y'}: %{y:,.2f}<extra></extra>`,
+  }], _baseLayout({
+    xaxis: _axisStyle(viz.x_axis, t),
+    yaxis: _axisStyle(viz.y_axis, t),
+  }), { responsive: true, displaylogo: false, displayModeBar: false });
+
   if (widget?.id) plotlyDivs.set(widget.id, div);
 }
 
@@ -2472,9 +2888,11 @@ function applyDashboardTheme(theme) {
   localStorage.setItem(DASHBOARD_THEME_KEY, normalized);
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
-  btn.innerHTML = normalized === 'dark'
-    ? '<i class="fas fa-sun text-xs"></i><span>Light Mode</span>'
-    : '<i class="fas fa-moon text-xs"></i><span>Dark Mode</span>';
+  const icon = btn.querySelector('i');
+  if (icon) {
+    icon.className = normalized === 'dark' ? 'fas fa-sun text-sm' : 'fas fa-moon text-sm';
+  }
+  btn.title = normalized === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
 function toggleDashboardTheme() {
@@ -2486,5 +2904,416 @@ function toggleDashboardTheme() {
 document.addEventListener('DOMContentLoaded', () => {
   applyDashboardTheme(localStorage.getItem(DASHBOARD_THEME_KEY) || 'light');
 });
+</script>
+
+{# ── Ask AI Panel ──────────────────────────────────────────────────────────── #}
+<div id="askAiPanel"
+     class="fixed right-0 top-0 w-3/4 shadow-2xl flex flex-col z-50 transition-transform duration-300 translate-x-full"
+     style="max-height:72vh; height:auto; background:#ffffff; border-left:1px solid var(--line); border-bottom:1px solid var(--line); border-radius:0 0 0 .75rem;">
+
+  {# Header #}
+  <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:#e5e7eb; flex-shrink:0;">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs"
+           style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)">
+        <i class="fas fa-message"></i>
+      </div>
+      <div>
+        <p class="text-sm font-semibold" style="color:#1f2937">Ask AI</p>
+        <p class="text-xs" style="color:#9ca3af">Ask anything about your dashboard</p>
+      </div>
+    </div>
+    <button onclick="toggleAskAI()" style="color:#9ca3af" class="hover:text-gray-600 transition">
+      <i class="fas fa-xmark text-sm"></i>
+    </button>
+  </div>
+
+  {# History log — hidden when empty, grows with conversation up to max-height #}
+  <div id="askAiHistory"
+       class="overflow-y-auto p-4 space-y-4 text-sm"
+       style="color:#1f2937; max-height:calc(72vh - 130px); display:none;">
+    <p id="askAiEmpty" class="text-xs text-center py-8" style="color:#9ca3af">
+      Ask a question about your data to get started.
+    </p>
+  </div>
+
+  {# Input area #}
+  <div class="px-4 py-3 border-t" style="border-color:#e5e7eb;">
+    <div id="askAiThinking" class="hidden items-center gap-2 mb-2 text-xs" style="color:#6b7280">
+      <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+      </svg>
+      AI is thinking…
+    </div>
+    <div class="flex gap-2">
+      <input id="askAiInput"
+             type="text"
+             placeholder="Ask about your data…"
+             class="flex-1 text-sm px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-300"
+             style="background:#f9fafb; border-color:#e5e7eb; color:#1f2937;"
+             onkeydown="if(event.key==='Enter')sendAskAI()">
+      <button onclick="sendAskAI()"
+              class="px-3 py-2 rounded-lg text-xs font-semibold text-white transition hover:opacity-90"
+              style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)">
+        <i class="fas fa-paper-plane text-xs"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// ── Ask AI Panel ───────────────────────────────────────────────────────────
+const ASK_AI_SESSION_KEY = 'ask_ai_session_{{ dashboard.id }}';
+let askAiSessionId = sessionStorage.getItem(ASK_AI_SESSION_KEY);
+if (!askAiSessionId) {
+  askAiSessionId = 'sess_' + Math.random().toString(36).substr(2, 12);
+  sessionStorage.setItem(ASK_AI_SESSION_KEY, askAiSessionId);
+}
+
+let askAiWs = null;
+let currentAnswerDiv = null;
+
+let activeWidgetId = null; // which widget's inline AI panel is receiving chunks
+
+function _widgetItem(widgetId) {
+  return document.querySelector(`.grid-stack-item[data-id="${widgetId}"]`);
+}
+
+function askAIAboutWidget(widgetId, chartType) {
+  // Close any other open widget AI panels
+  document.querySelectorAll('.widget-ai-panel').forEach(p => {
+    if (p.id !== `widget-ai-panel-${widgetId}`) {
+      p.style.display = 'none';
+      const otherId = p.id.replace('widget-ai-panel-', '');
+      _widgetItem(otherId)?.classList.remove('widget-ai-panel-open');
+    }
+  });
+  const panel = document.getElementById(`widget-ai-panel-${widgetId}`);
+  if (!panel) return;
+  panel.style.display = 'flex';
+  _widgetItem(widgetId)?.classList.add('widget-ai-panel-open');
+  activeWidgetId = widgetId;
+  const input = document.getElementById(`widget-ai-input-${widgetId}`);
+  input.value = '';
+  input.focus();
+  if (!askAiWs || askAiWs.readyState > 1) initAskAISocket();
+}
+
+function closeWidgetAIPanel(widgetId) {
+  const panel = document.getElementById(`widget-ai-panel-${widgetId}`);
+  if (panel) panel.style.display = 'none';
+  _widgetItem(widgetId)?.classList.remove('widget-ai-panel-open');
+  if (activeWidgetId === widgetId) activeWidgetId = null;
+}
+
+function sendWidgetAI(widgetId) {
+  const input = document.getElementById(`widget-ai-input-${widgetId}`);
+  const q = input.value.trim();
+  if (!q) return;
+  if (!askAiWs || askAiWs.readyState !== 1) {
+    initAskAISocket();
+    setTimeout(() => sendWidgetAI(widgetId), 600);
+    return;
+  }
+  activeWidgetId = widgetId;
+  const response = document.getElementById(`widget-ai-response-${widgetId}`);
+
+  // Question bubble
+  const qBubble = document.createElement('div');
+  qBubble.className = 'widget-ai-bubble-q';
+  qBubble.textContent = q;
+  response.appendChild(qBubble);
+
+  // Answer bubble (streaming target)
+  const aBubble = document.createElement('div');
+  aBubble.className = 'widget-ai-bubble-a';
+  response.appendChild(aBubble);
+  response.scrollTop = response.scrollHeight;
+
+  currentAnswerDiv = aBubble;
+  document.getElementById(`widget-ai-thinking-${widgetId}`).style.display = 'flex';
+  input.value = '';
+  input.disabled = true;
+
+  askAiWs.send(JSON.stringify({type: 'ask', question: q, session_id: askAiSessionId, widget_id: widgetId}));
+}
+
+function toggleAskAI() {
+  const panel = document.getElementById('askAiPanel');
+  const isOpen = !panel.classList.contains('translate-x-full');
+  panel.classList.toggle('translate-x-full', isOpen);
+  if (!isOpen) return;
+  // Open: connect WebSocket
+  if (!askAiWs || askAiWs.readyState > 1) initAskAISocket();
+}
+
+function initAskAISocket() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}/ws/dashboard/{{ dashboard.id }}/ask-ai/`;
+  askAiWs = new WebSocket(url);
+
+  askAiWs.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'history')     renderHistory(msg.items);
+    if (msg.type === 'chart')       renderAIChart(msg);
+    if (msg.type === 'chunk')       appendChunk(msg.text);
+    if (msg.type === 'done')        finaliseAnswer();
+    if (msg.type === 'error')       showAskError(msg.message);
+  };
+  askAiWs.onerror = () => showAskError('Connection error — please refresh.');
+}
+
+function renderAIChart(msg) {
+  _showAskAiHistory();
+  document.getElementById('askAiEmpty').classList.add('hidden');
+  const history = document.getElementById('askAiHistory');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ai-chart-bubble';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'ai-chart-bubble-title';
+  titleEl.innerHTML = `<i class="fas fa-chart-line"></i> ${esc(msg.title || 'Generated Chart')}`;
+  wrap.appendChild(titleEl);
+
+  const plotDiv = document.createElement('div');
+  plotDiv.className = 'ai-chart-bubble-plot';
+  wrap.appendChild(plotDiv);
+  history.appendChild(wrap);
+  history.scrollTop = history.scrollHeight;
+
+  // Render via the existing chart functions using a fake widget object
+  const fakeWidget = {
+    id: 'ai-' + Date.now(),
+    widget_type: msg.chart_type,
+    title: msg.title,
+    widget_data: msg.data,
+    viz_config: msg.viz_config || {},
+  };
+
+  // Reuse renderWidgetContent logic by temporarily pointing at plotDiv
+  const data = msg.data || {};
+  const viz  = msg.viz_config || {};
+  const t    = _chartTheme();
+
+  const plotlyConfig = { responsive: true, displaylogo: false, displayModeBar: false };
+
+  try {
+    if (msg.chart_type === 'histogram') {
+      const vals = Array.isArray(data.values) ? data.values : [];
+      Plotly.newPlot(plotDiv, [{
+        type: 'histogram', x: vals, nbinsx: data.bins || 12,
+        marker: { color: BRAND.primary, opacity: 0.78 },
+        hovertemplate: '<b>%{x}</b><br>Count: %{y}<extra></extra>',
+      }], Object.assign(_baseLayout(), { margin: { t:10, r:10, b:40, l:50 } }), plotlyConfig);
+
+    } else if (msg.chart_type === 'scatter') {
+      const pts = Array.isArray(data.points) ? data.points : [];
+      Plotly.newPlot(plotDiv, [{
+        type: 'scatter', mode: 'markers',
+        x: pts.map(p => p.x), y: pts.map(p => p.y),
+        marker: { color: BRAND.accent, size: 7, opacity: 0.75 },
+        hovertemplate: `%{x}<br>%{y}<extra></extra>`,
+      }], Object.assign(_baseLayout(), {
+        margin: { t:10, r:10, b:40, l:50 },
+        xaxis: _axisStyle(viz.x_axis, t),
+        yaxis: _axisStyle(viz.y_axis, t),
+      }), plotlyConfig);
+
+    } else {
+      // bar / line / area / pie
+      const [labels, values] = _labelsValues(data);
+      const plotType = msg.chart_type === 'line_chart' ? 'scatter'
+                     : msg.chart_type === 'area_chart' ? 'scatter'
+                     : msg.chart_type === 'pie_chart'  ? 'pie'
+                     : 'bar';
+      const trace = plotType === 'pie'
+        ? { type: 'pie', labels, values, hole: 0, marker: { colors: BRAND.colors },
+            hovertemplate: '<b>%{label}</b>: %{value}<extra></extra>' }
+        : { type: plotType, x: labels, y: values,
+            mode: plotType === 'scatter' ? 'lines' : undefined,
+            fill: msg.chart_type === 'area_chart' ? 'tozeroy' : undefined,
+            marker: { color: BRAND.primary },
+            hovertemplate: `<b>%{x}</b><br>${esc(viz.y_axis || 'Value')}: %{y}<extra></extra>`,
+          };
+      Plotly.newPlot(plotDiv, [trace], Object.assign(_baseLayout(), {
+        margin: { t:10, r:10, b:40, l:50 },
+        xaxis: plotType !== 'pie' ? _axisStyle(viz.x_axis, t) : undefined,
+        yaxis: plotType !== 'pie' ? _axisStyle(viz.y_axis, t) : undefined,
+      }), plotlyConfig);
+    }
+  } catch(e) {
+    plotDiv.innerHTML = `<div class="state-center" style="height:100%"><p style="color:#ef4444">Could not render chart</p></div>`;
+  }
+
+  history.scrollTop = history.scrollHeight;
+}
+
+function _showAskAiHistory() {
+  const el = document.getElementById('askAiHistory');
+  if (el) el.style.display = '';
+}
+
+function renderHistory(items) {
+  const el = document.getElementById('askAiHistory');
+  if (!items || !items.length) return;
+  _showAskAiHistory();
+  document.getElementById('askAiEmpty').classList.add('hidden');
+  items.reverse().forEach(item => {
+    el.appendChild(buildQABlock(item.question, item.description, true));
+  });
+  el.scrollTop = el.scrollHeight;
+}
+
+function sendAskAI() {
+  const input = document.getElementById('askAiInput');
+  const q = input.value.trim();
+  if (!q) return;
+  if (!askAiWs || askAiWs.readyState !== 1) {
+    initAskAISocket();
+    setTimeout(() => sendAskAI(), 600);
+    return;
+  }
+  _showAskAiHistory();
+  document.getElementById('askAiEmpty').classList.add('hidden');
+  const history = document.getElementById('askAiHistory');
+
+  // Append question bubble
+  const block = document.createElement('div');
+  block.className = 'space-y-1';
+  const qBubble = document.createElement('p');
+  qBubble.className = 'text-xs font-semibold px-3 py-2 rounded-xl rounded-tr-sm self-end ml-8';
+  qBubble.style.cssText = 'background:#e0f2fe;color:#0369a1;';
+  qBubble.textContent = q;
+  block.appendChild(qBubble);
+
+  // Placeholder for streaming answer
+  const aBubble = document.createElement('p');
+  aBubble.className = 'text-xs px-3 py-2 rounded-xl rounded-tl-sm mr-8';
+  aBubble.style.cssText = 'background:#eef2ff;color:#3730a3;';
+  aBubble.textContent = '';
+  block.appendChild(aBubble);
+  history.appendChild(block);
+  history.scrollTop = history.scrollHeight;
+
+  currentAnswerDiv = aBubble;
+  document.getElementById('askAiThinking').classList.remove('hidden');
+  document.getElementById('askAiThinking').style.display = 'flex';
+  input.value = '';
+  input.disabled = true;
+
+  askAiWs.send(JSON.stringify({type: 'ask', question: q, session_id: askAiSessionId}));
+}
+
+function appendChunk(text) {
+  if (currentAnswerDiv) {
+    currentAnswerDiv.textContent += text;
+    document.getElementById('askAiHistory').scrollTop = 99999;
+  }
+}
+
+function finaliseAnswer() {
+  currentAnswerDiv = null;
+  if (activeWidgetId) {
+    const thinking = document.getElementById(`widget-ai-thinking-${activeWidgetId}`);
+    if (thinking) thinking.style.display = 'none';
+    const input = document.getElementById(`widget-ai-input-${activeWidgetId}`);
+    if (input) { input.disabled = false; input.focus(); }
+    const response = document.getElementById(`widget-ai-response-${activeWidgetId}`);
+    if (response) response.scrollTop = response.scrollHeight;
+    activeWidgetId = null;
+  } else {
+    document.getElementById('askAiThinking').classList.add('hidden');
+    document.getElementById('askAiThinking').style.display = 'none';
+    document.getElementById('askAiInput').disabled = false;
+    document.getElementById('askAiInput').focus();
+  }
+}
+
+function showAskError(msg) {
+  finaliseAnswer();
+  const el = document.getElementById('askAiHistory');
+  const err = document.createElement('p');
+  err.className = 'text-xs px-3 py-2 rounded-lg';
+  err.style.cssText = 'background:#fee2e2;color:#b91c1c;';
+  err.textContent = msg;
+  el.appendChild(err);
+  el.scrollTop = el.scrollHeight;
+}
+
+function buildQABlock(question, answer, muted) {
+  const block = document.createElement('div');
+  block.className = 'space-y-1';
+  const qBubble = document.createElement('p');
+  qBubble.className = 'text-xs font-semibold px-3 py-2 rounded-xl rounded-tr-sm ml-8';
+  qBubble.style.cssText = muted ? 'background:#f0f9ff;color:#075985;' : 'background:#e0f2fe;color:#0369a1;';
+  qBubble.textContent = question || '—';
+  const aBubble = document.createElement('p');
+  aBubble.className = 'text-xs px-3 py-2 rounded-xl rounded-tl-sm mr-8';
+  aBubble.style.cssText = 'background:#eef2ff;color:#3730a3;';
+  aBubble.textContent = answer || '';
+  block.appendChild(qBubble);
+  block.appendChild(aBubble);
+  return block;
+}
+
+// ── Dashboard ready (AI advisor + engine finished) ─────────────────────────
+function _handleDashboardReady() {
+  const overlay = document.getElementById('aiPendingOverlay');
+  if (!overlay) return;
+  overlay.style.transition = 'opacity .4s ease';
+  overlay.style.opacity = '0';
+  setTimeout(() => location.reload(), 450);
+}
+
+document.addEventListener('ws:dashboard_ready', _handleDashboardReady);
+
+// Polling fallback: if overlay is still showing after 8s, poll until ai_pending clears.
+// This handles the case where the WebSocket connection is rejected or the message is lost.
+(function pollAIPending() {
+  const overlay = document.getElementById('aiPendingOverlay');
+  if (!overlay) return;
+  const dashId = '{{ dashboard.pk }}';
+  let attempts = 0;
+  const timer = setInterval(async () => {
+    attempts++;
+    try {
+      const r = await fetch(`/api/v1/dashboards/${dashId}/ai-status/`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!data.ai_pending) {
+        clearInterval(timer);
+        _handleDashboardReady();
+      }
+    } catch(_) {}
+    if (attempts >= 30) clearInterval(timer); // give up after 5 min
+  }, 10000); // check every 10s
+})();
+
+// Patch WS onmessage to dispatch dashboard_ready
+(function patchWS() {
+  const _interval = setInterval(() => {
+    if (window.dashboardSocket && dashboardSocket.onmessage) {
+      const orig = dashboardSocket.onmessage.bind(dashboardSocket);
+      dashboardSocket.onmessage = function(e) {
+        orig(e);
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'dashboard_ready') {
+            document.dispatchEvent(new CustomEvent('ws:dashboard_ready', {detail: msg}));
+          }
+        } catch(_) {}
+      };
+      clearInterval(_interval);
+    }
+  }, 300);
+})();
+
+function getCookie(name) {
+  const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+  return v ? v[2] : null;
+}
 </script>
 {% endblock %}

@@ -3,6 +3,7 @@ API v1 URL patterns – all under /api/v1/
 """
 from django.urls import path
 from . import api_v1
+from apps.insights.views import AISuggestWidgetsView, AskAIHistoryView, AIPendingStatusView
 
 urlpatterns = [
     # Auth / Profile
@@ -74,4 +75,12 @@ urlpatterns = [
     # Cohort & Funnel Analysis (Gap 15)
     path('tables/<uuid:table_id>/cohort-analysis/', api_v1.CohortAnalysisAPIView.as_view(), name='api_v1_cohort_analysis'),
     path('tables/<uuid:table_id>/funnel-analysis/', api_v1.FunnelAnalysisAPIView.as_view(), name='api_v1_funnel_analysis'),
+
+    # Agentic AI — visualization suggestions + Ask AI history
+    path('dashboards/<uuid:dashboard_id>/ai-suggest-widgets/',
+         AISuggestWidgetsView.as_view(), name='api_v1_ai_suggest_widgets'),
+    path('dashboards/<uuid:dashboard_id>/ask-ai/history/',
+         AskAIHistoryView.as_view(), name='api_v1_ask_ai_history'),
+    path('dashboards/<uuid:dashboard_id>/ai-status/',
+         AIPendingStatusView.as_view(), name='api_v1_ai_status'),
 ]

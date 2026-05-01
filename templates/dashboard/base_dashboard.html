@@ -273,15 +273,6 @@ if ('serviceWorker' in navigator) {
         {# page-level actions slot #}
         {% block topbar_actions %}{% endblock %}
 
-        {# dark mode toggle — vanilla JS to avoid Alpine scope issues #}
-        <button id="theme-toggle-btn"
-                onclick="AMTheme.toggle()"
-                class="theme-toggle"
-                aria-label="Toggle dark mode"
-                title="Toggle dark mode">
-          <i id="theme-icon" class="fas fa-moon text-sm" aria-hidden="true"></i>
-        </button>
-
         {# notification bell #}
         <a href="{% url 'dashboard:activity' %}"
            class="relative p-2 rounded-lg text-gray-400 hover:text-[#03466e] hover:bg-gray-100 transition"

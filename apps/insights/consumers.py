@@ -393,6 +393,17 @@ class DashboardConsumer(AsyncWebsocketConsumer):
         except Exception:
             logger.exception('Error forwarding user_left')
 
+    async def dashboard_ready(self, event):
+        try:
+            await self.send(_dumps({
+                'type':       'dashboard_ready',
+                'grid_rows':  event.get('grid_rows'),
+                'ai_advised': event.get('ai_advised'),
+                'table':      event.get('table'),
+            }))
+        except Exception:
+            logger.exception('Error forwarding dashboard_ready')
+
     async def dashboard_update(self, event):
         try:
             await self.send(_dumps({'type': 'dashboard_update', 'data': event.get('data', {})}))
@@ -845,3 +856,509 @@ class TableConsumer(AsyncWebsocketConsumer):
             return 'viewer'
         except DataTable.DoesNotExist:
             return 'none'
+
+
+# ---------------------------------------------------------------------------
+# AskAIConsumer
+# ---------------------------------------------------------------------------
+class AskAIConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for the Ask AI chat panel.
+
+    Path: ws/dashboard/<dashboard_id>/ask-ai/
+
+    Client → server messages:
+        { "type": "ask", "question": "...", "session_id": "...", "table_id": "<uuid|optional>" }
+        { "type": "ping" }
+
+    Server → client messages:
+        { "type": "chunk",   "text": "..." }          — streamed response tokens
+        { "type": "done",    "insight_id": "..." }    — full response saved
+        { "type": "history", "items": [...] }         — sent on connect
+        { "type": "error",   "message": "..." }
+        { "type": "pong" }
+
+    Session memory:
+        Last SESSION_BUFFER_SIZE turns are stored in Redis under
+        ask_ai:<session_id> with a SESSION_TTL_SECONDS sliding TTL.
+        Each message in Claude's turn gets a fresh shadow dataset so
+        answers are always based on current data, not stale context.
+    """
+
+    SESSION_BUFFER_SIZE = 6      # turns (user + assistant pairs) kept in Redis
+    SESSION_TTL_SECONDS = 1800   # 30-minute sliding TTL
+
+    async def connect(self):
+        self.dashboard_id = self.scope['url_route']['kwargs']['dashboard_id']
+        self.user = self.scope['user']
+
+        if not self.user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        has_access = await self._check_access()
+        if not has_access:
+            await self.close(code=4003)
+            return
+
+        self.workspace_id = await self._get_workspace_id()
+        await self.accept()
+        logger.info('AskAIConsumer connected user=%s dashboard=%s', self.user.email, self.dashboard_id)
+
+        # Send recent history on connect
+        history = await self._load_history()
+        await self.send(_dumps({'type': 'history', 'items': history}))
+
+    async def disconnect(self, close_code):
+        logger.info('AskAIConsumer disconnected user=%s dashboard=%s code=%s',
+                    getattr(self.user, 'email', '?'), self.dashboard_id, close_code)
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            await self._send_error('Invalid JSON')
+            return
+
+        msg_type = data.get('type', '')
+
+        if msg_type == 'ping':
+            await self.send(_dumps({'type': 'pong'}))
+            return
+
+        if msg_type == 'ask':
+            question = (data.get('question') or '').strip()
+            session_id = (data.get('session_id') or '').strip()
+            table_id = data.get('table_id', '')
+            widget_id = data.get('widget_id', '')
+            if not question:
+                await self._send_error('question is required')
+                return
+            if not session_id:
+                await self._send_error('session_id is required')
+                return
+            await self._handle_ask(question, session_id, table_id, widget_id)
+            return
+
+        await self._send_error(f'Unknown message type: {msg_type}')
+
+    # ── Chart-generation tool definition ──────────────────────────────────
+    _CHART_TOOL = {
+        "name": "generate_chart",
+        "description": (
+            "Generate a chart by querying and filtering the dashboard data. "
+            "Use this whenever the user wants to see a visual pattern, trend, comparison, or distribution — "
+            "e.g. 'show me sales in the last 6 months', 'compare revenue by region', 'distribution of scores'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chart_type": {
+                    "type": "string",
+                    "enum": ["bar_chart", "line_chart", "area_chart", "pie_chart", "scatter", "histogram"],
+                    "description": "Best chart type for the request",
+                },
+                "title":  {"type": "string", "description": "Chart title"},
+                "x_field": {"type": "string", "description": "Field name for X axis / grouping dimension"},
+                "y_field": {"type": "string", "description": "Field name for Y axis / value (omit for count)"},
+                "aggregation": {
+                    "type": "string",
+                    "enum": ["sum", "avg", "count", "min", "max"],
+                    "description": "Aggregation to apply to y_field",
+                },
+                "filters": {
+                    "type": "array",
+                    "description": "Filters to apply before aggregating",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field":    {"type": "string"},
+                            "operator": {"type": "string", "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "contains"]},
+                            "value":    {},
+                        },
+                        "required": ["field", "operator", "value"],
+                    },
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "One or two sentences explaining what this chart reveals",
+                },
+            },
+            "required": ["chart_type", "title", "aggregation", "explanation"],
+        },
+    }
+
+    # ── Core Q&A handler ──────────────────────────────────────────────────
+
+    async def _handle_ask(self, question: str, session_id: str, table_id: str, widget_id: str = ''):
+        """Handle Ask AI: generates a chart when the user requests a visual, otherwise streams text."""
+        budget_ok = await database_sync_to_async(self._check_budget)()
+        if not budget_ok:
+            await self._send_error('Monthly AI token budget exhausted.')
+            return
+
+        widget_ctx = None
+        if widget_id:
+            widget_ctx = await database_sync_to_async(self._build_widget_context)(widget_id)
+
+        shadow = await database_sync_to_async(self._build_shadow)(table_id)
+        if shadow is None:
+            await self._send_error('No data table found for this dashboard.')
+            return
+
+        buf_key = f'{session_id}:w:{widget_id}' if widget_id else session_id
+        buffer  = await database_sync_to_async(self._load_buffer)(buf_key)
+
+        messages = list(buffer)
+        messages.append({'role': 'user', 'content': self._build_ask_prompt(question, shadow, widget_ctx)})
+
+        import anthropic
+        from django.conf import settings
+        api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
+        model   = getattr(settings, 'CLAUDE_INSIGHT_MODEL', 'claude-sonnet-4-6')
+        client  = anthropic.Anthropic(api_key=api_key)
+
+        if widget_ctx:
+            system_prompt = (
+                "You are a business data analyst. The user is looking at a specific chart on their dashboard. "
+                "Explain what the chart shows, interpret numbers, highlight patterns or outliers, and answer follow-up questions. "
+                "If the user asks to see a different view, filter, or comparison, use the generate_chart tool. "
+                "Speak about the data you can see — do not speculate about rendering issues or configuration problems. "
+                "Be concise — 2-4 sentences unless the user asks for more. No markdown headers. Plain prose only."
+            )
+        else:
+            system_prompt = (
+                "You are a smart business data analyst assistant embedded in a BI dashboard. "
+                "You have access to the dataset schema and sample records. "
+                "When the user asks to SEE data (patterns, trends, comparisons, distributions, charts), "
+                "use the generate_chart tool to build it for them. "
+                "For all other questions answer in plain prose — 2-5 sentences, specific, referencing field names. "
+                "No markdown headers. Plain prose only."
+            )
+
+        full_response = ''
+        tokens = {'input': 0, 'output': 0}
+        try:
+            # Non-streaming call with tool available — lets Claude decide to chart or talk
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                system=system_prompt,
+                tools=[self._CHART_TOOL],
+                tool_choice={"type": "auto"},
+                messages=messages,
+            )
+            tokens['input']  = response.usage.input_tokens
+            tokens['output'] = response.usage.output_tokens
+
+            chart_result = None
+            text_parts   = []
+
+            for block in response.content:
+                if block.type == 'tool_use' and block.name == 'generate_chart':
+                    # Execute the chart query against real data
+                    chart_result = await database_sync_to_async(
+                        self._execute_chart_request
+                    )(block.input, shadow)
+                    text_parts.append(block.input.get('explanation', ''))
+                elif block.type == 'text':
+                    text_parts.append(block.text)
+
+            full_response = ' '.join(t for t in text_parts if t)
+
+            # Send chart data first (frontend renders mini chart)
+            if chart_result and 'error' not in chart_result:
+                await self.send(_dumps({'type': 'chart', **chart_result}))
+
+            # Send text explanation as a single chunk
+            if full_response:
+                await self.send(_dumps({'type': 'chunk', 'text': full_response}))
+
+        except Exception as exc:
+            logger.exception('AskAIConsumer: Claude call failed user=%s', self.user.email)
+            await self._send_error(f'AI error: {exc}')
+            return
+
+        insight_id = await database_sync_to_async(self._save_insight)(
+            question, full_response, tokens, shadow.get('table_name', ''), bool(widget_id)
+        )
+        await database_sync_to_async(self._update_buffer)(buf_key, question, full_response)
+        await database_sync_to_async(self._consume_tokens)(tokens)
+        await self.send(_dumps({'type': 'done', 'insight_id': str(insight_id)}))
+
+    # ── Chart execution helper ─────────────────────────────────────────────
+
+    def _execute_chart_request(self, tool_input: dict, shadow: dict) -> dict:
+        """Execute a chart query from the AI tool call and return renderable data."""
+        from apps.dashboards.models import Widget, DataTable
+        from apps.dashboards.services import QueryEngine
+        from datetime import datetime
+
+        chart_type  = tool_input.get('chart_type', 'bar_chart')
+        title       = tool_input.get('title', 'Chart')
+        x_field     = tool_input.get('x_field', '')
+        y_field     = tool_input.get('y_field', '')
+        aggregation = tool_input.get('aggregation', 'count')
+        filters     = tool_input.get('filters', [])
+        explanation = tool_input.get('explanation', '')
+
+        table_pk = shadow.get('table_obj_pk')
+        if not table_pk:
+            return {'error': 'No table available', 'explanation': explanation}
+
+        try:
+            table = DataTable.objects.get(pk=table_pk)
+        except DataTable.DoesNotExist:
+            return {'error': 'Table not found', 'explanation': explanation}
+
+        # Build query_config matching the chart type
+        if chart_type == 'scatter':
+            query_config = {'x_field': x_field, 'y_field': y_field,
+                            'label_field': x_field, 'filters': filters}
+        elif chart_type == 'histogram':
+            query_config = {'field': y_field or x_field, 'bins': 12,
+                            'show_kde': True, 'filters': filters}
+        else:
+            agg_entry = {'type': aggregation, 'name': 'val'}
+            if y_field:     agg_entry['field']    = y_field
+            if x_field:     agg_entry['group_by'] = x_field
+            query_config = {'aggregations': [agg_entry], 'filters': filters, 'limit': 300}
+
+        # Unsaved Widget instance — enough for QueryEngine to execute
+        w = Widget(widget_type=chart_type, title=title,
+                   query_config=query_config, table=table)
+        w.pk = None
+
+        try:
+            data = QueryEngine().execute_widget_query(w)
+        except Exception as exc:
+            logger.exception('AskAIConsumer: chart execution failed')
+            return {'error': str(exc), 'explanation': explanation}
+
+        return {
+            'chart_type':  chart_type,
+            'title':       title,
+            'explanation': explanation,
+            'data':        data,
+            'viz_config':  {
+                'x_axis': x_field.replace('_', ' ').title() if x_field else '',
+                'y_axis': y_field.replace('_', ' ').title() if y_field else '',
+            },
+        }
+
+    # ── DB / Redis helpers ─────────────────────────────────────────────────
+
+    def _build_ask_prompt(self, question: str, shadow: dict, widget_ctx: dict | None = None) -> str:
+        import json as _json
+        schema_lines = '\n'.join(
+            f'  - {f["name"]} ({f["type"]})' for f in shadow.get('schema', [])
+        )
+        sample = _json.dumps(shadow.get('records', [])[:5], indent=2)
+
+        if widget_ctx:
+            data = widget_ctx.get('data', {})
+            # Summarise data for the AI — strip raw value arrays (too large) and keep stats
+            data_summary = {k: v for k, v in data.items() if k not in ('values', 'kde', 'points')}
+            if 'values' in data:
+                import statistics as _stats
+                vals = [v for v in data['values'] if isinstance(v, (int, float))]
+                if vals:
+                    data_summary['value_count'] = len(vals)
+                    data_summary['min']    = round(min(vals), 4)
+                    data_summary['max']    = round(max(vals), 4)
+                    data_summary['mean']   = round(_stats.mean(vals), 4)
+                    data_summary['median'] = round(_stats.median(vals), 4)
+            if 'points' in data:
+                pts = data['points']
+                data_summary['point_count'] = len(pts)
+                if pts:
+                    xs = [p['x'] for p in pts if isinstance(p.get('x'), (int, float))]
+                    ys = [p['y'] for p in pts if isinstance(p.get('y'), (int, float))]
+                    if xs: data_summary['x_range'] = [round(min(xs), 4), round(max(xs), 4)]
+                    if ys: data_summary['y_range'] = [round(min(ys), 4), round(max(ys), 4)]
+            chart_data_str = _json.dumps(data_summary, indent=2)[:800]
+            return (
+                f"Chart title: {widget_ctx['title']}\n"
+                f"Chart type: {widget_ctx['chart_type']}\n"
+                f"Fields used: {widget_ctx['fields_summary']}\n\n"
+                f"Underlying table: {shadow.get('table_name', 'data')} "
+                f"({shadow.get('record_count', 'N/A')} total records)\n"
+                f"Schema:\n{schema_lines}\n\n"
+                f"Chart data summary:\n{chart_data_str}\n\n"
+                f"Sample records (anonymised):\n{sample}\n\n"
+                f"User question: {question}"
+            )
+
+        return (
+            f"Table: {shadow.get('table_name', 'data')}\n"
+            f"Total records: {shadow.get('record_count', 'N/A')}\n\n"
+            f"Schema:\n{schema_lines}\n\n"
+            f"Sample (values anonymised):\n{sample}\n\n"
+            f"User question: {question}"
+        )
+
+    def _build_widget_context(self, widget_id: str) -> dict | None:
+        """Return chart type, fields used, and current rendered data for the widget."""
+        from apps.dashboards.models import Widget
+        from apps.dashboards.services import QueryEngine
+        try:
+            widget = Widget.objects.select_related('table').get(pk=widget_id)
+        except Widget.DoesNotExist:
+            return None
+
+        qc = widget.query_config or {}
+        aggs = qc.get('aggregations', [])
+
+        if widget.widget_type == 'scatter':
+            fields_summary = f"x={qc.get('x_field','?')}, y={qc.get('y_field','?')}"
+        elif widget.widget_type in ('histogram', 'box_plot'):
+            fields_summary = f"field={qc.get('field','?')}"
+        elif aggs:
+            parts = []
+            for a in aggs:
+                parts.append(f"{a.get('type','?')}({a.get('field','')}) grouped by {a.get('group_by','(none)')}")
+            fields_summary = '; '.join(parts)
+        else:
+            fields_summary = str(qc)
+
+        # Fetch live chart data (hits cache if warm)
+        try:
+            data = QueryEngine().execute_widget_query(widget)
+        except Exception:
+            data = {}
+
+        return {
+            'title':         widget.title,
+            'chart_type':    widget.widget_type,
+            'fields_summary': fields_summary,
+            'data':          data,
+        }
+
+    def _check_budget(self) -> bool:
+        from apps.workspaces.models import Workspace
+        try:
+            ws = Workspace.objects.get(id=self.workspace_id)
+        except Workspace.DoesNotExist:
+            return False
+        from apps.insights.tasks import _get_or_create_budget
+        budget = _get_or_create_budget(ws)
+        return budget.has_capacity(estimated_tokens=700)
+
+    def _build_shadow(self, table_id: str) -> dict | None:
+        from apps.dashboards.models import Dashboard, Widget, DataTable
+        from apps.insights.privacy import PrivacySampler
+        try:
+            if table_id:
+                table = DataTable.objects.get(pk=table_id)
+            else:
+                table_id_val = (
+                    Widget.objects
+                    .filter(dashboard_id=self.dashboard_id, table__isnull=False)
+                    .values_list('table_id', flat=True)
+                    .first()
+                )
+                if not table_id_val:
+                    return None
+                table = DataTable.objects.get(pk=table_id_val)
+            result = PrivacySampler(table).sample()
+            result['table_id'] = str(table.pk)
+            result['table_obj_pk'] = table.pk
+            return result
+        except DataTable.DoesNotExist:
+            return None
+
+    def _load_buffer(self, session_id: str) -> list[dict]:
+        """Load the session conversation buffer from Redis."""
+        from django.core.cache import cache
+        import json as _json
+        key = f'ask_ai:{session_id}'
+        raw = cache.get(key, '[]')
+        try:
+            return _json.loads(raw)
+        except Exception:
+            return []
+
+    def _update_buffer(self, session_id: str, question: str, answer: str):
+        """Append the latest turn and keep only the last SESSION_BUFFER_SIZE turns."""
+        from django.core.cache import cache
+        import json as _json
+        key = f'ask_ai:{session_id}'
+        raw = cache.get(key, '[]')
+        try:
+            buffer = _json.loads(raw)
+        except Exception:
+            buffer = []
+
+        buffer.append({'role': 'user',      'content': question})
+        buffer.append({'role': 'assistant', 'content': answer})
+
+        # Keep last SESSION_BUFFER_SIZE turns (each turn = 2 messages)
+        max_msgs = self.SESSION_BUFFER_SIZE * 2
+        buffer = buffer[-max_msgs:]
+
+        cache.set(key, _json.dumps(buffer), timeout=self.SESSION_TTL_SECONDS)
+
+    def _save_insight(self, question: str, answer: str, tokens: dict, table_name: str, is_widget: bool = False) -> str:
+        from apps.insights.models import Insight
+        from django.conf import settings
+        insight = Insight.objects.create(
+            workspace         = self._get_workspace_sync(),
+            title             = question[:200],
+            description       = answer,
+            insight_type      = 'ask_ai_widget' if is_widget else 'ask_ai',
+            source_table_name = table_name,
+            question          = question,
+            llm_model         = getattr(settings, 'CLAUDE_INSIGHT_MODEL', 'claude-sonnet-4-6'),
+            prompt_tokens     = tokens.get('input', 0),
+            completion_tokens = tokens.get('output', 0),
+            created_by        = self.user,
+        )
+        return str(insight.id)
+
+    def _consume_tokens(self, tokens: dict):
+        from apps.workspaces.models import Workspace
+        from apps.insights.tasks import _get_or_create_budget
+        try:
+            ws = Workspace.objects.get(id=self.workspace_id)
+            budget = _get_or_create_budget(ws)
+            budget.consume(tokens.get('input', 0) + tokens.get('output', 0))
+        except Exception:
+            logger.exception('AskAIConsumer: failed to consume tokens')
+
+    def _get_workspace_sync(self):
+        from apps.workspaces.models import Workspace
+        return Workspace.objects.get(id=self.workspace_id)
+
+    def _load_history_sync(self) -> list:
+        from apps.insights.models import Insight
+        return list(
+            Insight.objects
+            .filter(workspace_id=self.workspace_id, insight_type='ask_ai')  # excludes ask_ai_widget
+            .order_by('-created_at')[:20]
+            .values('id', 'question', 'description', 'created_at')
+        )
+
+    @database_sync_to_async
+    def _load_history(self) -> list:
+        items = self._load_history_sync()
+        return _convert(items)
+
+    @database_sync_to_async
+    def _check_access(self) -> bool:
+        try:
+            dashboard = Dashboard.objects.select_related('workspace').get(
+                id=self.dashboard_id, is_active=True)
+            return dashboard.workspace.members.filter(id=self.user.id).exists()
+        except Dashboard.DoesNotExist:
+            return False
+
+    @database_sync_to_async
+    def _get_workspace_id(self) -> str:
+        try:
+            return str(Dashboard.objects.values_list('workspace_id', flat=True)
+                       .get(id=self.dashboard_id))
+        except Dashboard.DoesNotExist:
+            return ''
+
+    async def _send_error(self, message: str):
+        await self.send(_dumps({'type': 'error', 'message': message}))

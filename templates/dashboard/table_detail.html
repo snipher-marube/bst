@@ -288,7 +288,7 @@
                               <div class="absolute inset-0 flex items-end gap-1">
                                 <template x-for="(bin, idx) in column.histogram" :key="`${column.name}-bar-${idx}`">
                                   <div class="flex-1 h-full flex items-end">
-                                    <div class="w-full rounded-t-md bg-gradient-to-t from-[#03466e] to-[#f68712] opacity-90"
+                                    <div class="w-full"
                                          :style="profile.histogramBarStyle(column, bin)"></div>
                                   </div>
                                 </template>
@@ -871,7 +871,7 @@ function tableManager() {
         const count = Number(bin.count) || 0;
         if (count <= 0) return 'height:0px;';
         const px = Math.max(12, Math.round((count / maxCount) * 88));
-        return `height:${px}px;`;
+        return `height:${px}px; background:linear-gradient(to top,#03466e,#f68712); opacity:.9; border-radius:4px 4px 0 0;`;
       },
 
       histogramTick(bin) {

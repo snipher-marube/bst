@@ -17,6 +17,8 @@ class Insight(models.Model):
         ('summary', 'Summary'),
         ('prediction', 'Prediction'),
         ('comparison', 'Comparison'),
+        ('ask_ai', 'Ask AI'),
+        ('viz_suggestion', 'Visualization Suggestion'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -37,6 +39,11 @@ class Insight(models.Model):
     prompt_tokens     = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
 
+    # Ask AI session tracking — session_id ties Q&A turns together in the UI
+    # (history display only; not re-fed to Claude to avoid stale context)
+    session_id = models.CharField(max_length=64, blank=True, db_index=True)
+    question   = models.TextField(blank=True)
+
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -45,6 +52,7 @@ class Insight(models.Model):
         indexes = [
             models.Index(fields=['workspace', 'insight_type']),
             models.Index(fields=['workspace', 'created_at']),
+            models.Index(fields=['session_id']),
         ]
 
     def __str__(self):
