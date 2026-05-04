@@ -91,7 +91,7 @@ pytokens==0.4.1
 redis==7.4.0
 reportlab==4.4.10
 requests==2.33.1
-stripe>=10.0.0
+stripe>=15.1.0
 gspread>=6.0.0
 twilio>=9.10.5
 python3-saml>=1.16.0
