@@ -92,7 +92,7 @@ redis==7.4.0
 reportlab==4.5.0
 requests==2.33.1
 stripe>=10.0.0
-gspread>=6.0.0
+gspread>=6.2.1
 twilio>=9.10.5
 python3-saml>=1.16.0
 google-auth>=2.0.0
